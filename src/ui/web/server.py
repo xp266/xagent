@@ -18,6 +18,7 @@ sys.path.insert(0, _PROJECT_ROOT)
 load_dotenv()
 
 from src.ai import OpenAIProvider
+from src.ai.capabilities import get_model_context_limit
 from src.agent import MessageManager, generate_name, agent_stream
 from src.agent.projects import ProjectManager, Project
 from src.tools import ToolRegistry
@@ -245,7 +246,11 @@ async def chat_sse(body: ChatInput):
                             response.finish_reason = event.data.get("finish_reason", "")
                             usage = event.data.get("usage", {})
                             if usage:
-                                rt.token_usage = TokenUsage(**usage)
+                                rt.token_usage = TokenUsage(
+                                    prompt_tokens=rt.token_usage.prompt_tokens + usage.get("prompt_tokens", 0),
+                                    completion_tokens=rt.token_usage.completion_tokens + usage.get("completion_tokens", 0),
+                                    total_tokens=rt.token_usage.total_tokens + usage.get("total_tokens", 0),
+                                )
 
                         loop.call_soon_threadsafe(queue.put_nowait, ("event", event))
 
@@ -322,9 +327,13 @@ async def chat_sse(body: ChatInput):
                         "error": event.data.get("error", ""),
                     })
                 elif event.type == "step-finish":
+                    context_limit = get_model_context_limit(_config["model"])
+                    context_usage_pct = round((rt.token_usage.total_tokens / context_limit) * 100, 1) if context_limit > 0 and rt.token_usage.total_tokens > 0 else 0
                     yield _sse_json("step-finish", {
                         "finish_reason": event.data.get("finish_reason", ""),
                         "usage": event.data.get("usage", {}),
+                        "context_limit": context_limit,
+                        "context_usage_pct": context_usage_pct,
                     })
                 elif event.type == "provider-error":
                     yield _sse_json("provider-error", event.data)
@@ -421,10 +430,14 @@ async def get_status():
             msgs = rt.msgs.get_messages() if rt.msgs else []
             agent_name = rt.project.name if rt.project else ""
             token_usage = rt.token_usage
+    context_limit = get_model_context_limit(_config["model"])
+    context_usage_pct = round((token_usage.total_tokens / context_limit) * 100, 1) if context_limit > 0 and token_usage.total_tokens > 0 else 0
     return JSONResponse({
         "model": _config["model"],
         "base_url": _config["base_url"],
         "token_usage": token_usage.model_dump(),
+        "context_limit": context_limit,
+        "context_usage_pct": context_usage_pct,
         "workdir": _PROJECT_ROOT,
         "message_count": len(msgs),
         "agent_name": agent_name,

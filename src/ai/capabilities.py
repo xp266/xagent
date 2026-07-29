@@ -59,5 +59,23 @@ def detect_capabilities(model_name: str) -> Capabilities:
             if env_audio is None:
                 audio = meta["audio"]
             reasoning_field = meta.get("interleaved", {}).get("field", "reasoning_content") if isinstance(meta.get("interleaved"), dict) else "reasoning_content"
-            return Capabilities(image=image, audio=audio, reasoning_field=reasoning_field)
     return Capabilities(image=image, audio=audio, reasoning_field=reasoning_field)
+
+
+def get_model_context_limit(model_name: str) -> int:
+    path = os.path.join(_PROJECT_ROOT, "data", "models.json")
+    if not os.path.isfile(path):
+        return 0
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return 0
+    best = 0
+    for provider in data.values():
+        for mname, m in provider.get("models", {}).items():
+            if mname == model_name or model_name in mname:
+                limit = m.get("limit", {}).get("context", 0)
+                if limit > best:
+                    best = limit
+    return best

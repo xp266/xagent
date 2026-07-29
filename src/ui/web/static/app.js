@@ -491,6 +491,19 @@ async function sendMessage() {
           break;
         }
 
+        case 'step-finish':
+          if (data.usage) {
+            const tu = data.usage;
+            document.getElementById('st-total').textContent = tu.total_tokens ?? '—';
+            const limit = data.context_limit || 0;
+            const pct = data.context_usage_pct || 0;
+            document.getElementById('st-context').textContent =
+              limit > 0 ? (tu.total_tokens ?? 0) + ' / ' + limit + ' (' + pct + '%)' : '—';
+            document.getElementById('hdr-tokens').textContent =
+              (tu.prompt_tokens ?? '?') + '→' + (tu.completion_tokens ?? '?') + ' (' + (tu.total_tokens ?? '?') + ')';
+          }
+          break;
+
         case 'finish':
           break;
 
@@ -565,7 +578,7 @@ function updateHeader(model, tokens, workdir) {
   document.getElementById('hdr-model').textContent = model || '—';
   const t = tokens || {};
   document.getElementById('hdr-tokens').textContent =
-    (t.prompt_tokens || '?') + '→' + (t.completion_tokens || '?') + ' (' + (t.total_tokens || '?') + ')';
+    (t.prompt_tokens ?? '?') + '→' + (t.completion_tokens ?? '?') + ' (' + (t.total_tokens ?? '?') + ')';
   document.getElementById('hdr-workdir').textContent = workdir || '—';
 }
 
@@ -575,10 +588,12 @@ function updateStatus() {
     .then(data => {
       document.getElementById('st-model').textContent = data.model || '—';
       document.getElementById('st-base-url').textContent = data.base_url || '—';
-      document.getElementById('st-prompt').textContent = data.token_usage?.prompt_tokens ?? '—';
-      document.getElementById('st-completion').textContent = data.token_usage?.completion_tokens ?? '—';
-      document.getElementById('st-total').textContent = data.token_usage?.total_tokens ?? '—';
-      document.getElementById('st-msg-count').textContent = data.message_count ?? '—';
+      const tu = data.token_usage || {};
+      document.getElementById('st-total').textContent = tu.total_tokens ?? '—';
+      const limit = data.context_limit || 0;
+      const pct = data.context_usage_pct || 0;
+      document.getElementById('st-context').textContent =
+        limit > 0 ? (tu.total_tokens ?? 0) + ' / ' + limit + ' (' + pct + '%)' : '—';
       document.getElementById('st-workdir').textContent = data.workdir || '—';
       updateHeader(data.model, data.token_usage, data.workdir);
     })
@@ -708,4 +723,4 @@ loadProjects().then(data => {
 loadConfig();
 updateStatus();
 
-setInterval(updateStatus, 5000);
+

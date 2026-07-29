@@ -38,7 +38,6 @@ class OpenAIProvider(Provider):
                 stream=True,
                 messages=cleaned,
                 tools=tools or None,
-                stream_options={"include_usage": True},
             )
         except Exception as e:
             yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
@@ -52,14 +51,15 @@ class OpenAIProvider(Provider):
         text_active = False
 
         for chunk in stream:
+            if hasattr(chunk, "usage") and chunk.usage:
+                raw = chunk.usage
+                usage = TokenUsage(
+                    prompt_tokens=getattr(raw, "prompt_tokens", 0),
+                    completion_tokens=getattr(raw, "completion_tokens", 0),
+                    total_tokens=getattr(raw, "total_tokens", 0),
+                )
+
             if not chunk.choices:
-                if hasattr(chunk, "usage") and chunk.usage:
-                    raw = chunk.usage
-                    usage = TokenUsage(
-                        prompt_tokens=getattr(raw, "prompt_tokens", 0),
-                        completion_tokens=getattr(raw, "completion_tokens", 0),
-                        total_tokens=getattr(raw, "total_tokens", 0),
-                    )
                 continue
 
             if not step_started:
@@ -157,7 +157,3 @@ class OpenAIProvider(Provider):
         if step_started:
             yield StreamEvent(type="step-finish", data={"finish_reason": finish_reason, "usage": usage.model_dump()})
         yield StreamEvent(type="finish", data={"finish_reason": finish_reason, "usage": usage.model_dump()})
-
-
-
-
