@@ -68,7 +68,7 @@ class AssistantMessage(BaseModel):
 
     @classmethod
     def from_api(cls, d: dict, reasoning_field: str = "reasoning_content") -> "AssistantMessage":
-        msg = cls(content=d.get("content", ""))
+        msg = cls(content=d.get("content") or "")
         rc = d.get(reasoning_field)
         if rc:
             msg.reasoning = rc

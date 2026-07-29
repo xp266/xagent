@@ -264,41 +264,6 @@ wheels = [
 ]
 
 [[package]]
-name = "lingcode"
-version = "0.2.0"
-source = { editable = "." }
-dependencies = [
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "openai" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-    { name = "python-dotenv" },
-    { name = "uvicorn", extra = ["standard"] },
-]
-
-[package.optional-dependencies]
-image = [
-    { name = "pillow" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "fastapi" },
-    { name = "httpx" },
-    { name = "openai" },
-    { name = "pillow", marker = "extra == 'image'" },
-    { name = "pydantic", specifier = ">=2.0" },
-    { name = "pydantic-settings" },
-    { name = "python-dotenv" },
-    { name = "uvicorn", extras = ["standard"] },
-]
-provides-extras = ["image"]
-
-[package.metadata.requires-dev]
-dev = []
-
-[[package]]
 name = "openai"
 version = "2.50.0"
 source = { registry = "https://pypi.org/simple" }
@@ -915,3 +880,38 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/2d/3f/73e511ecf2496ceac57dd4ed8388efe2bcf0769338a2dbf242c8366ae87e/websockets-16.1.1-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:56cd5fc4f10a9ea8aa0804bddb7b42506cf9e136046f3b4c27de8fec9e2ecba5", size = 180330, upload-time = "2026-07-17T22:51:02.603Z" },
     { url = "https://files.pythonhosted.org/packages/be/4d/2d0d67834092e354d2b0498f014a41249a89556bc406cf86f3e1557bb463/websockets-16.1.1-py3-none-any.whl", hash = "sha256:6abbd3e82c731c8e531714466acd5d87b5e88ac3243465337ba71d68e23ae7e3", size = 173814, upload-time = "2026-07-17T22:51:04.184Z" },
 ]
+
+[[package]]
+name = "xagent"
+version = "0.2.0"
+source = { editable = "." }
+dependencies = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "python-dotenv" },
+    { name = "uvicorn", extra = ["standard"] },
+]
+
+[package.optional-dependencies]
+image = [
+    { name = "pillow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "openai" },
+    { name = "pillow", marker = "extra == 'image'" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pydantic-settings" },
+    { name = "python-dotenv" },
+    { name = "uvicorn", extras = ["standard"] },
+]
+provides-extras = ["image"]
+
+[package.metadata.requires-dev]
+dev = []

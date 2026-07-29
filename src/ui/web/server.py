@@ -18,8 +18,8 @@ sys.path.insert(0, _PROJECT_ROOT)
 load_dotenv()
 
 from src.ai import OpenAIProvider
-from src.agent import MessageManager, SessionStore, generate_name, agent_stream
-from src.agent.projects import ProjectManager
+from src.agent import MessageManager, generate_name, agent_stream
+from src.agent.projects import ProjectManager, Project
 from src.tools import ToolRegistry
 from src.types.events import LLMResponse, StreamEvent, TokenUsage
 from src.utils import load_prompt
@@ -37,6 +37,7 @@ _pm = ProjectManager()
 
 class ProjectRuntime:
     def __init__(self):
+        self.project: Project | None = None
         self.provider: OpenAIProvider | None = None
         self.registry: ToolRegistry | None = None
         self.msgs: MessageManager | None = None
@@ -45,8 +46,9 @@ class ProjectRuntime:
 _runtimes: dict[str, ProjectRuntime] = {}
 
 
-def _init_runtime(project):
+def _init_runtime(project: Project):
     r = ProjectRuntime()
+    r.project = project
     r.provider = OpenAIProvider(
         model=_config["model"],
         base_url=_config["base_url"],
@@ -54,8 +56,7 @@ def _init_runtime(project):
     )
     r.registry = ToolRegistry()
     r.registry.load_local(os.path.join(_PROJECT_ROOT, "src", "tools"))
-    store = SessionStore(sessions_dir=project.sessions_dir)
-    r.msgs = MessageManager(load_prompt("default"), session=store)
+    r.msgs = MessageManager(load_prompt("default"), project=project)
     return r
 
 
@@ -93,7 +94,7 @@ async def lifespan(app: FastAPI):
             r.registry.cleanup()
 
 
-app = FastAPI(title="LingCode Web", lifespan=lifespan)
+app = FastAPI(title="xAgent Web", lifespan=lifespan)
 
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
@@ -133,8 +134,7 @@ async def list_projects():
 
 @app.post("/api/projects")
 async def create_project(body: ProjectCreate):
-    name = body.name or datetime.now().strftime("%m%d-%H%M%S")
-    p = _pm.create(name=name, path=body.path or _PROJECT_ROOT)
+    p = _pm.create(name=body.name, path=body.path or _PROJECT_ROOT)
     _get_runtime(p.id)
     return JSONResponse(p.model_dump())
 
@@ -168,8 +168,8 @@ async def switch_project(project_id: str):
     return JSONResponse({
         "id": project_id,
         "messages": rt.msgs.get_api_messages(),
-        "token_usage": rt.token_usage,
-        "agent_name": rt.msgs.session.agent_name,
+        "token_usage": rt.token_usage.model_dump(),
+        "agent_name": rt.project.name,
     })
 
 
@@ -184,8 +184,7 @@ async def index():
 async def chat_sse(body: ChatInput):
     p = _ensure_project_or_none()
     if not p:
-        ts = datetime.now().strftime("%m%d-%H%M%S")
-        p = _pm.create(name=ts, path=_PROJECT_ROOT)
+        p = _pm.create(path=_PROJECT_ROOT)
 
     rt = _get_runtime(p.id)
     if not rt or not rt.msgs or not rt.provider or not rt.registry:
@@ -194,20 +193,20 @@ async def chat_sse(body: ChatInput):
     rt.msgs.add_user(body.content)
     project_id = p.id
 
-    if not rt.msgs.session.agent_name:
-        rt.msgs.session.agent_name = "New Session"
+    if not rt.project.name or rt.project.name == rt.project.id:
+        rt.project.name = "New Session"
 
     async def event_stream() -> AsyncGenerator[str, None]:
         loop = asyncio.get_event_loop()
         queue = asyncio.Queue()
 
-        yield _sse_json("project-info", {"id": project_id, "name": p.name})
+        yield _sse_json("project-info", {"id": project_id, "name": rt.project.name})
 
-        if not rt.msgs.session.agent_name or rt.msgs.session.agent_name == "New Session":
+        if rt.project.name == "New Session":
             async def _name_session():
                 try:
                     name = await loop.run_in_executor(None, generate_name, rt.provider, body.content)
-                    rt.msgs.session.agent_name = name
+                    rt.project.name = name
                     _pm.rename(project_id, name)
                     loop.call_soon_threadsafe(queue.put_nowait, ("project-name", {"id": project_id, "name": name}))
                 except Exception:
@@ -246,24 +245,13 @@ async def chat_sse(body: ChatInput):
                             response.finish_reason = event.data.get("finish_reason", "")
                             usage = event.data.get("usage", {})
                             if usage:
-                                rt.token_usage = usage
+                                rt.token_usage = TokenUsage(**usage)
 
                         loop.call_soon_threadsafe(queue.put_nowait, ("event", event))
 
                 except Exception as e:
                     loop.call_soon_threadsafe(queue.put_nowait, ("error", str(e)))
                     return
-
-                if not response.content and response.reasoning:
-                    response.content = response.reasoning
-                    response.reasoning = ""
-
-                if tool_calls_pending and response.content:
-                    if response.reasoning:
-                        response.content = ""
-                    else:
-                        response.reasoning = response.content
-                        response.content = ""
 
                 for tc in tool_calls_pending:
                     response.tool_calls.append({
@@ -288,6 +276,7 @@ async def chat_sse(body: ChatInput):
                     break
 
             rt.msgs.save()
+            _pm.save(rt.project)
             messages_snapshot = [m.to_api() if not isinstance(m, dict) else m for m in rt.msgs.get_messages()]
             loop.call_soon_threadsafe(queue.put_nowait, ("done-with-msgs", messages_snapshot))
 
@@ -412,8 +401,10 @@ async def clear_messages():
     if not p:
         return JSONResponse({"messages": []})
     rt = _get_runtime(p.id)
-    rt.msgs = MessageManager(load_prompt("default"), session=SessionStore(sessions_dir=p.sessions_dir))
+    rt.project.messages = []
+    rt.msgs = MessageManager(load_prompt("default"), project=rt.project)
     rt.token_usage = TokenUsage()
+    _pm.save(rt.project)
     return JSONResponse({"messages": rt.msgs.get_api_messages()})
 
 
@@ -428,12 +419,12 @@ async def get_status():
         rt = _get_runtime(p.id)
         if rt:
             msgs = rt.msgs.get_messages() if rt.msgs else []
-            agent_name = rt.msgs.session.agent_name if rt.msgs else ""
+            agent_name = rt.project.name if rt.project else ""
             token_usage = rt.token_usage
     return JSONResponse({
         "model": _config["model"],
         "base_url": _config["base_url"],
-        "token_usage": token_usage,
+        "token_usage": token_usage.model_dump(),
         "workdir": _PROJECT_ROOT,
         "message_count": len(msgs),
         "agent_name": agent_name,

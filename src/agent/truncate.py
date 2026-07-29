@@ -1,8 +1,8 @@
 import os
 import hashlib
-import tempfile
 from datetime import datetime, timedelta
 from pydantic import BaseModel
+from src.utils.paths import truncation_dir
 
 
 class TruncateResult(BaseModel):
@@ -12,8 +12,8 @@ class TruncateResult(BaseModel):
 
 
 class TruncateService:
-    def __init__(self, truncation_dir: str = ""):
-        self._dir = truncation_dir or os.path.join(tempfile.gettempdir(), "lingcode", "truncation")
+    def __init__(self, dir_override: str = ""):
+        self._dir = dir_override or truncation_dir()
         os.makedirs(self._dir, exist_ok=True)
 
     def output(self, text: str, max_lines: int = 2000, max_bytes: int = 51200) -> TruncateResult:

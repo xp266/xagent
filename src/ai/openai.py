@@ -2,12 +2,13 @@ import json
 from collections.abc import Iterator
 from openai import OpenAI
 from src.types.events import StreamEvent, TokenUsage
+from src.ai.base import Provider
 from src.ai.capabilities import detect_capabilities
 from src.utils.media import filter_unsupported_openai_media
 from src.utils.text import replace_surrogates, replace_surrogates_in_value
 
 
-class OpenAIProvider:
+class OpenAIProvider(Provider):
     def __init__(
         self,
         model: str,
@@ -67,7 +68,7 @@ class OpenAIProvider:
 
             choice = chunk.choices[0]
             delta = choice.delta
-            finish = delta.finish_reason or ""
+            finish = choice.finish_reason or ""
 
             tool_deltas = delta.tool_calls or []
             if tool_deltas:

@@ -2,7 +2,7 @@ from src.types.messages import (
     SystemMessage, UserMessage, AssistantMessage, ToolMessage, ToolCall, Message,
 )
 from src.types.events import LLMResponse
-from src.agent.session import SessionStore
+from src.agent.projects import Project
 
 
 SYNTHETIC_ATTACHMENT_PROMPT = "The tool returned the following image attachment(s). Please use them to continue."
@@ -20,14 +20,14 @@ def _messages_to_api(messages: list) -> list[dict]:
 
 class MessageManager:
 
-    def __init__(self, system_prompt: str = "", session: SessionStore | None = None):
-        self._session = session or SessionStore()
-        self._messages: list[Message | dict] = list(self._session.messages)
+    def __init__(self, system_prompt: str = "", project: Project | None = None):
+        self.project = project
+        self._messages: list[Message | dict] = list(project.messages) if project else []
 
         if system_prompt:
-            if not self._messages or not hasattr(self._messages[0], "content") or self._messages[0].get("role") != "system":
+            if not self._messages or not isinstance(self._messages[0], dict) or self._messages[0].get("role") != "system":
                 self._messages.insert(0, SystemMessage(content=system_prompt))
-            elif isinstance(self._messages[0], dict) and self._messages[0]["content"] != system_prompt:
+            elif isinstance(self._messages[0], dict) and self._messages[0].get("content") != system_prompt:
                 self._messages[0]["content"] = system_prompt
 
     def add_user(self, content: str) -> None:
@@ -66,9 +66,9 @@ class MessageManager:
         return _messages_to_api(self._messages)
 
     def save(self) -> None:
-        self._session.messages = _messages_to_api(self._messages)
-        self._session.save()
+        if self.project:
+            self.project.messages = _messages_to_api(self._messages)
 
     @property
-    def session(self) -> SessionStore:
-        return self._session
+    def session(self):
+        return self.project
