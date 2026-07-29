@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LingCode</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js">
+</script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Projects</span>
+      <button class="btn btn-sm btn-primary" id="btn-new-project">+ New</button>
+    </div>
+    <div id="project-list"></div>
+  </aside>
+
+  <section id="chat">
+    <header>
+      <span class="logo">LingCode <small id="project-name-display"></small></span>
+      <span class="sep">|</span>
+      <span class="stat"><span class="label">Model</span><span class="value" id="hdr-model">—</span></span>
+      <span class="sep">|</span>
+      <span class="stat"><span class="label">Tokens</span><span class="value" id="hdr-tokens">—</span></span>
+      <span class="sep">|</span>
+      <span class="stat" style="flex:1;min-width:0"><span class="label">Workdir</span><span class="value" id="hdr-workdir" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">—</span></span>
+      <button class="btn btn-sm" style="margin-left:auto;background:var(--bg-elevated);color:var(--text-secondary)" id="btn-sidebar-toggle">☰</button>
+    </header>
+
+    <div id="messages">
+      <div id="msg-list"></div>
+      <div id="input-area">
+        <div id="input-row">
+          <div id="input-box-wrap">
+            <textarea id="input-box" rows="1" placeholder="Type a message..."></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside id="debug">
+    <div class="debug-section">
+      <div class="debug-section-title open" data-section="config">
+        <span class="arrow">&#9654;</span> Model Configuration
+      </div>
+      <div class="debug-section-body open" id="section-config">
+        <div class="config-field">
+          <label>Base URL</label>
+          <input type="text" id="cfg-url" placeholder="https://opencode.ai/zen/v1">
+        </div>
+        <div class="config-field">
+          <label>Model</label>
+          <input type="text" id="cfg-model" placeholder="mimo-v2.5-free">
+        </div>
+        <div class="debug-actions">
+          <button class="btn btn-primary btn-sm" id="cfg-apply">Apply</button>
+          <button class="btn btn-sm" id="cfg-refresh">Reset from .env</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title" data-section="context">
+        <span class="arrow">&#9654;</span> Full Message Context
+      </div>
+      <div class="debug-section-body" id="section-context">
+        <textarea class="context-editor" id="context-editor" spellcheck="false"></textarea>
+        <div class="debug-actions">
+          <button class="btn btn-primary btn-sm" id="ctx-apply">Apply Changes</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="debug-section">
+      <div class="debug-section-title" data-section="status">
+        <span class="arrow">&#9654;</span> Status
+      </div>
+      <div class="debug-section-body" id="section-status">
+        <div class="status-grid">
+          <span class="s-label">Model</span><span class="s-value" id="st-model">—</span>
+          <span class="s-label">Base URL</span><span class="s-value" id="st-base-url" style="word-break:break-all">—</span>
+          <span class="s-label">Prompt Tokens</span><span class="s-value" id="st-prompt">—</span>
+          <span class="s-label">Completion Tokens</span><span class="s-value" id="st-completion">—</span>
+          <span class="s-label">Total Tokens</span><span class="s-value" id="st-total">—</span>
+          <span class="s-label">Messages</span><span class="s-value" id="st-msg-count">—</span>
+          <span class="s-label">Workdir</span><span class="s-value" id="st-workdir">—</span>
+        </div>
+        <div class="debug-actions" style="margin-top:10px">
+          <button class="btn btn-danger btn-sm" id="ctx-clear">Clear Messages</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
