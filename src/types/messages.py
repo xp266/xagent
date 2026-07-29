@@ -1,3 +1,5 @@
+from __future__ import annotations
+from typing import Union
 from pydantic import BaseModel
 
 
@@ -65,13 +67,11 @@ class AssistantMessage(BaseModel):
         return msg
 
     @classmethod
-    def from_api(cls, d: dict, reasoning_fields: list[str] | None = None) -> "AssistantMessage":
+    def from_api(cls, d: dict, reasoning_field: str = "reasoning_content") -> "AssistantMessage":
         msg = cls(content=d.get("content", ""))
-        fields = reasoning_fields or ["reasoning_content", "reasoning"]
-        for f in fields:
-            if d.get(f):
-                msg.reasoning = d[f]
-                break
+        rc = d.get(reasoning_field)
+        if rc:
+            msg.reasoning = rc
         for tc in d.get("tool_calls", []):
             msg.tool_calls.append(ToolCall.from_api(tc))
         return msg
@@ -92,3 +92,6 @@ class ToolMessage(BaseModel):
             tool_call_id=d.get("tool_call_id", ""),
             content=d.get("content", ""),
         )
+
+
+Message = Union[SystemMessage, UserMessage, AssistantMessage, ToolMessage]

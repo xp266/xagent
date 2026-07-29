@@ -3,7 +3,7 @@ import json
 import uuid
 import shutil
 from datetime import datetime
-from typing import Optional
+from pydantic import BaseModel, model_validator
 
 _PROJECTS_ROOT = os.path.join(os.getcwd(), ".lingcode", "projects")
 _INDEX_PATH = os.path.join(os.getcwd(), ".lingcode", "projects_index.json")
@@ -13,20 +13,26 @@ def _ensure_dirs():
     os.makedirs(_PROJECTS_ROOT, exist_ok=True)
 
 
-class Project:
-    id: str
-    name: str
-    path: str
-    created_at: str
-    updated_at: str
+class Project(BaseModel):
+    id: str = ""
+    name: str = ""
+    path: str = ""
+    created_at: str = ""
+    updated_at: str = ""
 
-    def __init__(self, id: str = "", name: str = "", path: str = ""):
-        _ensure_dirs()
-        self.id = id or str(uuid.uuid4())[:8]
-        self.name = name or f"project-{self.id}"
-        self.path = path or os.getcwd()
-        self.created_at = datetime.now().isoformat()
-        self.updated_at = self.created_at
+    @model_validator(mode="after")
+    def _init_defaults(self):
+        if not self.id:
+            self.id = str(uuid.uuid4())[:8]
+        if not self.name:
+            self.name = f"project-{self.id}"
+        if not self.path:
+            self.path = os.getcwd()
+        if not self.created_at:
+            self.created_at = datetime.now().isoformat()
+        if not self.updated_at:
+            self.updated_at = self.created_at
+        return self
 
     @property
     def project_dir(self) -> str:
@@ -38,22 +44,6 @@ class Project:
 
     def ensure_dirs(self):
         os.makedirs(self.sessions_dir, exist_ok=True)
-
-    def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "name": self.name,
-            "path": self.path,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict) -> "Project":
-        p = cls(id=d.get("id", ""), name=d.get("name", ""), path=d.get("path", ""))
-        p.created_at = d.get("created_at", p.created_at)
-        p.updated_at = d.get("updated_at", p.updated_at)
-        return p
 
 
 def _read_index() -> list[dict]:
@@ -81,15 +71,15 @@ class ProjectManager:
     def _load(self):
         self._projects = {}
         for entry in _read_index():
-            p = Project.from_dict(entry)
+            p = Project.model_validate(entry)
             self._projects[p.id] = p
             p.ensure_dirs()
 
     def _save_index(self):
-        _write_index([p.to_dict() for p in self._projects.values() if p])
+        _write_index([p.model_dump() for p in self._projects.values()])
 
     @property
-    def current(self) -> Optional[Project]:
+    def current(self) -> Project | None:
         if not self._current_id and self._projects:
             first_id = next(iter(self._projects))
             self._current_id = first_id
@@ -103,7 +93,7 @@ class ProjectManager:
     def list(self) -> list[Project]:
         return list(self._projects.values())
 
-    def get(self, project_id: str) -> Optional[Project]:
+    def get(self, project_id: str) -> Project | None:
         return self._projects.get(project_id)
 
     def create(self, name: str = "", path: str = "") -> Project:

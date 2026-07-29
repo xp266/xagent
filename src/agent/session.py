@@ -43,7 +43,7 @@ class SessionStore:
             self.created_at = datetime.now().isoformat()
             self.updated_at = self.created_at
 
-    def save(self):
+    def save(self) -> None:
         self.updated_at = datetime.now().isoformat()
         data = {
             "session_id": self.session_id,
@@ -55,32 +55,15 @@ class SessionStore:
         with open(self._session_path(), "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def clear(self):
+    def delete(self) -> None:
+        path = self._session_path()
+        if os.path.isfile(path):
+            os.remove(path)
+
+    def clear(self) -> None:
+        self.delete()
         self.messages = []
         self.agent_name = ""
         self.session_id = str(uuid.uuid4())[:8]
         self.created_at = datetime.now().isoformat()
         self.updated_at = self.created_at
-
-    def list_sessions(self) -> list:
-        result = []
-        if not os.path.isdir(self._sessions_dir):
-            return result
-        for fname in os.listdir(self._sessions_dir):
-            if not fname.endswith(".json"):
-                continue
-            path = os.path.join(self._sessions_dir, fname)
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                result.append({
-                    "session_id": data.get("session_id", fname[:-5]),
-                    "agent_name": data.get("agent_name", ""),
-                    "message_count": len(data.get("messages", [])),
-                    "created_at": data.get("created_at", ""),
-                    "updated_at": data.get("updated_at", ""),
-                })
-            except (json.JSONDecodeError, OSError):
-                continue
-        result.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
-        return result

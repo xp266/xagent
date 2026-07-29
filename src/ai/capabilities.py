@@ -1,6 +1,8 @@
 import os
 import json
 
+from src.types.config import Capabilities
+
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _MODELS_DB: dict | None = None
 
@@ -27,31 +29,35 @@ def _load_models_db() -> dict:
     return index
 
 
-def detect_capabilities(model_name: str) -> dict:
-    capabilities = {"image": False, "audio": False}
+def detect_capabilities(model_name: str) -> Capabilities:
+    image = False
+    audio = False
+    reasoning_field = "reasoning_content"
     env_image = os.environ.get("MODEL_CAP_IMAGE")
     env_audio = os.environ.get("MODEL_CAP_AUDIO")
     if env_image is not None:
-        capabilities["image"] = env_image == "1"
+        image = env_image == "1"
     if env_audio is not None:
-        capabilities["audio"] = env_audio == "1"
+        audio = env_audio == "1"
     if env_image is not None and env_audio is not None:
-        return capabilities
+        return Capabilities(image=image, audio=audio, reasoning_field=reasoning_field)
     global _MODELS_DB
     if _MODELS_DB is None:
         _MODELS_DB = _load_models_db()
     entry = _MODELS_DB.get(model_name)
     if entry is not None:
         if env_image is None:
-            capabilities["image"] = entry["image"]
+            image = entry["image"]
         if env_audio is None:
-            capabilities["audio"] = entry["audio"]
-        return capabilities
+            audio = entry["audio"]
+        reasoning_field = entry.get("interleaved", {}).get("field", "reasoning_content") if isinstance(entry.get("interleaved"), dict) else "reasoning_content"
+        return Capabilities(image=image, audio=audio, reasoning_field=reasoning_field)
     for short, meta in _MODELS_DB.items():
         if model_name in short or short in model_name:
             if env_image is None:
-                capabilities["image"] = meta["image"]
+                image = meta["image"]
             if env_audio is None:
-                capabilities["audio"] = meta["audio"]
-            return capabilities
-    return capabilities
+                audio = meta["audio"]
+            reasoning_field = meta.get("interleaved", {}).get("field", "reasoning_content") if isinstance(meta.get("interleaved"), dict) else "reasoning_content"
+            return Capabilities(image=image, audio=audio, reasoning_field=reasoning_field)
+    return Capabilities(image=image, audio=audio, reasoning_field=reasoning_field)

@@ -10,30 +10,30 @@ if TYPE_CHECKING:
 
 def agent_stream(
     provider: Provider,
-    messages: list,
-    tools: list,
+    messages: list[dict],
+    tools: list | None,
     registry: ToolRegistry,
 ) -> Iterator[StreamEvent]:
-    for event in provider.chat_stream(messages, tools):
+    for event in provider.stream(messages, tools):
         yield event
         if event.type == "tool-call":
-            tc = event.data
+            call = event.data
             try:
                 result_data = registry.execute(
-                    tc["name"],
-                    tc["input"] if isinstance(tc["input"], dict) else {},
+                    call["name"],
+                    call["input"] if isinstance(call["input"], dict) else {},
                 )
                 result = result_data.get("output", "")
                 attachments = result_data.get("attachments", [])
                 yield StreamEvent(type="tool-result", data={
-                    "id": tc["id"],
-                    "name": tc["name"],
+                    "id": call["id"],
+                    "name": call["name"],
                     "result": result,
                     "attachments": attachments,
                 })
             except Exception as e:
                 yield StreamEvent(type="tool-error", data={
-                    "id": tc["id"],
-                    "name": tc["name"],
+                    "id": call["id"],
+                    "name": call["name"],
                     "error": str(e),
                 })

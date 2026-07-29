@@ -3,6 +3,8 @@ import io
 import os
 import re
 
+from src.types.config import Capabilities
+
 SUPPORTED_IMAGE_MIMES = frozenset({
     "image/png", "image/jpeg", "image/gif", "image/webp",
 })
@@ -134,6 +136,50 @@ def normalize_image(image_data: bytes, mime: str) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format=fmt, quality=40)
     return buf.getvalue()
+
+
+def filter_unsupported_openai_media(messages: list, capabilities: Capabilities) -> list:
+    can_image = capabilities.image
+    for msg in messages:
+        if msg.get("role") != "user":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        filtered = []
+        for part in content:
+            if part.get("type") == "image_url":
+                if can_image:
+                    filtered.append(part)
+                else:
+                    filename = part.get("image_url", {}).get("url", "")[:40]
+                    filtered.append({
+                        "type": "text",
+                        "text": f"ERROR: Cannot read image (this model does not support image input). URL: {filename}...",
+                    })
+            elif part.get("type") == "media":
+                mime = part.get("mediaType", "")
+                modality = mime_to_modality(mime)
+                if modality and not getattr(capabilities, modality, False):
+                    filtered.append({
+                        "type": "text",
+                        "text": f"ERROR: Cannot read {part.get('filename', modality)} (this model does not support {modality} input).",
+                    })
+                elif can_image:
+                    data = part.get("data", "")
+                    filtered.append({
+                        "type": "image_url",
+                        "image_url": {"url": data if data.startswith("data:") else f"data:{mime};base64,{data}"},
+                    })
+                else:
+                    filtered.append({
+                        "type": "text",
+                        "text": f"ERROR: Cannot read {part.get('filename', modality)} (this model does not support {modality} input).",
+                    })
+            else:
+                filtered.append(part)
+        msg["content"] = filtered
+    return messages
 
 
 def read_image_file(filepath: str) -> dict | None:

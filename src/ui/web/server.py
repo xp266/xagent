@@ -17,11 +17,11 @@ sys.path.insert(0, _PROJECT_ROOT)
 
 load_dotenv()
 
-from src.ai import OpenAIProvider, detect_capabilities
+from src.ai import OpenAIProvider
 from src.agent import MessageManager, SessionStore, generate_name, agent_stream
 from src.agent.projects import ProjectManager
 from src.tools import ToolRegistry
-from src.types.events import LLMResponse, StreamEvent
+from src.types.events import LLMResponse, StreamEvent, TokenUsage
 from src.utils import load_prompt
 
 
@@ -40,25 +40,22 @@ class ProjectRuntime:
         self.provider: OpenAIProvider | None = None
         self.registry: ToolRegistry | None = None
         self.msgs: MessageManager | None = None
-        self.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        self.token_usage = TokenUsage()
 
 _runtimes: dict[str, ProjectRuntime] = {}
 
 
 def _init_runtime(project):
     r = ProjectRuntime()
-    capabilities = detect_capabilities(_config["model"])
     r.provider = OpenAIProvider(
         model=_config["model"],
         base_url=_config["base_url"],
         api_key=_config["api_key"],
-        capabilities=capabilities,
     )
     r.registry = ToolRegistry()
     r.registry.load_local(os.path.join(_PROJECT_ROOT, "src", "tools"))
     store = SessionStore(sessions_dir=project.sessions_dir)
     r.msgs = MessageManager(load_prompt("default"), session=store)
-    r.msgs.set_reasoning_fields(r.provider.reasoning_fields)
     return r
 
 
@@ -130,7 +127,7 @@ class ProjectRename(BaseModel):
 async def list_projects():
     projects = []
     for p in _pm.list():
-        projects.append(p.to_dict())
+        projects.append(p.model_dump())
     return JSONResponse({"projects": projects, "current_id": _pm._current_id or ""})
 
 
@@ -139,7 +136,7 @@ async def create_project(body: ProjectCreate):
     name = body.name or datetime.now().strftime("%m%d-%H%M%S")
     p = _pm.create(name=name, path=body.path or _PROJECT_ROOT)
     _get_runtime(p.id)
-    return JSONResponse(p.to_dict())
+    return JSONResponse(p.model_dump())
 
 
 @app.delete("/api/projects/{project_id}")
@@ -278,7 +275,7 @@ async def chat_sse(body: ChatInput):
                         },
                     })
 
-                rt.msgs.add_assistant(response, rt.provider.reasoning_fields[0])
+                rt.msgs.add_assistant(response)
 
                 for tr in tool_results:
                     rt.msgs.add_tool(
@@ -378,13 +375,11 @@ async def update_config(body: ConfigUpdate):
         _config["model"] = body.model
     if body.api_key is not None:
         _config["api_key"] = body.api_key
-    capabilities = detect_capabilities(_config["model"])
     for rid, rt in _runtimes.items():
         rt.provider = OpenAIProvider(
             model=_config["model"],
             base_url=_config["base_url"],
             api_key=_config["api_key"],
-            capabilities=capabilities,
         )
     return JSONResponse(_config)
 
@@ -418,8 +413,7 @@ async def clear_messages():
         return JSONResponse({"messages": []})
     rt = _get_runtime(p.id)
     rt.msgs = MessageManager(load_prompt("default"), session=SessionStore(sessions_dir=p.sessions_dir))
-    rt.msgs.set_reasoning_fields(rt.provider.reasoning_fields)
-    rt.token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    rt.token_usage = TokenUsage()
     return JSONResponse({"messages": rt.msgs.get_api_messages()})
 
 
@@ -429,7 +423,7 @@ async def get_status():
     p = _ensure_project_or_none()
     msgs = []
     agent_name = ""
-    token_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    token_usage = TokenUsage()
     if p:
         rt = _get_runtime(p.id)
         if rt:

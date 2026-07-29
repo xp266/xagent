@@ -2,17 +2,13 @@ import os
 import hashlib
 import tempfile
 from datetime import datetime, timedelta
+from pydantic import BaseModel
 
 
-class TruncateResult:
+class TruncateResult(BaseModel):
     content: str
     truncated: bool
-    output_path: str
-
-    def __init__(self, content: str, truncated: bool, output_path: str = ""):
-        self.content = content
-        self.truncated = truncated
-        self.output_path = output_path
+    output_path: str = ""
 
 
 class TruncateService:
@@ -20,11 +16,9 @@ class TruncateService:
         self._dir = truncation_dir or os.path.join(tempfile.gettempdir(), "lingcode", "truncation")
         os.makedirs(self._dir, exist_ok=True)
 
-    def output(self, text: str, max_lines: int = 0, max_bytes: int = 0) -> TruncateResult:
+    def output(self, text: str, max_lines: int = 2000, max_bytes: int = 51200) -> TruncateResult:
         if not text:
             return TruncateResult(content=text, truncated=False)
-        max_lines = max_lines or 2000
-        max_bytes = max_bytes or 50 * 1024
         lines = text.split("\n")
         encoded = text.encode("utf-8")
         total_bytes = len(encoded)
@@ -60,7 +54,7 @@ class TruncateService:
             f.write(data)
         return fpath
 
-    def cleanup(self, max_age_days: int = 7):
+    def cleanup(self, max_age_days: int = 7) -> None:
         cutoff = datetime.now() - timedelta(days=max_age_days)
         for name in os.listdir(self._dir):
             fpath = os.path.join(self._dir, name)
