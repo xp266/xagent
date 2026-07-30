@@ -20,13 +20,23 @@ class XAgentTUI(App):
         scrollbar-color: #808080;
     }
     TextArea {
-        height: 6;
-        border: solid lightblue;
+        height: 1fr;
+        border: none;
         scrollbar-size: 0 0;
+        background: transparent;
+    }
+    #input-box {
+        height: 6;
+        border: solid #334466;
+        padding: 0;
+    }
+    TextArea .text-area--cursor-line {
+        background: transparent;
     }
     #status-box {
-        height: 3;
-        border: solid lightblue;
+        height: 2;
+        border: none;
+        padding: 0 0 0 1;
     }
 
     .bubble {
@@ -37,6 +47,13 @@ class XAgentTUI(App):
     }
     Collapsible.bubble > CollapsibleTitle {
         padding: 0 1;
+    }
+    .bubble *:focus,
+    .bubble *:hover {
+        background-tint: transparent;
+    }
+    CollapsibleTitle:focus {
+        background: transparent;
     }
 
     .user-bubble, .reply-bubble {
@@ -136,7 +153,8 @@ class XAgentTUI(App):
             for w in self._build_chat_widgets():
                 yield w
 
-        yield TextArea(soft_wrap=True)
+        with Vertical(id="input-box"):
+            yield TextArea(soft_wrap=True)
 
         tu = self._token_usage
         total = tu.get("total_tokens", 0)
