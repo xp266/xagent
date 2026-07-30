@@ -12,35 +12,51 @@ SESSION_PATH = os.path.expanduser("~/.local/share/xagent/sessions/8ecdddf0.json"
 
 class XAgentTUI(App):
     CSS = """
-    #title-box {
-        height: 3;
-        border: solid lightblue;
-    }
     #chat-box {
         height: 1fr;
-        border: solid lightblue;
+        border: none;
+        padding: 1;
+        scrollbar-size: 2 1;
+        scrollbar-color: #808080;
     }
     TextArea {
         height: 6;
         border: solid lightblue;
+        scrollbar-size: 0 0;
     }
     #status-box {
         height: 3;
         border: solid lightblue;
     }
+
     .bubble {
-        border: solid lightyellow;
-        margin: 1 2;
+        border: none;
+        margin: 0;
         height: auto;
+        padding: 1;
     }
     Collapsible.bubble > CollapsibleTitle {
         padding: 0 1;
     }
-    Collapsible.bubble > CollapsibleContent {
-        padding: 0 1 1 1;
+
+    .user-bubble, .reply-bubble {
+        padding: 1 1 1 2;
     }
-    Vertical.bubble {
-        padding: 0 1;
+    .user-bubble {
+        background: #1A1A1A;
+    }
+    .thinking-bubble, .tool-bubble {
+        background: transparent;
+    }
+    .thinking-bubble > CollapsibleTitle {
+        color: #5B9BD5;
+    }
+    .tool-bubble > CollapsibleTitle {
+        color: #70AD47;
+    }
+    .thinking-bubble > CollapsibleContent > Static,
+    .tool-bubble > CollapsibleContent > Static {
+        color: #808080;
     }
     """
 
@@ -65,7 +81,7 @@ class XAgentTUI(App):
 
             if role == "user":
                 widgets.append(
-                    Vertical(Static(msg.get("content", "")), classes="bubble")
+                    Vertical(Static(msg.get("content", "")), classes="bubble user-bubble")
                 )
                 continue
 
@@ -79,7 +95,7 @@ class XAgentTUI(App):
                         Collapsible(
                             Static(reasoning),
                             title="Thinking",
-                            classes="bubble",
+                            classes="bubble thinking-bubble",
                             collapsed=True,
                         )
                     )
@@ -102,26 +118,20 @@ class XAgentTUI(App):
                         Collapsible(
                             Static(result),
                             title=title,
-                            classes="bubble",
+                            classes="bubble tool-bubble",
                             collapsed=True,
                         )
                     )
 
                 if content:
                     widgets.append(
-                        Vertical(Static(content), classes="bubble")
+                        Vertical(Static(content), classes="bubble reply-bubble")
                     )
                 continue
 
         return widgets
 
     def compose(self) -> ComposeResult:
-        cwd = str(Path.cwd())
-        project = Path.cwd().name
-
-        with Vertical(id="title-box"):
-            yield Static(f"xAgent - {cwd} - {project}")
-
         with VerticalScroll(id="chat-box"):
             for w in self._build_chat_widgets():
                 yield w
@@ -131,7 +141,9 @@ class XAgentTUI(App):
         tu = self._token_usage
         total = tu.get("total_tokens", 0)
         model = "gpt-4"
-        status = f"模型: {model}  总token: {total}  上下文使用: 45%"
+        cwd = str(Path.cwd())
+        project = Path.cwd().name
+        status = f"模型: {model}  总token: {total}  上下文使用: 45%  |  xAgent - {cwd} - {project}"
         with Vertical(id="status-box"):
             yield Static(status)
 
