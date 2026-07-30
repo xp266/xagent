@@ -34,7 +34,7 @@ class XAgentTUI(App):
         background: transparent;
     }
     #status-box {
-        height: 2;
+        height: 1;
         border: none;
         padding: 0 0 0 1;
     }
@@ -64,6 +64,7 @@ class XAgentTUI(App):
     }
     .thinking-bubble, .tool-bubble {
         background: transparent;
+        padding: 1 1 0 1;
     }
     .thinking-bubble > CollapsibleTitle {
         color: #5B9BD5;
@@ -114,6 +115,8 @@ class XAgentTUI(App):
                             title="Thinking",
                             classes="bubble thinking-bubble",
                             collapsed=True,
+                            collapsed_symbol="▸",
+                            expanded_symbol="▾",
                         )
                     )
 
@@ -124,19 +127,20 @@ class XAgentTUI(App):
                         args = json.loads(fn.get("arguments", "{}"))
                     except Exception:
                         args = {}
-                    arg_str = (
-                        " ".join(f"{k}={v}" for k, v in args.items())
-                        if args
-                        else fn.get("arguments", "")
-                    )
-                    title = f"→ {name}  {arg_str}" if arg_str else f"→ {name}"
                     result = tool_results.get(tc.get("id", ""), "")
+                    if args:
+                        arg_str = " ".join(f"{k}={v}" for k, v in args.items())
+                        title = f"{name}  {{{arg_str}}}"
+                    else:
+                        title = name
                     widgets.append(
                         Collapsible(
                             Static(result),
                             title=title,
                             classes="bubble tool-bubble",
                             collapsed=True,
+                            collapsed_symbol="▸",
+                            expanded_symbol="▾",
                         )
                     )
 
