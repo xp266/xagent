@@ -118,7 +118,7 @@ tool = Tool(
 
 OS: linux, Shell: bash.
 
-Use `/tmp/opencode` for temporary work outside the workspace (pre-created, pre-approved).
+Use `/tmp/xagent` for temporary work outside the workspace.
 
 DO NOT use for file operations (read/write/edit/search) — use dedicated tools instead.
 

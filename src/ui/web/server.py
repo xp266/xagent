@@ -1,14 +1,12 @@
 import os
 import sys
-import json
 import asyncio
 import threading
-from datetime import datetime
 from typing import AsyncGenerator
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -17,82 +15,23 @@ sys.path.insert(0, _PROJECT_ROOT)
 
 load_dotenv()
 
-from src.ai import OpenAIProvider
+from src.agent import get_session_manager, run_session_turn, name_session_from_first_message
 from src.ai.capabilities import get_model_context_limit
-from src.agent import MessageManager, generate_name, agent_stream
-from src.agent.projects import ProjectManager, Project
-from src.tools import ToolRegistry
-from src.types.events import LLMResponse, StreamEvent, TokenUsage
-from src.utils import load_prompt
+from src.types.events import TokenUsage
+from src.utils.config import get_config, update_config as update_config_module
+from src.utils.sse import format_sse
 
 
-# ── Global config ──────────────────────────────────────────
-_config = {
-    "base_url": os.getenv("BASE_URL", "https://opencode.ai/zen/v1"),
-    "model": os.getenv("MODEL_NAME", "mimo-v2.5-free"),
-    "api_key": os.getenv("API_KEY", ""),
-}
+sm = get_session_manager()
 
-_pm = ProjectManager()
-
-
-class ProjectRuntime:
-    def __init__(self):
-        self.project: Project | None = None
-        self.provider: OpenAIProvider | None = None
-        self.registry: ToolRegistry | None = None
-        self.msgs: MessageManager | None = None
-        self.token_usage = TokenUsage()
-
-_runtimes: dict[str, ProjectRuntime] = {}
-
-
-def _init_runtime(project: Project):
-    r = ProjectRuntime()
-    r.project = project
-    r.provider = OpenAIProvider(
-        model=_config["model"],
-        base_url=_config["base_url"],
-        api_key=_config["api_key"],
-    )
-    r.registry = ToolRegistry()
-    r.registry.load_local(os.path.join(_PROJECT_ROOT, "src", "tools"))
-    r.msgs = MessageManager(load_prompt("default"), project=project)
-    return r
-
-
-def _get_runtime(project_id: str) -> ProjectRuntime | None:
-    if project_id not in _runtimes:
-        p = _pm.get(project_id)
-        if not p:
-            return None
-        r = _init_runtime(p)
-        _runtimes[project_id] = r
-    return _runtimes[project_id]
-
-
-def _ensure_project_or_none():
-    p = _pm.current
-    if not p and _pm.list():
-        p = _pm.list()[0]
-        _pm.current = p.id
-    return p
-
-
-def _sse_json(event_type: str, data) -> str:
-    return f"event: {event_type}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
-
-
-# ── FastAPI app ────────────────────────────────────────────
 from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     yield
-    for r in _runtimes.values():
-        if r.registry:
-            r.registry.cleanup()
+    for s in sm.list():
+        s.release()
 
 
 app = FastAPI(title="xAgent Web", lifespan=lifespan)
@@ -124,225 +63,151 @@ class ProjectRename(BaseModel):
     name: str
 
 
-# ── Project API ────────────────────────────────────────────
 @app.get("/api/projects")
 async def list_projects():
-    projects = []
-    for p in _pm.list():
-        projects.append(p.model_dump())
-    return JSONResponse({"projects": projects, "current_id": _pm._current_id or ""})
+    sessions = sm.list()
+    return JSONResponse({
+        "projects": [s.to_dict() for s in sessions],
+        "current_id": sm._current_id or "",
+    })
 
 
 @app.post("/api/projects")
 async def create_project(body: ProjectCreate):
-    p = _pm.create(name=body.name, path=body.path or _PROJECT_ROOT)
-    _get_runtime(p.id)
-    return JSONResponse(p.model_dump())
+    s = sm.create(name=body.name, path=body.path or _PROJECT_ROOT)
+    return JSONResponse(s.to_dict())
 
 
-@app.delete("/api/projects/{project_id}")
-async def delete_project(project_id: str):
-    if project_id in _runtimes:
-        r = _runtimes.pop(project_id)
-        if r.registry:
-            r.registry.cleanup()
-    ok = _pm.delete(project_id)
+@app.delete("/api/projects/{session_id}")
+async def delete_project(session_id: str):
+    s = sm.get(session_id)
+    if s:
+        s.release()
+    ok = sm.delete(session_id)
     if not ok:
-        return JSONResponse({"error": "Project not found"}, status_code=404)
+        return JSONResponse({"error": "Session not found"}, status_code=404)
     return JSONResponse({"ok": True})
 
 
-@app.put("/api/projects/{project_id}/name")
-async def rename_project(project_id: str, body: ProjectRename):
-    ok = _pm.rename(project_id, body.name)
+@app.put("/api/projects/{session_id}/name")
+async def rename_project(session_id: str, body: ProjectRename):
+    ok = sm.rename(session_id, body.name)
     if not ok:
-        return JSONResponse({"error": "Project not found"}, status_code=404)
+        return JSONResponse({"error": "Session not found"}, status_code=404)
     return JSONResponse({"ok": True})
 
 
-@app.put("/api/projects/switch/{project_id}")
-async def switch_project(project_id: str):
-    rt = _get_runtime(project_id)
-    if not rt:
-        return JSONResponse({"error": "Project not found"}, status_code=404)
-    _pm.current = project_id
+@app.put("/api/projects/switch/{session_id}")
+async def switch_project(session_id: str):
+    s = sm.get(session_id)
+    if not s:
+        return JSONResponse({"error": "Session not found"}, status_code=404)
+    sm.current = session_id
     return JSONResponse({
-        "id": project_id,
-        "messages": rt.msgs.get_api_messages(),
-        "token_usage": rt.token_usage.model_dump(),
-        "agent_name": rt.project.name,
+        "id": session_id,
+        "messages": s.msgs.get_api_messages(),
+        "token_usage": s.token_usage.model_dump(),
+        "agent_name": s.name,
     })
 
 
-# ── Chat API ───────────────────────────────────────────────
 @app.get("/")
 async def index():
-    from fastapi.responses import FileResponse
     return FileResponse(os.path.join(static_dir, "index.html"))
 
 
 @app.post("/api/chat/sse")
 async def chat_sse(body: ChatInput):
-    p = _ensure_project_or_none()
-    if not p:
-        p = _pm.create(path=_PROJECT_ROOT)
-
-    rt = _get_runtime(p.id)
-    if not rt or not rt.msgs or not rt.provider or not rt.registry:
-        return JSONResponse({"error": "Session not initialized"}, status_code=500)
-
-    rt.msgs.add_user(body.content)
-    project_id = p.id
-
-    if not rt.project.name or rt.project.name == rt.project.id:
-        rt.project.name = "New Session"
+    session = sm.get_or_create_current()
+    session_id = session.id
 
     async def event_stream() -> AsyncGenerator[str, None]:
         loop = asyncio.get_event_loop()
         queue = asyncio.Queue()
 
-        yield _sse_json("project-info", {"id": project_id, "name": rt.project.name})
+        yield format_sse("project-info", {"id": session_id, "name": session.name})
 
-        if rt.project.name == "New Session":
+        if session.name == "New Session":
             async def _name_session():
                 try:
-                    name = await loop.run_in_executor(None, generate_name, rt.provider, body.content)
-                    rt.project.name = name
-                    _pm.rename(project_id, name)
-                    loop.call_soon_threadsafe(queue.put_nowait, ("project-name", {"id": project_id, "name": name}))
+                    name = await loop.run_in_executor(
+                        None, name_session_from_first_message, session, body.content
+                    )
+                    if name:
+                        sm.rename(session_id, name)
+                        loop.call_soon_threadsafe(
+                            queue.put_nowait, ("project-name", {"id": session_id, "name": name})
+                        )
                 except Exception:
                     pass
 
-            naming_task = asyncio.create_task(_name_session())
+            asyncio.create_task(_name_session())
 
-        def run_cycle():
-            while True:
-                response = LLMResponse()
-                tool_calls_pending = []
-                tool_results = []
+        def run_in_thread():
+            for event in run_session_turn(session, body.content):
+                loop.call_soon_threadsafe(queue.put_nowait, ("event", event))
+            messages = session.msgs.get_api_messages()
+            loop.call_soon_threadsafe(queue.put_nowait, ("done", messages))
 
-                try:
-                    stream = agent_stream(
-                        rt.provider,
-                        rt.msgs.get_api_messages(),
-                        rt.registry.schemas() if rt.registry.schemas() else None,
-                        rt.registry,
-                    )
-
-                    for event in stream:
-                        if event.type == "step-start":
-                            response = LLMResponse()
-                            tool_calls_pending = []
-                            tool_results = []
-                        elif event.type == "reasoning-delta":
-                            response.reasoning += event.data
-                        elif event.type == "text-delta":
-                            response.content += event.data
-                        elif event.type == "tool-call":
-                            tool_calls_pending.append(event.data)
-                        elif event.type in ("tool-result", "tool-error"):
-                            tool_results.append(event.data)
-                        elif event.type == "step-finish":
-                            response.finish_reason = event.data.get("finish_reason", "")
-                            usage = event.data.get("usage", {})
-                            if usage:
-                                rt.token_usage = TokenUsage(
-                                    prompt_tokens=rt.token_usage.prompt_tokens + usage.get("prompt_tokens", 0),
-                                    completion_tokens=rt.token_usage.completion_tokens + usage.get("completion_tokens", 0),
-                                    total_tokens=rt.token_usage.total_tokens + usage.get("total_tokens", 0),
-                                )
-
-                        loop.call_soon_threadsafe(queue.put_nowait, ("event", event))
-
-                except Exception as e:
-                    loop.call_soon_threadsafe(queue.put_nowait, ("error", str(e)))
-                    return
-
-                for tc in tool_calls_pending:
-                    response.tool_calls.append({
-                        "id": tc["id"],
-                        "type": "function",
-                        "function": {
-                            "name": tc["name"],
-                            "arguments": json.dumps(tc["input"]) if isinstance(tc["input"], dict) else str(tc["input"]),
-                        },
-                    })
-
-                rt.msgs.add_assistant(response)
-
-                for tr in tool_results:
-                    rt.msgs.add_tool(
-                        tr["id"],
-                        tr.get("result", tr.get("error", "")),
-                        tr.get("attachments"),
-                    )
-
-                if response.finish_reason != "tool_calls":
-                    break
-
-            rt.msgs.save()
-            _pm.save(rt.project)
-            messages_snapshot = [m.to_api() if not isinstance(m, dict) else m for m in rt.msgs.get_messages()]
-            loop.call_soon_threadsafe(queue.put_nowait, ("done-with-msgs", messages_snapshot))
-
-        thread = threading.Thread(target=run_cycle, daemon=True)
+        thread = threading.Thread(target=run_in_thread, daemon=True)
         thread.start()
 
         while True:
             kind, data = await queue.get()
+
             if kind == "project-name":
-                yield _sse_json("project-name", data)
+                yield format_sse("project-name", data)
                 continue
-            if kind == "done-with-msgs":
-                break
-            if kind == "error":
-                yield _sse_json("provider-error", {"error": data, "code": 0})
-                yield _sse_json("done", {"messages": rt.msgs.get_api_messages()})
+            if kind == "done":
+                yield format_sse("done", {"messages": data})
                 return
             if kind == "event":
                 event = data
                 if event.type in ("step-start", "reasoning-start", "reasoning-end", "text-start", "text-end"):
-                    yield _sse_json(event.type, None)
+                    yield format_sse(event.type, None)
                 elif event.type == "reasoning-delta":
-                    yield _sse_json("reasoning-delta", event.data)
+                    yield format_sse("reasoning-delta", event.data)
                 elif event.type == "text-delta":
-                    yield _sse_json("text-delta", event.data)
+                    yield format_sse("text-delta", event.data)
                 elif event.type == "tool-call":
-                    yield _sse_json("tool-call", {
+                    yield format_sse("tool-call", {
                         "id": event.data["id"],
                         "name": event.data["name"],
                         "input": event.data["input"],
                     })
                 elif event.type == "tool-result":
-                    yield _sse_json("tool-result", {
+                    yield format_sse("tool-result", {
                         "id": event.data["id"],
                         "name": event.data["name"],
                         "result": event.data.get("result", ""),
                         "attachments": event.data.get("attachments", []),
                     })
                 elif event.type == "tool-error":
-                    yield _sse_json("tool-error", {
+                    yield format_sse("tool-error", {
                         "id": event.data["id"],
                         "name": event.data["name"],
                         "error": event.data.get("error", ""),
                     })
                 elif event.type == "step-finish":
-                    context_limit = get_model_context_limit(_config["model"])
-                    context_usage_pct = round((rt.token_usage.total_tokens / context_limit) * 100, 1) if context_limit > 0 and rt.token_usage.total_tokens > 0 else 0
-                    yield _sse_json("step-finish", {
+                    cfg = get_config()
+                    context_limit = get_model_context_limit(cfg.model)
+                    context_usage_pct = (
+                        round((session.token_usage.total_tokens / context_limit) * 100, 1)
+                        if context_limit > 0 and session.token_usage.total_tokens > 0
+                        else 0
+                    )
+                    yield format_sse("step-finish", {
                         "finish_reason": event.data.get("finish_reason", ""),
                         "usage": event.data.get("usage", {}),
                         "context_limit": context_limit,
                         "context_usage_pct": context_usage_pct,
                     })
                 elif event.type == "provider-error":
-                    yield _sse_json("provider-error", event.data)
+                    yield format_sse("provider-error", event.data)
                 elif event.type == "finish":
-                    yield _sse_json("finish", {
+                    yield format_sse("finish", {
                         "finish_reason": event.data.get("finish_reason", ""),
                     })
-
-        yield _sse_json("done", {"messages": rt.msgs.get_api_messages()})
 
     return StreamingResponse(
         event_stream(),
@@ -355,91 +220,82 @@ async def chat_sse(body: ChatInput):
     )
 
 
-# ── Config API ─────────────────────────────────────────────
 @app.get("/api/config")
-async def get_config():
-    cfg = dict(_config)
-    if cfg.get("api_key"):
-        k = cfg["api_key"]
-        cfg["api_key"] = k[:6] + "..." + k[-4:] if len(k) > 12 else "***"
-    return JSONResponse(cfg)
+async def get_config_route():
+    cfg = get_config()
+    d = cfg.model_dump()
+    if d.get("api_key"):
+        k = d["api_key"]
+        d["api_key"] = k[:6] + "..." + k[-4:] if len(k) > 12 else "***"
+    return JSONResponse(d)
 
 
 @app.put("/api/config")
-async def update_config(body: ConfigUpdate):
+async def update_config_route(body: ConfigUpdate):
+    kwargs = {}
     if body.base_url is not None:
-        _config["base_url"] = body.base_url
+        kwargs["base_url"] = body.base_url
     if body.model is not None:
-        _config["model"] = body.model
+        kwargs["model"] = body.model
     if body.api_key is not None:
-        _config["api_key"] = body.api_key
-    for rid, rt in _runtimes.items():
-        rt.provider = OpenAIProvider(
-            model=_config["model"],
-            base_url=_config["base_url"],
-            api_key=_config["api_key"],
-        )
-    return JSONResponse(_config)
+        kwargs["api_key"] = body.api_key
+    update_config_module(**kwargs)
+    cfg = get_config()
+    for s in sm.list():
+        s.release()
+    return JSONResponse(cfg.model_dump())
 
 
-# ── Messages API ───────────────────────────────────────────
 @app.get("/api/messages")
 async def get_messages():
-    p = _ensure_project_or_none()
-    if not p:
-        return JSONResponse({"messages": []})
-    rt = _get_runtime(p.id)
-    return JSONResponse({"messages": rt.msgs.get_api_messages() if rt.msgs else []})
+    s = sm.current
+    return JSONResponse({"messages": s.msgs.get_api_messages() if s else []})
 
 
 @app.put("/api/messages")
 async def update_messages(body: MessagesUpdate):
-    p = _ensure_project_or_none()
-    if not p:
-        return JSONResponse({"error": "No project"}, status_code=400)
-    rt = _get_runtime(p.id)
-    if not rt.msgs:
-        return JSONResponse({"error": "Session not initialized"}, status_code=500)
-    rt.msgs._messages = body.messages
-    return JSONResponse({"messages": rt.msgs.get_api_messages()})
+    s = sm.get_or_create_current()
+    s.msgs._messages = body.messages
+    return JSONResponse({"messages": s.msgs.get_api_messages()})
 
 
 @app.post("/api/messages/clear")
 async def clear_messages():
-    p = _ensure_project_or_none()
-    if not p:
+    s = sm.current
+    if not s:
         return JSONResponse({"messages": []})
-    rt = _get_runtime(p.id)
-    rt.project.messages = []
-    rt.msgs = MessageManager(load_prompt("default"), project=rt.project)
-    rt.token_usage = TokenUsage()
-    _pm.save(rt.project)
-    return JSONResponse({"messages": rt.msgs.get_api_messages()})
+    s.token_usage = TokenUsage()
+    s.release()
+    s.messages = []
+    sm.save(s)
+    return JSONResponse({"messages": []})
 
 
-# ── Status API ─────────────────────────────────────────────
 @app.get("/api/status")
 async def get_status():
-    p = _ensure_project_or_none()
-    msgs = []
+    s = sm.current
+    msg_count = 0
     agent_name = ""
     token_usage = TokenUsage()
-    if p:
-        rt = _get_runtime(p.id)
-        if rt:
-            msgs = rt.msgs.get_messages() if rt.msgs else []
-            agent_name = rt.project.name if rt.project else ""
-            token_usage = rt.token_usage
-    context_limit = get_model_context_limit(_config["model"])
-    context_usage_pct = round((token_usage.total_tokens / context_limit) * 100, 1) if context_limit > 0 and token_usage.total_tokens > 0 else 0
+    if s:
+        msg_count = len(s.msgs.get_messages())
+        agent_name = s.name
+        token_usage = s.token_usage
+    cfg = get_config()
+    context_limit = get_model_context_limit(cfg.model)
+    context_usage_pct = (
+        round((token_usage.total_tokens / context_limit) * 100, 1)
+        if context_limit > 0 and token_usage.total_tokens > 0
+        else 0
+    )
     return JSONResponse({
-        "model": _config["model"],
-        "base_url": _config["base_url"],
+        "model": cfg.model,
+        "base_url": cfg.base_url,
         "token_usage": token_usage.model_dump(),
         "context_limit": context_limit,
         "context_usage_pct": context_usage_pct,
         "workdir": _PROJECT_ROOT,
-        "message_count": len(msgs),
+        "message_count": msg_count,
         "agent_name": agent_name,
     })
 

@@ -50,11 +50,11 @@
       <div class="debug-section-body open" id="section-config">
         <div class="config-field">
           <label>Base URL</label>
-          <input type="text" id="cfg-url" placeholder="https://opencode.ai/zen/v1">
+          <input type="text" id="cfg-url" placeholder="url">
         </div>
         <div class="config-field">
           <label>Model</label>
-          <input type="text" id="cfg-model" placeholder="mimo-v2.5-free">
+          <input type="text" id="cfg-model" placeholder="model">
         </div>
         <div class="debug-actions">
           <button class="btn btn-primary btn-sm" id="cfg-apply">Apply</button>
@@ -64,10 +64,10 @@
     </div>
 
     <div class="debug-section">
-      <div class="debug-section-title" data-section="context">
+      <div class="debug-section-title open" data-section="context">
         <span class="arrow">&#9654;</span> Full Message Context
       </div>
-      <div class="debug-section-body" id="section-context">
+      <div class="debug-section-body open" id="section-context">
         <textarea class="context-editor" id="context-editor" spellcheck="false"></textarea>
         <div class="debug-actions">
           <button class="btn btn-primary btn-sm" id="ctx-apply">Apply Changes</button>
@@ -76,10 +76,10 @@
     </div>
 
     <div class="debug-section">
-      <div class="debug-section-title" data-section="status">
+      <div class="debug-section-title open" data-section="status">
         <span class="arrow">&#9654;</span> Status
       </div>
-      <div class="debug-section-body" id="section-status">
+      <div class="debug-section-body open" id="section-status">
         <div class="status-grid">
           <span class="s-label">Model</span><span class="s-value" id="st-model">—</span>
           <span class="s-label">Base URL</span><span class="s-value" id="st-base-url" style="word-break:break-all">—</span>

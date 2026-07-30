@@ -54,7 +54,7 @@ def to_model_output(data: dict) -> str:
 tool = Tool(
     name="glob",
     description="""- Fast file pattern matching (glob) for any codebase size
-- Supports patterns like "**/*.js" or "src/**/*.ts"
+- Supports patterns like "**/*.py" or "src/**/*.{py,js}"
 - Returns matching file paths
 - Use for finding files by name patterns
 - For open-ended multi-round searches, use Task tool instead""",

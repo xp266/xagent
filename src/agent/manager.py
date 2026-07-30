@@ -2,8 +2,6 @@ from src.types.messages import (
     SystemMessage, UserMessage, AssistantMessage, ToolMessage, ToolCall, Message,
 )
 from src.types.events import LLMResponse
-from src.agent.projects import Project
-
 
 SYNTHETIC_ATTACHMENT_PROMPT = "The tool returned the following image attachment(s). Please use them to continue."
 
@@ -20,9 +18,9 @@ def _messages_to_api(messages: list) -> list[dict]:
 
 class MessageManager:
 
-    def __init__(self, system_prompt: str = "", project: Project | None = None):
-        self.project = project
-        self._messages: list[Message | dict] = list(project.messages) if project else []
+    def __init__(self, system_prompt: str = "", session=None):
+        self._session = session
+        self._messages: list[Message | dict] = list(session.messages) if session else []
 
         if system_prompt:
             if not self._messages or not isinstance(self._messages[0], dict) or self._messages[0].get("role") != "system":
@@ -66,9 +64,5 @@ class MessageManager:
         return _messages_to_api(self._messages)
 
     def save(self) -> None:
-        if self.project:
-            self.project.messages = _messages_to_api(self._messages)
-
-    @property
-    def session(self):
-        return self.project
+        if self._session:
+            self._session.messages = _messages_to_api(self._messages)
