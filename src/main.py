@@ -6,5 +6,9 @@ if __name__ == "__main__":
     load_dotenv()
     sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-    from src.ui.web.server import run_web
-    run_web()
+    if "--web" in sys.argv:
+        from src.ui.web.server import run_web
+        run_web()
+    else:
+        from src.ui.tui.app import run_tui
+        run_tui()
