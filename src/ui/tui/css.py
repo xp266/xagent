@@ -56,7 +56,12 @@ CSS = """
     }
     .reply-bubble {
         padding: 1 1 0 2;
-        margin-bottom: -1;
+    }
+    .reply-bubble MarkdownParagraph {
+        margin: 0 0 1 0;
+    }
+    .reply-bubble MarkdownBlock:last-child {
+        margin-bottom: 0;
     }
     .user-bubble {
         background: #1A1A1A;
