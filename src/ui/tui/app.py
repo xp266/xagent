@@ -6,7 +6,7 @@ from functools import partial
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.content import Content
-from textual.widgets import Static, Collapsible
+from textual.widgets import Static, Collapsible, Markdown
 from rich.text import Text
 
 from src.agent import get_session_manager, run_session_turn, name_session_from_first_message
@@ -17,9 +17,9 @@ from src.types.events import StreamEvent
 from src.ui.tui.css import CSS
 from src.ui.tui.logo import build_logo_text
 from src.ui.tui.lazy import LazyText
-from src.ui.tui.render import clean_result, fmt_duration, fmt_pct, is_error_result, tool_render
+from src.ui.tui.render import clean_result, code_tool, fmt_duration, fmt_pct, is_error_result, tool_markdown, tool_render
 from src.ui.tui.streaming import stream_args
-from src.ui.tui.widgets import ChatInput
+from src.ui.tui.widgets import ChatInput, LazyCollapsible, LazyMarkdown
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
@@ -102,7 +102,12 @@ class XAgentTUI(App):
             cur["thinking"].update(cur["reasoning_text"])
 
         if cur["reply"] is not None and cur.get("reply_text"):
-            cur["reply"].update(cur["reply_text"])
+            md = cur["reply"]
+            reply_text = cur["reply_text"]
+            prev_len = cur.get("reply_appended", 0)
+            if len(reply_text) > prev_len:
+                md.append(reply_text[prev_len:])
+                cur["reply_appended"] = len(reply_text)
 
         for tc_id, (st_widget, col) in cur["tools"].items():
             if tc_id in cur.get("tool_done", set()):
@@ -263,7 +268,7 @@ class XAgentTUI(App):
     def _ensure_reply(self):
         cur = self._current
         if cur["reply"] is None:
-            st = LazyText("", markup=False)
+            st = Markdown("")
             self._chat().mount(Vertical(st, classes="bubble reply-bubble"))
             cur["reply"] = st
         return cur["reply"]
@@ -284,6 +289,12 @@ class XAgentTUI(App):
         self._current["tool_inputs"][tc_id] = {}
         self._current["tool_buffers"][tc_id] = {"name": name, "raw": ""}
         self._start_spinner(col._title)
+
+    def _set_tool_content(self, col, widget) -> None:
+        contents = col.query_one("Contents")
+        for child in list(contents.children):
+            child.remove()
+        contents.mount(widget)
 
     def _finalize_tool_stream(self, tc_id: str, name: str, args: dict) -> None:
         if tc_id not in self._current["tools"]:
@@ -309,6 +320,19 @@ class XAgentTUI(App):
         self._stop_spinner(col._title)
         args = self._current["tool_inputs"].get(tc_id, {})
         title, t = tool_render(name, args, result, is_error)
+        if str(col._title.label) != title:
+            col._title.label = title
+        if code_tool(name):
+            md = tool_markdown(name, args, result, is_error)
+            if md is not None:
+                m_title, m = md
+                if str(col._title.label) != m_title:
+                    col._title.label = m_title
+                self._set_tool_content(col, Markdown(m))
+                self._current["tool_done"].add(tc_id)
+                if is_error:
+                    col.add_class("tool-error")
+                return
         st.update(t)
         if is_error:
             col.add_class("tool-error")
@@ -348,6 +372,7 @@ class XAgentTUI(App):
             self._remove_empty_thinking()
             cur["reply"] = None
             cur["reply_text"] = ""
+            cur["reply_appended"] = 0
             self._ensure_reply()
         elif t == "text-delta":
             cur["reply_text"] += event.data
@@ -498,10 +523,16 @@ class XAgentTUI(App):
                         args = {}
                     result = clean_result(name, tool_results.get(tc.get("id", ""), ""))
                     is_error = is_error_result(name, result)
-                    title, t = tool_render(name, args, result, is_error)
                     classes = "bubble tool-bubble" + (" tool-error" if is_error else "")
-                    chat.mount(Collapsible(
-                        LazyText(t),
+                    md = tool_markdown(name, args, result, is_error)
+                    if md is not None:
+                        title, m = md
+                        content_widget = LazyMarkdown(m, auto=False)
+                    else:
+                        title, t = tool_render(name, args, result, is_error)
+                        content_widget = LazyText(t)
+                    chat.mount(LazyCollapsible(
+                        content_widget,
                         title=title,
                         classes=classes,
                         collapsed=True,
@@ -510,7 +541,7 @@ class XAgentTUI(App):
                     ))
 
                 if content:
-                    chat.mount(Vertical(LazyText(content, markup=False), classes="bubble reply-bubble"))
+                    chat.mount(Vertical(LazyMarkdown(content), classes="bubble reply-bubble"))
                     if self._is_turn_end(messages, idx):
                         cfg = get_config()
                         model = cfg.model or "?"
@@ -560,6 +591,7 @@ class XAgentTUI(App):
             "tokens": 0,
             "reasoning_text": "",
             "reply_text": "",
+            "reply_appended": 0,
             "thinking": None,
             "reply": None,
             "tools": {},

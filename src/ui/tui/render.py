@@ -1,8 +1,25 @@
+import os
 import re
 
 from rich.text import Text
+from textual.highlight import guess_language
 
 _READ_HEADER_RE = re.compile(r"^\([^,]+(?:, \d+ lines|, lines [\d-]+/\d+)\)$")
+
+_CODE_TOOLS = {"write", "edit", "read"}
+
+
+def _lang_for(path: str) -> str:
+    """Infer a pygments language name from a file path."""
+    if not path:
+        return "text"
+    return guess_language(path, path)
+
+
+def _code_block(lang: str, code: str) -> str:
+    """Wrap code in a fenced markdown code block."""
+    code = (code or "").rstrip("\n")
+    return f"```{lang}\n{code}\n```\n"
 
 
 def is_error_result(name, result):
@@ -84,6 +101,53 @@ def tool_render(name, args, result, is_error, preview=False):
     else:
         title = name
     return title, Text(result, style="bold #FF5555" if is_error else None)
+
+
+def tool_markdown(name, args, result, is_error, preview=False):
+    """Render write/edit/read tool output as markdown with language highlighting.
+
+    Returns (title, markdown_str) for code tools, or None to keep plain rendering.
+    """
+    result = result or ""
+    if name == "write":
+        path = args.get("path", "")
+        content = args.get("content", "")
+        lines = content.rstrip("\n").split("\n")
+        if preview:
+            max_preview = 100
+            if len(lines) > max_preview:
+                body = f"( {len(lines)} lines, streaming )\n\n" + "\n".join(lines[-max_preview:])
+            else:
+                body = "\n".join(lines)
+        else:
+            body = content
+        if is_error and result:
+            body = body.rstrip("\n") + f"\n\n{result}"
+        return f"write {path}", _code_block(_lang_for(path), body)
+    if name == "read":
+        path = args.get("path", "") or args.get("filePath", "")
+        body = result
+        if is_error and not result:
+            body = result
+        return f"read {path}", _code_block(_lang_for(path), body)
+    if name == "edit":
+        file_path = args.get("filePath", "") or args.get("path", "")
+        old_str = args.get("oldString", "") or ""
+        new_str = args.get("newString", "") or ""
+        diff = []
+        for line in old_str.rstrip("\n").split("\n"):
+            diff.append(f"- {line}")
+        for line in new_str.rstrip("\n").split("\n"):
+            diff.append(f"+ {line}")
+        body = "\n".join(diff)
+        if is_error and result:
+            body = body + f"\n\n{result}"
+        return f"edit {file_path}", _code_block(_lang_for(file_path), body)
+    return None
+
+
+def code_tool(name) -> bool:
+    return name in _CODE_TOOLS
 
 
 def fmt_duration(seconds: float) -> str:

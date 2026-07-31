@@ -81,4 +81,35 @@ CSS = """
         margin: 1 0 1 0;
         padding: 0 1 0 2;
     }
+
+    .reply-bubble > Markdown,
+    .tool-bubble > Contents > Markdown {
+        background: transparent;
+    }
+    .reply-bubble MarkdownParagraph {
+        margin: 0 0 1 0;
+    }
+    .reply-bubble MarkdownTable {
+        margin: 0 0 1 0;
+    }
+    .reply-bubble MarkdownBlockQuote {
+        margin: 0 0 1 0;
+    }
+    .reply-bubble MarkdownFence,
+    .tool-bubble MarkdownFence {
+        margin: 0 0 1 0;
+        background: #1A1A1A;
+    }
+    .reply-bubble MarkdownList,
+    .reply-bubble MarkdownListItem {
+        margin: 0;
+    }
+    .reply-bubble MarkdownH1,
+    .reply-bubble MarkdownH2,
+    .reply-bubble MarkdownH3,
+    .reply-bubble MarkdownH4,
+    .reply-bubble MarkdownH5,
+    .reply-bubble MarkdownH6 {
+        margin: 1 0;
+    }
 """
