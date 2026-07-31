@@ -240,11 +240,11 @@ class SessionPicker(Vertical):
         content-align: left bottom;
         color: #888888;
     }
-    SessionPicker > .picker-row {
+    SessionPicker .picker-row {
         height: 1;
         padding: 0 1;
     }
-    SessionPicker > .picker-row.selected {
+    SessionPicker .picker-row.selected {
         background: #334466;
     }
     """
@@ -301,18 +301,30 @@ class SessionPicker(Vertical):
 
     def show(self, sessions) -> None:
         self._sessions = sessions
-        self.add_class("visible")
         self._rebuild()
+        self._center_presets()
+        self.add_class("visible")
         self.call_after_refresh(self._center)
         self.query_one("#picker-search", Input).focus()
 
-    def _center(self) -> None:
-        """Center the picker within the screen."""
+    def _center_presets(self) -> None:
+        """Set centering offset before showing to avoid a flash at the top-left."""
         try:
             parent_w = self.screen.size.width
             parent_h = self.screen.size.height
-            w = self.size.width
-            h = self.size.height
+            w = int(parent_w * 0.45)
+            h = int(parent_h * 0.45)
+            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
+        except Exception:
+            pass
+
+    def _center(self) -> None:
+        """Recenter the picker once it has real layout dimensions."""
+        try:
+            parent_w = self.screen.size.width
+            parent_h = self.screen.size.height
+            w = self.size.width or int(parent_w * 0.45)
+            h = self.size.height or int(parent_h * 0.45)
             self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
         except Exception:
             pass
