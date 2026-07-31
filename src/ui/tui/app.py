@@ -39,6 +39,8 @@ _BLUE_WAVE = (
 
 _WAVE_SPEED = 8.0  # characters per second
 
+_RENDER_COOLDOWN = 0.04  # seconds between streaming renders
+
 
 class XAgentTUI(App):
     CSS = CSS
@@ -82,7 +84,44 @@ class XAgentTUI(App):
                 child.remove()
 
     def _scroll_end(self):
-        self._chat().scroll_end(animate=False)
+        chat = self._chat()
+        if chat.max_scroll_y <= 0 or chat.scroll_offset.y >= chat.max_scroll_y - 3:
+            chat.scroll_end(animate=False)
+
+    def _flush_streaming_content(self, force: bool = False) -> None:
+        cur = self._current
+        if cur is None:
+            return
+        now = time.monotonic()
+        if not force and now - cur["last_stream_render"] < _RENDER_COOLDOWN:
+            return
+        cur["last_stream_render"] = now
+
+        if cur["thinking"] is not None and cur.get("reasoning_text"):
+            cur["thinking"].update(cur["reasoning_text"])
+
+        if cur["reply"] is not None and cur.get("reply_text"):
+            cur["reply"].update(cur["reply_text"])
+
+        for tc_id, (st_widget, col) in cur["tools"].items():
+            if tc_id in cur.get("tool_done", set()):
+                continue
+            info = cur["tool_buffers"].get(tc_id)
+            if info is None:
+                continue
+            raw_len = len(info["raw"])
+            if not force and raw_len == info.get("_last_len", 0):
+                continue
+            info["_last_len"] = raw_len
+            args = stream_args(info["raw"], info["name"])
+            title, t = tool_render(info["name"], args, None, False, preview=True)
+            title = title.strip() or info["name"]
+            if str(col._title.label) != title:
+                col._title.label = title
+                self._render_spinner(col._title)
+            st_widget.update(t)
+
+        self._scroll_end()
 
     def _context_pct(self, limit: int) -> float:
         if self._ctx_usage_tokens > 0 and limit > 0:
@@ -109,8 +148,9 @@ class XAgentTUI(App):
                     best = distance
         return _BLUE_WAVE[best] if best is not None else None
 
-    def _update_status(self) -> None:
-        status = self._status_string()
+    def _update_status(self, status: str | None = None) -> None:
+        if status is None:
+            status = self._status_string()
         if self._busy and self._waves:
             now = time.monotonic()
             text = Text()
@@ -162,8 +202,11 @@ class XAgentTUI(App):
             self._render_spinner(title)
 
     def _tick_animations(self) -> None:
-        self._tick_spinners()
-        self._tick_status_wave()
+        if self._busy:
+            self._tick_spinners()
+            self._tick_status_wave()
+        if self._current is not None:
+            self._flush_streaming_content()
 
     def _tick_status_wave(self) -> None:
         if not self._busy:
@@ -172,7 +215,8 @@ class XAgentTUI(App):
                 self._update_status()
             return
         now = time.monotonic()
-        n = len(self._status_string())
+        status = self._status_string()
+        n = len(status)
         if self._waves:
             head = (now - self._waves[0]) * _WAVE_SPEED
             if head >= (n - 1) + (len(_BLUE_WAVE) - 1):
@@ -180,7 +224,7 @@ class XAgentTUI(App):
         if not self._waves:
             self._waves.append(now)
         self._waves = [t0 for t0 in self._waves if (now - t0) * _WAVE_SPEED < n + len(_BLUE_WAVE)]
-        self._update_status()
+        self._update_status(status=status)
 
     def _ensure_thinking(self):
         cur = self._current
@@ -240,25 +284,6 @@ class XAgentTUI(App):
         self._current["tool_buffers"][tc_id] = {"name": name, "raw": ""}
         self._start_spinner(col._title)
 
-    def _update_tool_stream(self, tc_id: str) -> None:
-        now = time.monotonic()
-        if now - self._current["last_stream_render"] < 0.03:
-            return
-        self._current["last_stream_render"] = now
-        pair = self._current["tools"].get(tc_id)
-        info = self._current["tool_buffers"].get(tc_id)
-        if pair is None or info is None:
-            return
-        st, col = pair
-        args = stream_args(info["raw"], info["name"])
-        title, t = tool_render(info["name"], args, None, False)
-        title = title.strip() or info["name"]
-        if str(col._title.label) != title:
-            col._title.label = title
-            self._render_spinner(col._title)
-        st.update(t)
-        self._scroll_end()
-
     def _finalize_tool_stream(self, tc_id: str, name: str, args: dict) -> None:
         if tc_id not in self._current["tools"]:
             self._add_tool_streaming(tc_id, name)
@@ -286,6 +311,7 @@ class XAgentTUI(App):
         st.update(t)
         if is_error:
             col.add_class("tool-error")
+        self._current["tool_done"].add(tc_id)
 
     def _add_summary(self, tokens: int, elapsed: float) -> None:
         cfg = get_config()
@@ -307,22 +333,26 @@ class XAgentTUI(App):
                 self._start_spinner(cur["thinking_title"])
         elif t == "reasoning-delta":
             cur["reasoning_text"] += event.data
-            self._ensure_thinking().update(cur["reasoning_text"])
-            self._scroll_end()
+            if cur["thinking"] is None:
+                self._ensure_thinking()
+            self._flush_streaming_content()
         elif t == "reasoning-end":
+            self._flush_streaming_content(force=True)
             self._stop_spinner(cur.get("thinking_title"))
             cur["thinking"] = None
             cur["thinking_title"] = None
             cur["thinking_col"] = None
         elif t == "text-start":
+            self._flush_streaming_content(force=True)
             self._remove_empty_thinking()
             cur["reply"] = None
             cur["reply_text"] = ""
             self._ensure_reply()
         elif t == "text-delta":
             cur["reply_text"] += event.data
-            self._ensure_reply().update(cur["reply_text"])
-            self._scroll_end()
+            if cur["reply"] is None:
+                self._ensure_reply()
+            self._flush_streaming_content()
         elif t == "tool-input-start":
             self._remove_empty_thinking()
             data = event.data
@@ -333,11 +363,9 @@ class XAgentTUI(App):
             info = self._current["tool_buffers"].get(data["id"])
             if info is not None:
                 info["raw"] += data.get("delta", "")
-                self._update_tool_stream(data["id"])
+                self._flush_streaming_content()
         elif t == "tool-input-end":
-            data = event.data
-            self._current["last_stream_render"] = 0.0
-            self._update_tool_stream(data["id"])
+            self._flush_streaming_content(force=True)
         elif t == "tool-call":
             data = event.data
             self._finalize_tool_stream(data["id"], data["name"], data.get("input", {}))
@@ -357,6 +385,7 @@ class XAgentTUI(App):
             self._set_tool_result(data["id"], data["name"], data.get("error", ""), True)
             self._scroll_end()
         elif t == "step-start":
+            self._flush_streaming_content(force=True)
             self._stop_all_spinners()
         elif t == "step-finish":
             usage = event.data.get("usage", {}) or {}
@@ -378,6 +407,7 @@ class XAgentTUI(App):
         self.call_from_thread(self._finalize_turn, elapsed)
 
     def _finalize_turn(self, elapsed: float) -> None:
+        self._flush_streaming_content(force=True)
         cur = self._current
         if cur and cur["steps"] > 0:
             self._add_summary(cur["tokens"], elapsed)
@@ -534,6 +564,7 @@ class XAgentTUI(App):
             "tools": {},
             "tool_inputs": {},
             "tool_buffers": {},
+            "tool_done": set(),
             "last_stream_render": 0.0,
         }
         self._append_user(text)

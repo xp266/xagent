@@ -35,7 +35,7 @@ def clean_result(name, result):
     return result
 
 
-def tool_render(name, args, result, is_error):
+def tool_render(name, args, result, is_error, preview=False):
     result = result or ""
     if name == "bash":
         cmd = args.get("command", "")
@@ -48,8 +48,16 @@ def tool_render(name, args, result, is_error):
         path = args.get("path", "")
         write_content = args.get("content", "")
         lines = write_content.rstrip("\n").split("\n")
-        numbered = "\n".join(f"{i} {line}" for i, line in enumerate(lines, 1))
-        t = Text(numbered)
+        if preview:
+            max_preview = 100
+            if len(lines) > max_preview:
+                t = Text(f"({len(lines)} lines, streaming)\n")
+                t.append("\n".join(lines[-max_preview:]))
+            else:
+                t = Text("\n".join(lines))
+        else:
+            numbered = "\n".join(f"{i} {line}" for i, line in enumerate(lines, 1))
+            t = Text(numbered)
         if is_error and result:
             t.append(f"\n\n{result}", style="bold #FF5555")
         return f"write {path}", t
