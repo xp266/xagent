@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rich.segment import Segment
+from rich.style import Style
 
 from textual.content import Content
 from textual.strip import Strip
@@ -73,7 +74,7 @@ def _build_strip(line: Content) -> Strip:
             segments.append(Segment(plain[pos:span.start], None))
         style_raw = span.style
         if isinstance(style_raw, str):
-            seg_style = style_raw
+            seg_style = Style.parse(style_raw)
         elif style_raw is not None:
             seg_style = style_raw.rich_style
         else:
