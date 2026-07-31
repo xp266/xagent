@@ -14,21 +14,25 @@ def _extract_texts(data: dict) -> list[str] | None:
     return None
 
 
-def _extract_sse_text(text: str) -> str | None:
+def _extract_result(text: str) -> tuple[str | None, bool]:
+    def parse(data: dict) -> tuple[str | None, bool]:
+        texts = _extract_texts(data)
+        if texts:
+            return "\n\n".join(texts), bool(data.get("result", {}).get("isError"))
+        return None, False
+
     try:
         for line in text.strip().split("\n"):
             if line.startswith("data: "):
-                data = json.loads(line[6:])
-                texts = _extract_texts(data)
-                if texts:
-                    return "\n\n".join(texts)
-        data = json.loads(text)
-        texts = _extract_texts(data)
-        if texts:
-            return "\n\n".join(texts)
+                joined, is_error = parse(json.loads(line[6:]))
+                if joined is not None:
+                    return joined, is_error
+        joined, is_error = parse(json.loads(text))
+        if joined is not None:
+            return joined, is_error
     except Exception:
         pass
-    return None
+    return None, False
 
 
 def execute(query: str, num_results: int = 8, type: str = "auto",
@@ -55,7 +59,9 @@ def execute(query: str, num_results: int = 8, type: str = "auto",
     with httpx.Client(timeout=30) as client:
         resp = client.post(url, json=payload, headers={"Accept": "application/json, text/event-stream"})
         resp.raise_for_status()
-        result = _extract_sse_text(resp.text)
+        result, is_error = _extract_result(resp.text)
+        if is_error:
+            return f"Search failed: {result}"
         return result if result else resp.text[:2000]
 
 
