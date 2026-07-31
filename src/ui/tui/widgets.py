@@ -212,8 +212,8 @@ class SessionPicker(Vertical):
     DEFAULT_CSS = """
     SessionPicker {
         display: none;
-        width: 50%;
-        height: 50%;
+        width: 45%;
+        height: 45%;
         background: #1A1A1A;
         border: none;
         padding: 1;

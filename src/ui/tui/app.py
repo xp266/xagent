@@ -597,17 +597,25 @@ class XAgentTUI(App):
     def _palette(self) -> CommandPalette:
         return self.query_one("#command-palette", CommandPalette)
 
+    def _palette_overlay(self):
+        return self.query_one("#palette-overlay")
+
     def _refresh_palette(self) -> None:
         if getattr(self, "_suppress_palette", False):
             return
         text = self.query_one("#input", ChatInput).text
         if not text.startswith("/"):
             self._palette().hide()
+            self._palette_overlay().remove_class("visible")
             self._set_palette_open(False)
             return
         query = text[1:].lstrip()
         commands = match_commands(query)
         self._palette().show(commands)
+        if commands:
+            self._palette_overlay().add_class("visible")
+        else:
+            self._palette_overlay().remove_class("visible")
         self._set_palette_open(bool(commands))
 
     def _set_palette_open(self, open: bool) -> None:
@@ -626,6 +634,7 @@ class XAgentTUI(App):
         inp = self.query_one("#input", ChatInput)
         inp.clear()
         self._palette().hide()
+        self._palette_overlay().remove_class("visible")
         self._set_palette_open(False)
         self._suppress_palette = True
         inp.insert(f"/{cmd.name} ")
@@ -638,6 +647,7 @@ class XAgentTUI(App):
     def _open_session_picker(self) -> None:
         sessions = self._sm.list()
         self._palette().hide()
+        self._palette_overlay().remove_class("visible")
         self._set_palette_open(False)
         self.query_one("#picker-overlay").add_class("visible")
         self._picker().show(sessions)
@@ -723,6 +733,7 @@ class XAgentTUI(App):
 
     def on_chat_input_submitted(self, message: ChatInput.Submitted) -> None:
         self._palette().hide()
+        self._palette_overlay().remove_class("visible")
         self._set_palette_open(False)
         self._handle_input(message.text)
 
@@ -730,7 +741,8 @@ class XAgentTUI(App):
         with VerticalScroll(id="chat-box"):
             pass
 
-        yield CommandPalette(id="command-palette")
+        with Vertical(id="palette-overlay"):
+            yield CommandPalette(id="command-palette")
 
         with Vertical(id="input-box"):
             yield ChatInput(soft_wrap=True, id="input")

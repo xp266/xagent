@@ -17,6 +17,22 @@ CSS = """
     #picker-overlay.visible {
         display: block;
     }
+    #palette-overlay {
+        display: none;
+        width: 100%;
+        height: 100%;
+        align: center bottom;
+        padding-bottom: 6;
+        layer: overlay;
+    }
+    #palette-overlay.visible {
+        display: block;
+    }
+    #palette-overlay CommandPalette {
+        height: auto;
+        max-height: 8;
+        margin: 0 2 1 2;
+    }
     TextArea {
         height: 1fr;
         border: none;
