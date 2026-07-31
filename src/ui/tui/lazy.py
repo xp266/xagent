@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from rich.segment import Segment
+from rich.style import Style as RichStyle
 
 from textual.content import Content
 from textual.strip import Strip
@@ -47,7 +48,7 @@ class LazyText(Static):
         if y >= len(self._strips):
             return Strip.blank(self.size.width)
         if self._strips[y] is None:
-            self._strips[y] = _content_line_to_strip(self._lines[y])
+            self._strips[y] = _build_strip(self._lines[y], y)
         return self._strips[y]  # type: ignore
 
     def update(self, content="", layout=True):
@@ -57,26 +58,32 @@ class LazyText(Static):
         super().update(content, layout=layout)
 
 
-def _content_line_to_strip(line: Content) -> Strip:
+def _build_strip(line: Content, line_no: int) -> Strip:
     plain = line.plain
     spans = list(line.spans)
     if not spans:
-        return Strip([Segment(plain, None)])
+        seg = Segment(plain, _style_with_offset(0, line_no))
+        return Strip([seg])
     spans.sort(key=lambda s: s.start)
     segments: list[Segment] = []
     pos = 0
     for span in spans:
         if span.start > pos:
-            segments.append(Segment(plain[pos:span.start], None))
+            segments.append(Segment(plain[pos:span.start], _style_with_offset(pos, line_no)))
         style_raw = span.style
         if isinstance(style_raw, str):
-            seg_style = style_raw
+            seg_style = RichStyle.parse(style_raw)
         elif style_raw is not None:
             seg_style = style_raw.rich_style
         else:
             seg_style = None
+        seg_style = RichStyle.combine([seg_style, _style_with_offset(span.start, line_no)])
         segments.append(Segment(plain[span.start:span.end], seg_style or None))
         pos = span.end
     if pos < len(plain):
-        segments.append(Segment(plain[pos:], None))
+        segments.append(Segment(plain[pos:], _style_with_offset(pos, line_no)))
     return Strip(segments)
+
+
+def _style_with_offset(x: int, y: int) -> RichStyle:
+    return RichStyle.from_meta({"offset": (x, y)})
