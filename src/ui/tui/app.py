@@ -16,6 +16,7 @@ from src.types.events import StreamEvent
 
 from src.ui.tui.css import CSS
 from src.ui.tui.logo import build_logo_text
+from src.ui.tui.lazy import LazyText
 from src.ui.tui.render import clean_result, fmt_duration, fmt_pct, is_error_result, tool_render
 from src.ui.tui.streaming import stream_args
 from src.ui.tui.widgets import ChatInput
@@ -269,7 +270,7 @@ class XAgentTUI(App):
 
     def _add_tool_streaming(self, tc_id: str, name: str) -> None:
         title, t = tool_render(name, {}, None, False)
-        st = Static(t)
+        st = LazyText(t)
         col = Collapsible(
             st,
             title=title,
@@ -500,7 +501,7 @@ class XAgentTUI(App):
                     title, t = tool_render(name, args, result, is_error)
                     classes = "bubble tool-bubble" + (" tool-error" if is_error else "")
                     chat.mount(Collapsible(
-                        Static(t),
+                        LazyText(t),
                         title=title,
                         classes=classes,
                         collapsed=True,
