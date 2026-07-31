@@ -91,6 +91,7 @@ CSS = """
     .reply-bubble > Markdown,
     .tool-bubble > Contents > Markdown {
         background: transparent;
+        padding: 0;
     }
     .reply-bubble MarkdownParagraph {
         margin: 0 0 1 0;
