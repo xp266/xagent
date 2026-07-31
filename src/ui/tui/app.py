@@ -23,6 +23,24 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
+_BLUE_WAVE = (
+    "#1E3A8A",  # head (deepest)
+    "#1D4ED8",
+    "#2563EB",
+    "#3B82F6",
+    "#60A5FA",
+    "#93C5FD",
+    "#A5B8FB",
+    "#C0CDFC",
+    "#D6E0FD",
+    "#E6EBFE",
+    "#F1F4FF",
+    "#F8FAFF",  # tail (lightest)
+)
+
+_WAVE_SPEED = 15.0  # characters per second
+_WAVE_INTERVAL = 3.0  # seconds between wave launches
+
 
 class XAgentTUI(App):
     CSS = CSS
@@ -36,6 +54,7 @@ class XAgentTUI(App):
         self._current = None
         self._spinner_idx = 0
         self._spinners = {}
+        self._waves = []
 
     def _chat(self):
         return self.query_one("#chat-box")
@@ -51,14 +70,33 @@ class XAgentTUI(App):
             return min(100.0, total / limit * 100)
         return 0.0
 
-    def _update_status(self) -> None:
+    def _status_string(self) -> str:
         cfg = get_config()
         model = cfg.model or "?"
         total = self._session.token_usage.total_tokens
         limit = get_model_context_limit(model)
         pct = self._context_pct(limit)
-        status = f"{model}  {total:,} tokens  {fmt_pct(pct)}  |  xAgent - {self._session.name}"
-        self.query_one("#status", Static).update(status)
+        return f"{model}  {total:,} tokens  {fmt_pct(pct)}  |  xAgent - {self._session.name}"
+
+    def _wave_color_at(self, index: int, now: float):
+        best = None
+        for t0 in self._waves:
+            distance = int((now - t0) * _WAVE_SPEED) - index
+            if 0 <= distance < len(_BLUE_WAVE):
+                if best is None or distance < best:
+                    best = distance
+        return _BLUE_WAVE[best] if best is not None else None
+
+    def _update_status(self) -> None:
+        status = self._status_string()
+        if self._busy and self._waves:
+            now = time.monotonic()
+            text = Text()
+            for i, ch in enumerate(status):
+                text.append(ch, style=self._wave_color_at(i, now))
+        else:
+            text = Text(status)
+        self.query_one("#status", Static).update(text)
 
     def _append_user(self, text: str) -> None:
         self._chat().mount(Vertical(Static(text), classes="bubble user-bubble"))
@@ -98,6 +136,23 @@ class XAgentTUI(App):
         self._spinner_idx += 1
         for title in list(self._spinners):
             self._render_spinner(title)
+
+    def _tick_animations(self) -> None:
+        self._tick_spinners()
+        self._tick_status_wave()
+
+    def _tick_status_wave(self) -> None:
+        if not self._busy:
+            if self._waves:
+                self._waves.clear()
+                self._update_status()
+            return
+        now = time.monotonic()
+        if not self._waves or now - self._waves[-1] >= _WAVE_INTERVAL:
+            self._waves.append(now)
+        limit = len(self._status_string()) + len(_BLUE_WAVE)
+        self._waves = [t0 for t0 in self._waves if (now - t0) * _WAVE_SPEED < limit]
+        self._update_status()
 
     def _ensure_thinking(self):
         cur = self._current
@@ -277,6 +332,7 @@ class XAgentTUI(App):
         if cur and cur["steps"] > 0:
             self._add_summary(cur["tokens"], elapsed)
         self._stop_all_spinners()
+        self._waves.clear()
         self._busy = False
         self._current = None
         self._update_status()
@@ -410,6 +466,7 @@ class XAgentTUI(App):
 
     def _send(self, text: str) -> None:
         self._busy = True
+        self._waves.clear()
         self._current = {
             "steps": 0,
             "tokens": 0,
@@ -444,7 +501,7 @@ class XAgentTUI(App):
         self.title = "XAgent"
         self._update_status()
         self._scroll_end()
-        self.set_interval(0.1, self._tick_spinners, pause=False)
+        self.set_interval(0.1, self._tick_animations, pause=False)
         self.query_one("#input", ChatInput).focus()
 
 
