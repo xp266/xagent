@@ -323,8 +323,8 @@ class SessionPicker(Vertical):
         try:
             parent_w = self.screen.size.width
             parent_h = self.screen.size.height
-            w = self.size.width or int(parent_w * 0.45)
-            h = self.size.height or int(parent_h * 0.45)
+            w = self.region.width or int(parent_w * 0.45)
+            h = self.region.height or int(parent_h * 0.45)
             self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
         except Exception:
             pass
