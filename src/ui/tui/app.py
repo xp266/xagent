@@ -15,6 +15,7 @@ from src.utils.config import get_config
 from src.types.events import StreamEvent
 
 from src.ui.tui.css import CSS
+from src.ui.tui.logo import build_logo_text
 from src.ui.tui.render import clean_result, fmt_duration, fmt_pct, is_error_result, tool_render
 from src.ui.tui.streaming import stream_args
 from src.ui.tui.widgets import ChatInput
@@ -38,7 +39,7 @@ _BLUE_WAVE = (
     "#F8FAFF",  # tail (lightest)
 )
 
-_WAVE_SPEED = 15.0  # characters per second
+_WAVE_SPEED = 8.0  # characters per second
 
 
 class XAgentTUI(App):
@@ -57,6 +58,29 @@ class XAgentTUI(App):
 
     def _chat(self):
         return self.query_one("#chat-box")
+
+    def _show_logo(self) -> None:
+        logo = self._logo()
+        if logo is None:
+            logo = Vertical(Static(build_logo_text()), id="logo-overlay")
+            self._chat().mount(logo)
+        logo.display = True
+
+    def _logo(self):
+        try:
+            return self._chat().get_widget_by_id("logo-overlay")
+        except Exception:
+            return None
+
+    def _hide_logo(self) -> None:
+        logo = self._logo()
+        if logo is not None:
+            logo.display = False
+
+    def _clear_chat_messages(self) -> None:
+        for child in list(self._chat().children):
+            if getattr(child, "id", None) != "logo-overlay":
+                child.remove()
 
     def _scroll_end(self):
         self._chat().scroll_end(animate=False)
@@ -98,10 +122,12 @@ class XAgentTUI(App):
         self.query_one("#status", Static).update(text)
 
     def _append_user(self, text: str) -> None:
+        self._hide_logo()
         self._chat().mount(Vertical(Static(text), classes="bubble user-bubble"))
         self._scroll_end()
 
     def _append_error(self, text: str) -> None:
+        self._hide_logo()
         self._chat().mount(
             Vertical(Static(Text(text, style="bold #FF5555")), classes="bubble reply-bubble")
         )
@@ -383,7 +409,8 @@ class XAgentTUI(App):
     def _new_chat(self) -> None:
         self._session = self._sm.create(path=_PROJECT_ROOT, persist=False)
         self._ctx_usage_tokens = 0
-        self._chat().remove_children()
+        self._clear_chat_messages()
+        self._show_logo()
         self._update_status()
         self._scroll_end()
         self.query_one("#input", ChatInput).focus()
@@ -402,8 +429,8 @@ class XAgentTUI(App):
         self.query_one("#input", ChatInput).focus()
 
     def _render_messages(self) -> None:
+        self._clear_chat_messages()
         chat = self._chat()
-        chat.remove_children()
         tool_results = {}
         for msg in self._session.messages:
             if msg.get("role") == "tool":
@@ -462,6 +489,11 @@ class XAgentTUI(App):
                             Static(f"{model}  {total:,} tokens"),
                             classes="summary-bubble",
                         ))
+
+        if not any(m.get("role") != "system" for m in self._session.messages):
+            self._show_logo()
+        else:
+            self._hide_logo()
 
     @staticmethod
     def _is_turn_end(messages: list, idx: int) -> bool:
@@ -528,6 +560,7 @@ class XAgentTUI(App):
     def on_mount(self) -> None:
         self.title = "XAgent"
         self._update_status()
+        self._show_logo()
         self._scroll_end()
         self.set_interval(0.1, self._tick_animations, pause=False)
         self.query_one("#input", ChatInput).focus()

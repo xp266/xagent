@@ -26,6 +26,14 @@ CSS = """
         padding: 0 0 0 1;
     }
 
+    #logo-overlay {
+        height: 100%;
+        align: center middle;
+    }
+    #logo-overlay > Static {
+        width: auto;
+    }
+
     .bubble {
         border: none;
         margin: 0 3 0 0;
