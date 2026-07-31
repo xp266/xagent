@@ -134,7 +134,7 @@ class XAgentTUI(App):
 
     .bubble {
         border: none;
-        margin: 0;
+        margin: 0 3 0 0;
         height: auto;
         padding: 1;
     }
@@ -151,6 +151,9 @@ class XAgentTUI(App):
 
     .user-bubble, .reply-bubble {
         padding: 1 1 1 2;
+    }
+    .reply-bubble {
+        padding: 1 1 0 2;
     }
     .user-bubble {
         background: #1A1A1A;
@@ -173,7 +176,7 @@ class XAgentTUI(App):
     }
     .summary-bubble {
         height: 1;
-        margin: 0 0 1 0;
+        margin: 1 0 1 0;
         padding: 0 1 0 2;
     }
     """
@@ -566,7 +569,8 @@ class XAgentTUI(App):
             if msg.get("role") == "tool":
                 tool_results[msg["tool_call_id"]] = msg["content"]
 
-        for msg in self._session.messages:
+        messages = self._session.messages
+        for idx, msg in enumerate(messages):
             role = msg.get("role", "")
             if role == "system":
                 continue
@@ -610,13 +614,22 @@ class XAgentTUI(App):
 
                 if content:
                     chat.mount(Vertical(Static(content), classes="bubble reply-bubble"))
-                    cfg = get_config()
-                    model = cfg.model or "?"
-                    total = self._session.token_usage.total_tokens
-                    chat.mount(Vertical(
-                        Static(f"{model}  {total:,} tokens"),
-                        classes="summary-bubble",
-                    ))
+                    if self._is_turn_end(messages, idx):
+                        cfg = get_config()
+                        model = cfg.model or "?"
+                        total = self._session.token_usage.total_tokens
+                        chat.mount(Vertical(
+                            Static(f"{model}  {total:,} tokens"),
+                            classes="summary-bubble",
+                        ))
+
+    @staticmethod
+    def _is_turn_end(messages: list, idx: int) -> bool:
+        for msg in messages[idx + 1:]:
+            if msg.get("role") == "tool":
+                continue
+            return msg.get("role") != "assistant"
+        return True
 
     def _handle_input(self, text: str) -> None:
         text = text.strip()
