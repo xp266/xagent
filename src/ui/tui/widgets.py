@@ -6,8 +6,8 @@ from textual.widgets import TextArea, Markdown, Collapsible
 class LazyMarkdown(Markdown):
     """Markdown that defers parsing until explicitly activated.
 
-    With ``auto=True`` (default) parsing happens shortly after mount in the
-    background without blocking. With ``auto=False`` parsing is deferred until
+    With ``auto=True`` (default) the app calls ``activate_pending()`` after all
+    widgets are mounted. With ``auto=False`` parsing is deferred until
     ``activate()`` is called (e.g. on Collapsible expand).
     """
 
@@ -20,10 +20,9 @@ class LazyMarkdown(Markdown):
         """Set the source to parse on next activation."""
         self._lazy_source = markdown
 
-    async def _on_mount(self, _: events.Mount) -> None:
-        await super()._on_mount(_)
-        if self._auto and self._lazy_source:
-            self.run_worker(self.activate())
+    @property
+    def is_pending(self) -> bool:
+        return bool(self._lazy_source)
 
     async def activate(self) -> None:
         """Parse and display the pending markdown."""

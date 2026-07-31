@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import time
@@ -494,7 +495,6 @@ class XAgentTUI(App):
         self._ctx_usage_tokens = 0
         self._render_messages()
         self._update_status()
-        self._scroll_end()
         self.query_one("#input", ChatInput).focus()
 
     def _render_messages(self) -> None:
@@ -569,6 +569,19 @@ class XAgentTUI(App):
             self._show_logo()
         else:
             self._hide_logo()
+
+        self.run_worker(self._activate_pending_markdown())
+
+    async def _activate_pending_markdown(self) -> None:
+        """Activate auto LazyMarkdown widgets after mount completes."""
+        await asyncio.sleep(0)
+        for md in self._chat().query(LazyMarkdown):
+            if md._auto and md.is_pending:
+                await md.activate()
+        self.call_after_refresh(self._scroll_end_force)
+
+    def _scroll_end_force(self) -> None:
+        self._chat().scroll_end(animate=False)
 
     @staticmethod
     def _is_turn_end(messages: list, idx: int) -> bool:
