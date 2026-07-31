@@ -1,0 +1,76 @@
+CSS = """
+    #chat-box {
+        height: 1fr;
+        border: none;
+        padding: 1;
+        scrollbar-size: 2 1;
+        scrollbar-color: #808080;
+    }
+    TextArea {
+        height: 1fr;
+        border: none;
+        scrollbar-size: 0 0;
+        background: transparent;
+    }
+    #input-box {
+        height: 6;
+        border: solid #334466;
+        padding: 0;
+    }
+    TextArea .text-area--cursor-line {
+        background: transparent;
+    }
+    #status-box {
+        height: 1;
+        border: none;
+        padding: 0 0 0 1;
+    }
+
+    .bubble {
+        border: none;
+        margin: 0 3 0 0;
+        height: auto;
+        padding: 1;
+    }
+    Collapsible.bubble > CollapsibleTitle {
+        padding: 0 1;
+    }
+    .bubble *:focus,
+    .bubble *:hover {
+        background-tint: transparent;
+    }
+    CollapsibleTitle:focus {
+        background: transparent;
+    }
+
+    .user-bubble, .reply-bubble {
+        padding: 1 1 1 2;
+    }
+    .reply-bubble {
+        padding: 1 1 0 2;
+    }
+    .user-bubble {
+        background: #1A1A1A;
+    }
+    .thinking-bubble, .tool-bubble {
+        background: transparent;
+        padding: 1 1 0 1;
+    }
+    .thinking-bubble > CollapsibleTitle {
+        color: #5B9BD5;
+    }
+    .tool-bubble > CollapsibleTitle {
+        color: #70AD47;
+    }
+    .thinking-bubble > Contents > Static {
+        color: #9B9B9B;
+    }
+    .tool-error > CollapsibleTitle {
+        color: #FF5555;
+    }
+    .summary-bubble {
+        height: 1;
+        margin: 1 0 1 0;
+        padding: 0 1 0 2;
+    }
+"""

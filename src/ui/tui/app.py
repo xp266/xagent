@@ -1,15 +1,12 @@
 import json
 import os
-import re
 import time
 from functools import partial
 
-from textual import events
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.content import Content
-from textual.message import Message
-from textual.widgets import Static, TextArea, Collapsible
+from textual.widgets import Static, Collapsible
 from rich.text import Text
 
 from src.agent import get_session_manager, run_session_turn, name_session_from_first_message
@@ -17,169 +14,18 @@ from src.ai.capabilities import get_model_context_limit
 from src.utils.config import get_config
 from src.types.events import StreamEvent
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+from src.ui.tui.css import CSS
+from src.ui.tui.render import clean_result, fmt_duration, fmt_pct, is_error_result, tool_render
+from src.ui.tui.streaming import stream_args
+from src.ui.tui.widgets import ChatInput
 
-_READ_HEADER_RE = re.compile(r"^\([^,]+(?:, \d+ lines|, lines [\d-]+/\d+)\)$")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 
-def _unescape_json(s: str) -> str:
-    return (
-        s.replace("\\n", "\n")
-        .replace("\\t", "\t")
-        .replace('\\"', '"')
-        .replace("\\\\", "\\")
-    )
-
-
-def _json_field(raw: str, key: str) -> str:
-    """Extract a completed string field value from streamed JSON args."""
-    m = re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
-    if not m:
-        return ""
-    return _unescape_json(m.group(1))
-
-
-def _json_tail_field(raw: str, key: str) -> str:
-    """Extract a string field value that may still be streaming (last field)."""
-    m = re.search(rf'"{key}"\s*:\s*"(.*)$', raw, re.S)
-    if not m:
-        return ""
-    val = re.sub(r'"\s*[,}}]?\s*$', "", m.group(1))
-    return _unescape_json(val)
-
-
-def _json_prefix_field(raw: str, key: str) -> str:
-    """Extract a non-last string field value that may still be streaming."""
-    m = re.search(rf'"{key}"\s*:\s*"(.*?)(?="\s*[,}}]|$)', raw, re.S)
-    if not m:
-        return ""
-    return _unescape_json(m.group(1))
-
-
-def _stream_args(raw: str, name: str) -> dict:
-    """Best-effort parse of partial streamed tool args JSON."""
-    if not raw:
-        return {}
-    if name == "bash":
-        return {"command": _json_tail_field(raw, "command")}
-    if name == "write":
-        return {
-            "path": _json_field(raw, "path") or _json_prefix_field(raw, "path"),
-            "content": _json_tail_field(raw, "content"),
-        }
-    if name == "edit":
-        return {
-            "filePath": _json_field(raw, "filePath") or _json_prefix_field(raw, "filePath"),
-            "oldString": _json_field(raw, "oldString") or _json_prefix_field(raw, "oldString"),
-            "newString": _json_tail_field(raw, "newString"),
-        }
-    if name == "read":
-        return {"filePath": _json_field(raw, "filePath") or _json_tail_field(raw, "filePath")}
-    try:
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, dict) else {}
-    except Exception:
-        return {}
-
-
-class ChatInput(TextArea):
-
-    class Submitted(Message):
-        def __init__(self, text: str) -> None:
-            super().__init__()
-            self.text = text
-
-    async def _on_key(self, event: events.Key) -> None:
-        if event.key in ("enter", "ctrl+m"):
-            event.stop()
-            event.prevent_default()
-            text = self.text
-            if text:
-                self.clear()
-                self.post_message(self.Submitted(text))
-            return
-        await super()._on_key(event)
-
-
 class XAgentTUI(App):
-    CSS = """
-    #chat-box {
-        height: 1fr;
-        border: none;
-        padding: 1;
-        scrollbar-size: 2 1;
-        scrollbar-color: #808080;
-    }
-    TextArea {
-        height: 1fr;
-        border: none;
-        scrollbar-size: 0 0;
-        background: transparent;
-    }
-    #input-box {
-        height: 6;
-        border: solid #334466;
-        padding: 0;
-    }
-    TextArea .text-area--cursor-line {
-        background: transparent;
-    }
-    #status-box {
-        height: 1;
-        border: none;
-        padding: 0 0 0 1;
-    }
-
-    .bubble {
-        border: none;
-        margin: 0 3 0 0;
-        height: auto;
-        padding: 1;
-    }
-    Collapsible.bubble > CollapsibleTitle {
-        padding: 0 1;
-    }
-    .bubble *:focus,
-    .bubble *:hover {
-        background-tint: transparent;
-    }
-    CollapsibleTitle:focus {
-        background: transparent;
-    }
-
-    .user-bubble, .reply-bubble {
-        padding: 1 1 1 2;
-    }
-    .reply-bubble {
-        padding: 1 1 0 2;
-    }
-    .user-bubble {
-        background: #1A1A1A;
-    }
-    .thinking-bubble, .tool-bubble {
-        background: transparent;
-        padding: 1 1 0 1;
-    }
-    .thinking-bubble > CollapsibleTitle {
-        color: #5B9BD5;
-    }
-    .tool-bubble > CollapsibleTitle {
-        color: #70AD47;
-    }
-    .thinking-bubble > Contents > Static {
-        color: #9B9B9B;
-    }
-    .tool-error > CollapsibleTitle {
-        color: #FF5555;
-    }
-    .summary-bubble {
-        height: 1;
-        margin: 1 0 1 0;
-        padding: 0 1 0 2;
-    }
-    """
+    CSS = CSS
 
     def __init__(self):
         super().__init__()
@@ -190,94 +36,6 @@ class XAgentTUI(App):
         self._current = None
         self._spinner_idx = 0
         self._spinners = {}
-
-    @staticmethod
-    def _is_error_result(name, result):
-        if not result:
-            return False
-        if name == "bash":
-            return not result.startswith("Command exited with code 0.")
-        success_markers = {
-            "write": ("Wrote file successfully", "Created file successfully", "Updated file successfully"),
-            "edit": ("Edited file successfully",),
-            "read": ("read successfully",),
-        }
-        markers = success_markers.get(name, ())
-        if any(result.startswith(m) for m in markers):
-            return False
-        error_keywords = (
-            "failed", "error", "permission denied", "not found", "not a directory",
-            "cannot", "unable to", "timed out", "exceeded timeout", "is not valid",
-            "no changes to apply", "must not be empty", "does not exist", "binary",
-        )
-        low = result.lower()
-        return any(k in low for k in error_keywords)
-
-    @staticmethod
-    def _clean_result(name, result):
-        if name == "read" and result:
-            lines = result.split("\n")
-            if _READ_HEADER_RE.match(lines[0]):
-                return "\n".join(lines[1:])
-        return result
-
-    @staticmethod
-    def _tool_render(name, args, result, is_error):
-        result = result or ""
-        if name == "bash":
-            cmd = args.get("command", "")
-            t = Text()
-            t.append(f"$ {cmd}", style="bold #70AD47")
-            if result:
-                t.append("\n" + result, style="bold #FF5555" if is_error else "#9B9B9B")
-            return "bash", t
-        if name == "write":
-            path = args.get("path", "")
-            write_content = args.get("content", "")
-            lines = write_content.rstrip("\n").split("\n")
-            numbered = "\n".join(f"{i} {line}" for i, line in enumerate(lines, 1))
-            t = Text(numbered)
-            if is_error and result:
-                t.append(f"\n\n{result}", style="bold #FF5555")
-            return f"write {path}", t
-        if name == "edit":
-            file_path = args.get("filePath", "")
-            old_str = args.get("oldString", "") or ""
-            new_str = args.get("newString", "") or ""
-            old_lines = old_str.rstrip("\n").split("\n")
-            new_lines = new_str.rstrip("\n").split("\n")
-            t = Text()
-            for line in old_lines:
-                t.append("- ", style="#FF9E9E")
-                t.append(f"{line}\n")
-            for line in new_lines:
-                t.append("+ ", style="#9FD28A")
-                t.append(f"{line}\n")
-            t.rstrip()
-            if is_error and result:
-                t.append(f"\n\n{result}", style="bold #FF5555")
-            return f"edit {file_path}", t
-        if args:
-            arg_str = " ".join(f"{k}={v}" for k, v in args.items())
-            title = f"{name}  {{{arg_str}}}"
-        else:
-            title = name
-        return title, Text(result, style="bold #FF5555" if is_error else None)
-
-    @staticmethod
-    def _fmt_duration(seconds: float) -> str:
-        s = int(seconds)
-        if s < 60:
-            return f"{s}s"
-        m, s = divmod(s, 60)
-        if m < 60:
-            return f"{m}m{s:02d}s"
-        h, m = divmod(m, 60)
-        return f"{h}h{m:02d}m"
-
-    @staticmethod
-    def _fmt_pct(pct: float) -> str:
-        return f"{pct:g}% context"
 
     def _chat(self):
         return self.query_one("#chat-box")
@@ -299,7 +57,7 @@ class XAgentTUI(App):
         total = self._session.token_usage.total_tokens
         limit = get_model_context_limit(model)
         pct = self._context_pct(limit)
-        status = f"{model}  {total:,} tokens  {self._fmt_pct(pct)}  |  xAgent - {self._session.name}"
+        status = f"{model}  {total:,} tokens  {fmt_pct(pct)}  |  xAgent - {self._session.name}"
         self.query_one("#status", Static).update(status)
 
     def _append_user(self, text: str) -> None:
@@ -368,7 +126,7 @@ class XAgentTUI(App):
         return cur["reply"]
 
     def _add_tool_streaming(self, tc_id: str, name: str) -> None:
-        title, t = self._tool_render(name, {}, None, False)
+        title, t = tool_render(name, {}, None, False)
         st = Static(t)
         col = Collapsible(
             st,
@@ -394,8 +152,8 @@ class XAgentTUI(App):
         if pair is None or info is None:
             return
         st, col = pair
-        args = _stream_args(info["raw"], info["name"])
-        title, t = self._tool_render(info["name"], args, None, False)
+        args = stream_args(info["raw"], info["name"])
+        title, t = tool_render(info["name"], args, None, False)
         title = title.strip() or info["name"]
         if str(col._title.label) != title:
             col._title.label = title
@@ -413,7 +171,7 @@ class XAgentTUI(App):
         info = self._current["tool_buffers"].setdefault(tc_id, {"name": name, "raw": ""})
         info["name"] = name
         self._current["tool_inputs"][tc_id] = args
-        title, t = self._tool_render(name, args, None, False)
+        title, t = tool_render(name, args, None, False)
         if str(col._title.label) != title:
             col._title.label = title
             self._render_spinner(col._title)
@@ -426,7 +184,7 @@ class XAgentTUI(App):
         st, col = pair
         self._stop_spinner(col._title)
         args = self._current["tool_inputs"].get(tc_id, {})
-        title, t = self._tool_render(name, args, result, is_error)
+        title, t = tool_render(name, args, result, is_error)
         st.update(t)
         if is_error:
             col.add_class("tool-error")
@@ -434,7 +192,7 @@ class XAgentTUI(App):
     def _add_summary(self, tokens: int, elapsed: float) -> None:
         cfg = get_config()
         model = cfg.model or "?"
-        summary = f"{model}  {tokens:,} tokens  {self._fmt_duration(elapsed)}"
+        summary = f"{model}  {tokens:,} tokens  {fmt_duration(elapsed)}"
         self._chat().mount(Vertical(Static(summary), classes="summary-bubble"))
         self._scroll_end()
 
@@ -481,12 +239,12 @@ class XAgentTUI(App):
             self._scroll_end()
         elif t == "tool-result":
             data = event.data
-            result = self._clean_result(data["name"], data.get("result", ""))
+            result = clean_result(data["name"], data.get("result", ""))
             self._set_tool_result(
                 data["id"],
                 data["name"],
                 result,
-                self._is_error_result(data["name"], result),
+                is_error_result(data["name"], result),
             )
             self._scroll_end()
         elif t == "tool-error":
@@ -599,9 +357,9 @@ class XAgentTUI(App):
                         args = json.loads(fn.get("arguments", "{}"))
                     except Exception:
                         args = {}
-                    result = self._clean_result(name, tool_results.get(tc.get("id", ""), ""))
-                    is_error = self._is_error_result(name, result)
-                    title, t = self._tool_render(name, args, result, is_error)
+                    result = clean_result(name, tool_results.get(tc.get("id", ""), ""))
+                    is_error = is_error_result(name, result)
+                    title, t = tool_render(name, args, result, is_error)
                     classes = "bubble tool-bubble" + (" tool-error" if is_error else "")
                     chat.mount(Collapsible(
                         Static(t),

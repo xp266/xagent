@@ -1,0 +1,93 @@
+import re
+
+from rich.text import Text
+
+_READ_HEADER_RE = re.compile(r"^\([^,]+(?:, \d+ lines|, lines [\d-]+/\d+)\)$")
+
+
+def is_error_result(name, result):
+    if not result:
+        return False
+    if name == "bash":
+        return not result.startswith("Command exited with code 0.")
+    success_markers = {
+        "write": ("Wrote file successfully", "Created file successfully", "Updated file successfully"),
+        "edit": ("Edited file successfully",),
+        "read": ("read successfully",),
+    }
+    markers = success_markers.get(name, ())
+    if any(result.startswith(m) for m in markers):
+        return False
+    error_keywords = (
+        "failed", "error", "permission denied", "not found", "not a directory",
+        "cannot", "unable to", "timed out", "exceeded timeout", "is not valid",
+        "no changes to apply", "must not be empty", "does not exist", "binary",
+    )
+    low = result.lower()
+    return any(k in low for k in error_keywords)
+
+
+def clean_result(name, result):
+    if name == "read" and result:
+        lines = result.split("\n")
+        if _READ_HEADER_RE.match(lines[0]):
+            return "\n".join(lines[1:])
+    return result
+
+
+def tool_render(name, args, result, is_error):
+    result = result or ""
+    if name == "bash":
+        cmd = args.get("command", "")
+        t = Text()
+        t.append(f"$ {cmd}", style="bold #70AD47")
+        if result:
+            t.append("\n" + result, style="bold #FF5555" if is_error else "#9B9B9B")
+        return "bash", t
+    if name == "write":
+        path = args.get("path", "")
+        write_content = args.get("content", "")
+        lines = write_content.rstrip("\n").split("\n")
+        numbered = "\n".join(f"{i} {line}" for i, line in enumerate(lines, 1))
+        t = Text(numbered)
+        if is_error and result:
+            t.append(f"\n\n{result}", style="bold #FF5555")
+        return f"write {path}", t
+    if name == "edit":
+        file_path = args.get("filePath", "")
+        old_str = args.get("oldString", "") or ""
+        new_str = args.get("newString", "") or ""
+        old_lines = old_str.rstrip("\n").split("\n")
+        new_lines = new_str.rstrip("\n").split("\n")
+        t = Text()
+        for line in old_lines:
+            t.append("- ", style="#FF9E9E")
+            t.append(f"{line}\n")
+        for line in new_lines:
+            t.append("+ ", style="#9FD28A")
+            t.append(f"{line}\n")
+        t.rstrip()
+        if is_error and result:
+            t.append(f"\n\n{result}", style="bold #FF5555")
+        return f"edit {file_path}", t
+    if args:
+        arg_str = " ".join(f"{k}={v}" for k, v in args.items())
+        title = f"{name}  {{{arg_str}}}"
+    else:
+        title = name
+    return title, Text(result, style="bold #FF5555" if is_error else None)
+
+
+def fmt_duration(seconds: float) -> str:
+    s = int(seconds)
+    if s < 60:
+        return f"{s}s"
+    m, s = divmod(s, 60)
+    if m < 60:
+        return f"{m}m{s:02d}s"
+    h, m = divmod(m, 60)
+    return f"{h}h{m:02d}m"
+
+
+def fmt_pct(pct: float) -> str:
+    return f"{pct:g}% context"
