@@ -1,10 +1,11 @@
 import json
 import os
 import time
+from collections import deque
 from functools import partial
 
 from textual.app import App, ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.content import Content
 from textual.widgets import Static, Collapsible
 from rich.text import Text
@@ -57,6 +58,8 @@ class XAgentTUI(App):
         self._spinner_idx = 0
         self._spinners = {}
         self._waves = []
+        self._frame_times: deque[float] = deque()
+        self._fps_str = ""
 
     def _chat(self):
         return self.query_one("#chat-box")
@@ -208,6 +211,7 @@ class XAgentTUI(App):
             self._tick_status_wave()
         if self._current is not None:
             self._flush_streaming_content()
+        self._tick_fps()
 
     def _tick_status_wave(self) -> None:
         if not self._busy:
@@ -226,6 +230,20 @@ class XAgentTUI(App):
             self._waves.append(now)
         self._waves = [t0 for t0 in self._waves if (now - t0) * _WAVE_SPEED < n + len(_BLUE_WAVE)]
         self._update_status(status=status)
+
+    def _tick_fps(self) -> None:
+        now = time.monotonic()
+        self._frame_times.append(now)
+        while self._frame_times and now - self._frame_times[0] > 1.0:
+            self._frame_times.popleft()
+        fps = len(self._frame_times)
+        if fps == 0:
+            return
+        elapsed = now - self._frame_times[0]
+        display = f"FPS: {fps}" if elapsed < 1.0 else f"FPS: {fps / elapsed:.0f}"
+        if display != self._fps_str:
+            self._fps_str = display
+            self.query_one("#fps", Static).update(display)
 
     def _ensure_thinking(self):
         cur = self._current
@@ -585,8 +603,9 @@ class XAgentTUI(App):
         with Vertical(id="input-box"):
             yield ChatInput(soft_wrap=True, id="input")
 
-        with Vertical(id="status-box"):
+        with Horizontal(id="status-box"):
             yield Static("", id="status")
+            yield Static("", id="fps")
 
     def on_mount(self) -> None:
         self.title = "XAgent"
