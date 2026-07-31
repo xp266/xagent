@@ -49,7 +49,7 @@ class LazyText(Static):
             return Strip.blank(self.size.width)
         if self._strips[y] is None:
             self._strips[y] = _build_strip(self._lines[y])
-        return self._strips[y]  # type: ignore
+        return self._strips[y].apply_style(self.visual_style.rich_style)  # type: ignore
 
     def selection_updated(self, selection) -> None:
         pass
