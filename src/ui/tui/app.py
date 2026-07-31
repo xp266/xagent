@@ -528,6 +528,9 @@ class XAgentTUI(App):
                         expanded_symbol="▾",
                     ))
 
+                if content:
+                    chat.mount(Vertical(LazyMarkdown(content), classes="bubble reply-bubble"))
+
                 for tc in tool_calls:
                     fn = tc.get("function", {})
                     name = fn.get("name", "")
@@ -555,7 +558,6 @@ class XAgentTUI(App):
                     ))
 
                 if content:
-                    chat.mount(Vertical(LazyMarkdown(content), classes="bubble reply-bubble"))
                     if self._is_turn_end(messages, idx):
                         cfg = get_config()
                         model = cfg.model or "?"
