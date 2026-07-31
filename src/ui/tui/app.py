@@ -21,7 +21,7 @@ from src.ui.tui.logo import build_logo_text
 from src.ui.tui.lazy import LazyText
 from src.ui.tui.render import clean_result, code_tool, fmt_duration, fmt_pct, is_error_result, tool_markdown, tool_render
 from src.ui.tui.streaming import stream_args
-from src.ui.tui.widgets import ChatInput, CommandPalette, LazyCollapsible, LazyMarkdown
+from src.ui.tui.widgets import ChatInput, CommandPalette, LazyCollapsible, LazyMarkdown, SessionPicker
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
@@ -632,6 +632,51 @@ class XAgentTUI(App):
         self._suppress_palette = False
         inp.focus()
 
+    def _picker(self) -> SessionPicker:
+        return self.query_one("#session-picker", SessionPicker)
+
+    def _open_session_picker(self) -> None:
+        sessions = self._sm.list()
+        self._palette().hide()
+        self._set_palette_open(False)
+        self.query_one("#picker-overlay").add_class("visible")
+        self._picker().show(sessions)
+
+    def on_session_picker_selected(self, message: SessionPicker.Selected) -> None:
+        self.query_one("#picker-overlay").remove_class("visible")
+        self._switch_session(message.session.id)
+
+    def on_session_picker_dismissed(self, message: SessionPicker.Dismissed) -> None:
+        self.query_one("#picker-overlay").remove_class("visible")
+        self.query_one("#input", ChatInput).focus()
+
+    def on_key(self, event) -> None:
+        picker = self._picker()
+        if not picker.is_visible:
+            return
+        key = event.key
+        if key == "escape":
+            event.stop()
+            picker.hide()
+            picker.post_message(SessionPicker.Dismissed())
+            return
+        if key == "up":
+            event.stop()
+            picker.move(-1)
+            return
+        if key == "down":
+            event.stop()
+            picker.move(1)
+            return
+        if key == "enter":
+            event.stop()
+            if picker._filtered and 0 <= picker._selected < len(picker._filtered):
+                picker.hide()
+                picker.post_message(picker.Selected(picker._filtered[picker._selected]))
+            else:
+                picker.post_message(picker.Dismissed())
+            return
+
     def _handle_input(self, text: str) -> None:
         text = text.strip()
         if not text:
@@ -692,6 +737,9 @@ class XAgentTUI(App):
 
         with Vertical(id="status-box"):
             yield Static("", id="status")
+
+        with Vertical(id="picker-overlay"):
+            yield SessionPicker(id="session-picker")
 
     def on_mount(self) -> None:
         self.title = "XAgent"

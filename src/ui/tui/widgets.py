@@ -1,7 +1,7 @@
 from textual import events
-from textual.containers import Vertical
+from textual.containers import Vertical, VerticalScroll, Horizontal
 from textual.message import Message
-from textual.widgets import Static, TextArea, Markdown, Collapsible
+from textual.widgets import Static, TextArea, Input, Markdown, Collapsible
 
 
 class LazyMarkdown(Markdown):
@@ -180,3 +180,151 @@ class CommandPalette(Vertical):
         if self._commands and 0 <= self._selected < len(self._commands):
             return self._commands[self._selected]
         return None
+
+
+def _format_session_time(iso: str) -> str:
+    """Format an ISO timestamp into a short readable string."""
+    import datetime
+    try:
+        dt = datetime.datetime.fromisoformat(iso)
+    except Exception:
+        return iso
+    now = datetime.datetime.now(dt.tzinfo) if dt.tzinfo else datetime.datetime.now()
+    delta = now - dt
+    if delta < datetime.timedelta(minutes=1):
+        return "just now"
+    if delta < datetime.timedelta(hours=1):
+        return f"{int(delta.total_seconds() // 60)}m ago"
+    if delta < datetime.timedelta(days=1):
+        return f"{int(delta.total_seconds() // 3600)}h ago"
+    if delta < datetime.timedelta(days=7):
+        return f"{delta.days}d ago"
+    return dt.strftime("%Y-%m-%d")
+
+
+class SessionPicker(Vertical):
+    """Centered modal dialog for picking a session.
+
+    Shows a search box at the top and a scrollable list of sessions
+    (``id - name - time``). Filtering is applied live by id, name or time.
+    """
+
+    DEFAULT_CSS = """
+    SessionPicker {
+        display: none;
+        width: 60%;
+        height: 60%;
+        background: #1A1A1A;
+        border: round white;
+        padding: 1;
+    }
+    SessionPicker.visible {
+        display: block;
+    }
+    SessionPicker #picker-search {
+        height: 1;
+        border: none;
+        background: #222222;
+        margin-bottom: 1;
+    }
+    SessionPicker #picker-list {
+        height: 1fr;
+        border: none;
+        padding: 0;
+        scrollbar-size: 1 1;
+    }
+    SessionPicker #picker-footer {
+        height: 1;
+        padding: 0;
+        content-align: left bottom;
+        color: #888888;
+    }
+    SessionPicker > .picker-row {
+        height: 1;
+        padding: 0 1;
+    }
+    SessionPicker > .picker-row.selected {
+        background: #334466;
+    }
+    """
+
+    class Selected(Message):
+        """A session was chosen from the picker."""
+
+        def __init__(self, session) -> None:
+            super().__init__()
+            self.session = session
+
+    class Dismissed(Message):
+        """The picker was closed without selection."""
+
+    def __init__(self, sessions=None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._sessions = sessions or []
+        self._filtered: list = []
+        self._selected = 0
+
+    def compose(self) -> ComposeResult:
+        yield Input(placeholder="Search sessions...", id="picker-search")
+        with VerticalScroll(id="picker-list"):
+            pass
+        yield Static("Press ESC to exit", id="picker-footer")
+
+    def _rebuild(self) -> None:
+        """Rebuild the list from the current filter."""
+        try:
+            search = self.query_one("#picker-search", Input)
+        except Exception:
+            return
+        query = search.value.strip().lower()
+        if query:
+            self._filtered = [
+                s for s in self._sessions
+                if query in s.id.lower()
+                or query in s.name.lower()
+                or query in _format_session_time(s.updated_at or s.created_at).lower()
+            ]
+        else:
+            self._filtered = list(self._sessions)
+        self._filtered.sort(key=lambda s: s.updated_at or s.created_at, reverse=True)
+        self._selected = 0
+        list_box = self.query_one("#picker-list", VerticalScroll)
+        for child in list(list_box.children):
+            child.remove()
+        for i, s in enumerate(self._filtered):
+            label = f"{s.id}  -  {s.name}  -  {_format_session_time(s.updated_at or s.created_at)}"
+            row = Static(label, classes="picker-row")
+            if i == 0:
+                row.add_class("selected")
+            list_box.mount(row)
+
+    def show(self, sessions) -> None:
+        self._sessions = sessions
+        self.add_class("visible")
+        self._rebuild()
+        self.query_one("#picker-search", Input).focus()
+
+    def hide(self) -> None:
+        self.remove_class("visible")
+
+    @property
+    def is_visible(self) -> bool:
+        return "visible" in self.classes
+
+    def _update_selection(self) -> None:
+        rows = self.query(".picker-row")
+        for i, row in enumerate(rows):
+            row.set_class(i == self._selected, "selected")
+
+    def move(self, delta: int) -> None:
+        if not self._filtered:
+            return
+        self._selected = (self._selected + delta) % len(self._filtered)
+        self._update_selection()
+        rows = self.query(".picker-row")
+        row = rows[self._selected]
+        self.query_one("#picker-list", VerticalScroll).scroll_to_region(row.region, animate=False)
+
+    def _on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id == "picker-search":
+            self._rebuild()

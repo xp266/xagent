@@ -6,6 +6,17 @@ CSS = """
         scrollbar-size: 2 1;
         scrollbar-color: #808080;
     }
+    #picker-overlay {
+        display: none;
+        width: 100%;
+        height: 100%;
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+        layer: overlay;
+    }
+    #picker-overlay.visible {
+        display: block;
+    }
     TextArea {
         height: 1fr;
         border: none;

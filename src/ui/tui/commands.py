@@ -24,9 +24,13 @@ def _cmd_new(app, args: str) -> None:
 def _cmd_session(app, args: str) -> None:
     code = args.strip()
     if not code:
-        app._append_error("Usage: /session <session-id>")
+        app._open_session_picker()
         return
     app._switch_session(code)
+
+
+def _cmd_exit(app, args: str) -> None:
+    app.exit()
 
 
 def get_commands() -> list[Command]:
@@ -34,6 +38,7 @@ def get_commands() -> list[Command]:
     return [
         Command("new", "Start a new chat", _cmd_new),
         Command("session", "Switch to a session: /session <id>", _cmd_session),
+        Command("exit", "Exit xagent", _cmd_exit),
     ]
 
 
