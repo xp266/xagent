@@ -163,7 +163,7 @@ class XAgentTUI(App):
 
     def _append_user(self, text: str) -> None:
         self._hide_logo()
-        self._chat().mount(Vertical(Static(text), classes="bubble user-bubble"))
+        self._chat().mount(Vertical(LazyText(text, markup=False), classes="bubble user-bubble"))
         self._scroll_end()
 
     def _append_error(self, text: str) -> None:
@@ -230,7 +230,7 @@ class XAgentTUI(App):
     def _ensure_thinking(self):
         cur = self._current
         if cur["thinking"] is None:
-            st = Static("")
+            st = LazyText("", markup=False)
             col = Collapsible(
                 st,
                 title="Thinking",
@@ -263,7 +263,7 @@ class XAgentTUI(App):
     def _ensure_reply(self):
         cur = self._current
         if cur["reply"] is None:
-            st = Static("")
+            st = LazyText("", markup=False)
             self._chat().mount(Vertical(st, classes="bubble reply-bubble"))
             cur["reply"] = st
         return cur["reply"]
@@ -472,7 +472,7 @@ class XAgentTUI(App):
             if role == "system":
                 continue
             if role == "user":
-                chat.mount(Vertical(Static(msg.get("content", "")), classes="bubble user-bubble"))
+                chat.mount(Vertical(LazyText(msg.get("content", ""), markup=False), classes="bubble user-bubble"))
                 continue
             if role == "assistant":
                 reasoning = msg.get("reasoning_content", "") or ""
@@ -481,7 +481,7 @@ class XAgentTUI(App):
 
                 if reasoning:
                     chat.mount(Collapsible(
-                        Static(reasoning),
+                        LazyText(reasoning, markup=False),
                         title="Thinking",
                         classes="bubble thinking-bubble",
                         collapsed=True,
@@ -510,7 +510,7 @@ class XAgentTUI(App):
                     ))
 
                 if content:
-                    chat.mount(Vertical(Static(content), classes="bubble reply-bubble"))
+                    chat.mount(Vertical(LazyText(content, markup=False), classes="bubble reply-bubble"))
                     if self._is_turn_end(messages, idx):
                         cfg = get_config()
                         model = cfg.model or "?"
