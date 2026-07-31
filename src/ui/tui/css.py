@@ -24,14 +24,6 @@ CSS = """
         height: 1;
         border: none;
         padding: 0 0 0 1;
-        layout: horizontal;
-    }
-    #status {
-        width: 1fr;
-    }
-    #fps {
-        width: auto;
-        padding: 0 1 0 0;
     }
 
     #logo-overlay {

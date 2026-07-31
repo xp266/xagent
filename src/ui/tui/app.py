@@ -1,11 +1,10 @@
 import json
 import os
 import time
-from collections import deque
 from functools import partial
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.containers import Vertical, VerticalScroll
 from textual.content import Content
 from textual.widgets import Static, Collapsible
 from rich.text import Text
@@ -227,31 +226,6 @@ class XAgentTUI(App):
             self._waves.append(now)
         self._waves = [t0 for t0 in self._waves if (now - t0) * _WAVE_SPEED < n + len(_BLUE_WAVE)]
         self._update_status(status=status)
-
-    def _hook_compositor_fps(self) -> None:
-        self._frame_times: deque[float] = deque()
-        self._fps_str = ""
-
-        screen = self.screen
-        orig_refresh = screen._compositor_refresh
-
-        def _wrapper():
-            now = time.monotonic()
-            ft = self._frame_times
-            ft.append(now)
-            while ft and now - ft[0] > 1.0:
-                ft.popleft()
-            fps = len(ft)
-            display = f"FPS: {fps}"
-            if display != self._fps_str:
-                self._fps_str = display
-                try:
-                    self.query_one("#fps", Static).update(display)
-                except Exception:
-                    pass
-            orig_refresh()
-
-        screen._compositor_refresh = _wrapper  # type: ignore
 
     def _ensure_thinking(self):
         cur = self._current
@@ -611,9 +585,8 @@ class XAgentTUI(App):
         with Vertical(id="input-box"):
             yield ChatInput(soft_wrap=True, id="input")
 
-        with Horizontal(id="status-box"):
+        with Vertical(id="status-box"):
             yield Static("", id="status")
-            yield Static("", id="fps")
 
     def on_mount(self) -> None:
         self.title = "XAgent"
@@ -622,7 +595,6 @@ class XAgentTUI(App):
         self._scroll_end()
         self.set_interval(0.1, self._tick_animations, pause=False)
         self.query_one("#input", ChatInput).focus()
-        self._hook_compositor_fps()
 
 
 def run_tui() -> None:
