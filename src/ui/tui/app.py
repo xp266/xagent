@@ -639,15 +639,12 @@ class XAgentTUI(App):
         sessions = self._sm.list()
         self._palette().hide()
         self._set_palette_open(False)
-        self.query_one("#picker-overlay").add_class("visible")
         self._picker().show(sessions)
 
     def on_session_picker_selected(self, message: SessionPicker.Selected) -> None:
-        self.query_one("#picker-overlay").remove_class("visible")
         self._switch_session(message.session.id)
 
     def on_session_picker_dismissed(self, message: SessionPicker.Dismissed) -> None:
-        self.query_one("#picker-overlay").remove_class("visible")
         self.query_one("#input", ChatInput).focus()
 
     def on_key(self, event) -> None:
@@ -738,8 +735,7 @@ class XAgentTUI(App):
         with Vertical(id="status-box"):
             yield Static("", id="status")
 
-        with Vertical(id="picker-overlay"):
-            yield SessionPicker(id="session-picker")
+        yield SessionPicker(id="session-picker")
 
     def on_mount(self) -> None:
         self.title = "XAgent"

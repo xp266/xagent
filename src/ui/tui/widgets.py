@@ -212,6 +212,7 @@ class SessionPicker(Vertical):
     DEFAULT_CSS = """
     SessionPicker {
         display: none;
+        layer: overlay;
         width: 45%;
         height: 45%;
         background: #1A1A1A;
@@ -302,7 +303,19 @@ class SessionPicker(Vertical):
         self._sessions = sessions
         self.add_class("visible")
         self._rebuild()
+        self.call_after_refresh(self._center)
         self.query_one("#picker-search", Input).focus()
+
+    def _center(self) -> None:
+        """Center the picker within the screen."""
+        try:
+            parent_w = self.screen.size.width
+            parent_h = self.screen.size.height
+            w = self.size.width
+            h = self.size.height
+            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
+        except Exception:
+            pass
 
     def hide(self) -> None:
         self.remove_class("visible")
@@ -328,3 +341,33 @@ class SessionPicker(Vertical):
     def _on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "picker-search":
             self._rebuild()
+
+    async def _on_key(self, event: events.Key) -> None:
+        if not self.is_visible:
+            return
+        key = event.key
+        if key == "escape":
+            event.stop()
+            self.hide()
+            self.post_message(self.Dismissed())
+            return
+        if key == "up":
+            event.stop()
+            event.prevent_default()
+            self.move(-1)
+            return
+        if key == "down":
+            event.stop()
+            event.prevent_default()
+            self.move(1)
+            return
+        if key == "enter":
+            event.stop()
+            event.prevent_default()
+            if self._filtered and 0 <= self._selected < len(self._filtered):
+                self.hide()
+                self.post_message(self.Selected(self._filtered[self._selected]))
+            else:
+                self.post_message(self.Dismissed())
+            return
+        await super()._on_key(event)
