@@ -39,7 +39,6 @@ _BLUE_WAVE = (
 )
 
 _WAVE_SPEED = 15.0  # characters per second
-_WAVE_INTERVAL = 3.0  # seconds between wave launches
 
 
 class XAgentTUI(App):
@@ -148,10 +147,14 @@ class XAgentTUI(App):
                 self._update_status()
             return
         now = time.monotonic()
-        if not self._waves or now - self._waves[-1] >= _WAVE_INTERVAL:
+        n = len(self._status_string())
+        if self._waves:
+            head = (now - self._waves[0]) * _WAVE_SPEED
+            if head >= (n - 1) + (len(_BLUE_WAVE) - 1):
+                self._waves = []
+        if not self._waves:
             self._waves.append(now)
-        limit = len(self._status_string()) + len(_BLUE_WAVE)
-        self._waves = [t0 for t0 in self._waves if (now - t0) * _WAVE_SPEED < limit]
+        self._waves = [t0 for t0 in self._waves if (now - t0) * _WAVE_SPEED < n + len(_BLUE_WAVE)]
         self._update_status()
 
     def _ensure_thinking(self):
@@ -169,8 +172,23 @@ class XAgentTUI(App):
             self._chat().mount(col)
             cur["thinking"] = st
             cur["thinking_title"] = col._title
+            cur["thinking_col"] = col
         self._start_spinner(cur["thinking_title"])
         return cur["thinking"]
+
+    def _remove_empty_thinking(self) -> None:
+        cur = self._current
+        if cur is None or cur.get("thinking") is None:
+            return
+        if cur.get("reasoning_text"):
+            return
+        self._stop_spinner(cur.get("thinking_title"))
+        col = cur.get("thinking_col")
+        if col is not None:
+            col.remove()
+        cur["thinking"] = None
+        cur["thinking_title"] = None
+        cur["thinking_col"] = None
 
     def _ensure_reply(self):
         cur = self._current
@@ -257,16 +275,22 @@ class XAgentTUI(App):
             return
         t = event.type
         if t == "reasoning-start":
-            cur["thinking"] = None
             cur["reasoning_text"] = ""
-            self._ensure_thinking()
+            if cur["thinking"] is None:
+                self._ensure_thinking()
+            else:
+                self._start_spinner(cur["thinking_title"])
         elif t == "reasoning-delta":
             cur["reasoning_text"] += event.data
             self._ensure_thinking().update(cur["reasoning_text"])
             self._scroll_end()
         elif t == "reasoning-end":
             self._stop_spinner(cur.get("thinking_title"))
+            cur["thinking"] = None
+            cur["thinking_title"] = None
+            cur["thinking_col"] = None
         elif t == "text-start":
+            self._remove_empty_thinking()
             cur["reply"] = None
             cur["reply_text"] = ""
             self._ensure_reply()
@@ -275,6 +299,7 @@ class XAgentTUI(App):
             self._ensure_reply().update(cur["reply_text"])
             self._scroll_end()
         elif t == "tool-input-start":
+            self._remove_empty_thinking()
             data = event.data
             self._add_tool_streaming(data["id"], data.get("name", ""))
             self._scroll_end()
@@ -331,6 +356,7 @@ class XAgentTUI(App):
         cur = self._current
         if cur and cur["steps"] > 0:
             self._add_summary(cur["tokens"], elapsed)
+        self._remove_empty_thinking()
         self._stop_all_spinners()
         self._waves.clear()
         self._busy = False
@@ -480,6 +506,8 @@ class XAgentTUI(App):
             "last_stream_render": 0.0,
         }
         self._append_user(text)
+        self._ensure_thinking()
+        self._scroll_end()
         if self._session.name == "New Session":
             self.run_worker(partial(self._name_worker, text), name="naming", group="naming", thread=True)
         self.run_worker(partial(self._turn_worker, text), name="turn", group="turn", thread=True, exclusive=True)
