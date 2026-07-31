@@ -52,10 +52,10 @@ CSS = """
     }
 
     .user-bubble, .reply-bubble {
-        padding: 1 1 1 2;
+        padding: 1 1 1 1;
     }
     .reply-bubble {
-        padding: 1 1 0 2;
+        padding: 1 1 0 1;
     }
     .reply-bubble MarkdownParagraph {
         margin: 0 0 1 0;
@@ -85,7 +85,7 @@ CSS = """
     .summary-bubble {
         height: 1;
         margin: 1 0 1 0;
-        padding: 0 1 0 2;
+        padding: 0 1 0 1;
     }
 
     .reply-bubble > Markdown,
