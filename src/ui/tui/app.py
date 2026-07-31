@@ -20,8 +20,6 @@ from src.ui.tui.render import clean_result, fmt_duration, fmt_pct, is_error_resu
 from src.ui.tui.streaming import stream_args
 from src.ui.tui.widgets import ChatInput
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 _BLUE_WAVE = (
@@ -48,7 +46,8 @@ class XAgentTUI(App):
     def __init__(self):
         super().__init__()
         self._sm = get_session_manager()
-        self._session = self._sm.create(path=_PROJECT_ROOT, persist=False)
+        self._project = os.getcwd()
+        self._session = self._sm.create(path=self._project, persist=False)
         self._ctx_usage_tokens = 0
         self._busy = False
         self._current = None
@@ -99,7 +98,7 @@ class XAgentTUI(App):
         total = self._session.token_usage.total_tokens
         limit = get_model_context_limit(model)
         pct = self._context_pct(limit)
-        return f"{model}  {total:,} tokens  {fmt_pct(pct)}  |  xAgent - {self._session.name}"
+        return f"{model}  {total:,} tokens  {fmt_pct(pct)}  |  xAgent - {self._project} - {self._session.name}"
 
     def _wave_color_at(self, index: int, now: float):
         best = None
@@ -407,7 +406,7 @@ class XAgentTUI(App):
             self.call_from_thread(self._apply_name, name)
 
     def _new_chat(self) -> None:
-        self._session = self._sm.create(path=_PROJECT_ROOT, persist=False)
+        self._session = self._sm.create(path=self._project, persist=False)
         self._ctx_usage_tokens = 0
         self._clear_chat_messages()
         self._show_logo()

@@ -36,8 +36,7 @@ def _kill_process_group(pid: int, force_kill_after: int = 3):
 
 
 def execute(command: str, workdir: str = "", timeout: int = 0, **kwargs) -> dict:
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    cwd = workdir or project_root
+    cwd = workdir or os.getcwd()
     cwd = os.path.abspath(os.path.expanduser(cwd))
 
     if not os.path.isdir(cwd):

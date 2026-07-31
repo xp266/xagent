@@ -1,14 +1,21 @@
 import os
 import sys
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-if __name__ == "__main__":
-    load_dotenv()
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_ROOT = Path(__file__).resolve().parent.parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
-    if "--web" in sys.argv:
-        from src.ui.web.server import run_web
-        run_web()
-    else:
-        from src.ui.tui.app import run_tui
-        run_tui()
+
+def main() -> None:
+    load_dotenv(_ROOT / ".env")
+    load_dotenv(override=True)
+    from src.ui.tui.app import run_tui
+
+    run_tui()
+
+
+if __name__ == "__main__":
+    main()
