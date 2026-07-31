@@ -106,7 +106,11 @@ class XAgentTUI(App):
             reply_text = cur["reply_text"]
             prev_len = cur.get("reply_appended", 0)
             if len(reply_text) > prev_len:
-                md.append(reply_text[prev_len:])
+                stream = cur.get("reply_stream")
+                if stream is not None:
+                    self.run_worker(stream.write(reply_text[prev_len:]))
+                else:
+                    md.append(reply_text[prev_len:])
                 cur["reply_appended"] = len(reply_text)
 
         for tc_id, (st_widget, col) in cur["tools"].items():
@@ -271,6 +275,8 @@ class XAgentTUI(App):
             st = Markdown("")
             self._chat().mount(Vertical(st, classes="bubble reply-bubble"))
             cur["reply"] = st
+            cur["reply_stream"] = Markdown.get_stream(st)
+            cur["reply_stream"].start()
         return cur["reply"]
 
     def _add_tool_streaming(self, tc_id: str, name: str) -> None:
@@ -370,7 +376,11 @@ class XAgentTUI(App):
         elif t == "text-start":
             self._flush_streaming_content(force=True)
             self._remove_empty_thinking()
+            old_stream = cur.get("reply_stream")
+            if old_stream is not None:
+                self.run_worker(old_stream.stop())
             cur["reply"] = None
+            cur["reply_stream"] = None
             cur["reply_text"] = ""
             cur["reply_appended"] = 0
             self._ensure_reply()
@@ -435,6 +445,10 @@ class XAgentTUI(App):
     def _finalize_turn(self, elapsed: float) -> None:
         self._flush_streaming_content(force=True)
         cur = self._current
+        if cur:
+            stream = cur.get("reply_stream")
+            if stream is not None:
+                self.run_worker(stream.stop())
         if cur and cur["steps"] > 0:
             self._add_summary(cur["tokens"], elapsed)
         self._remove_empty_thinking()
@@ -592,6 +606,7 @@ class XAgentTUI(App):
             "reasoning_text": "",
             "reply_text": "",
             "reply_appended": 0,
+            "reply_stream": None,
             "thinking": None,
             "reply": None,
             "tools": {},

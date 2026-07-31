@@ -55,7 +55,7 @@ CSS = """
         padding: 1 1 1 2;
     }
     .reply-bubble {
-        padding: 1 1 0 2;
+        padding: 2 1 1 2;
     }
     .user-bubble {
         background: #1A1A1A;
