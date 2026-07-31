@@ -210,15 +210,16 @@ class SessionManager:
             return None
         return Session.from_dict(data)
 
-    def create(self, name: str = "", path: str = "") -> Session:
+    def create(self, name: str = "", path: str = "", persist: bool = True) -> Session:
         s = Session(name=name, path=path)
-        _write_session(s.to_dict())
-        self._index[s.id] = {
-            "id": s.id, "name": s.name, "path": s.path,
-            "created_at": s.created_at, "updated_at": s.updated_at,
-        }
-        self._current_id = s.id
-        self._save_index()
+        if persist:
+            _write_session(s.to_dict())
+            self._index[s.id] = {
+                "id": s.id, "name": s.name, "path": s.path,
+                "created_at": s.created_at, "updated_at": s.updated_at,
+            }
+            self._current_id = s.id
+            self._save_index()
         return s
 
     def delete(self, session_id: str) -> bool:
@@ -261,6 +262,7 @@ class SessionManager:
                 "id": session.id, "name": session.name, "path": session.path,
                 "created_at": session.created_at, "updated_at": session.updated_at,
             }
+            self._current_id = session.id
         self._save_index()
 
     def get_or_create_current(self) -> Session:
@@ -327,6 +329,7 @@ def run_session_turn(
         except Exception as e:
             yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
             session.sync_messages()
+            get_session_manager().save(session)
             return
 
         for tc in tool_calls_pending:

@@ -184,7 +184,7 @@ class XAgentTUI(App):
     def __init__(self):
         super().__init__()
         self._sm = get_session_manager()
-        self._session = self._sm.create(path=_PROJECT_ROOT)
+        self._session = self._sm.create(path=_PROJECT_ROOT, persist=False)
         self._ctx_usage_tokens = 0
         self._busy = False
         self._current = None
@@ -541,7 +541,7 @@ class XAgentTUI(App):
             self.call_from_thread(self._apply_name, name)
 
     def _new_chat(self) -> None:
-        self._session = self._sm.create(path=_PROJECT_ROOT)
+        self._session = self._sm.create(path=_PROJECT_ROOT, persist=False)
         self._ctx_usage_tokens = 0
         self._chat().remove_children()
         self._update_status()
