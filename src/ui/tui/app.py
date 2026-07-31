@@ -16,11 +16,12 @@ from src.utils.config import get_config
 from src.types.events import StreamEvent
 
 from src.ui.tui.css import CSS
+from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.logo import build_logo_text
 from src.ui.tui.lazy import LazyText
 from src.ui.tui.render import clean_result, code_tool, fmt_duration, fmt_pct, is_error_result, tool_markdown, tool_render
 from src.ui.tui.streaming import stream_args
-from src.ui.tui.widgets import ChatInput, LazyCollapsible, LazyMarkdown
+from src.ui.tui.widgets import ChatInput, CommandPalette, LazyCollapsible, LazyMarkdown
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
@@ -593,6 +594,44 @@ class XAgentTUI(App):
             return msg.get("role") != "assistant"
         return True
 
+    def _palette(self) -> CommandPalette:
+        return self.query_one("#command-palette", CommandPalette)
+
+    def _refresh_palette(self) -> None:
+        if getattr(self, "_suppress_palette", False):
+            return
+        text = self.query_one("#input", ChatInput).text
+        if not text.startswith("/"):
+            self._palette().hide()
+            self._set_palette_open(False)
+            return
+        query = text[1:].lstrip()
+        commands = match_commands(query)
+        self._palette().show(commands)
+        self._set_palette_open(bool(commands))
+
+    def _set_palette_open(self, open: bool) -> None:
+        self.query_one("#input", ChatInput).palette_open = open
+
+    def on_chat_input_text_edited(self, message: ChatInput.TextEdited) -> None:
+        self._refresh_palette()
+
+    def on_chat_input_navigate(self, message: ChatInput.Navigate) -> None:
+        self._palette().move(message.delta)
+
+    def on_chat_input_accept_palette(self, message: ChatInput.AcceptPalette) -> None:
+        cmd = self._palette().selected_command
+        if cmd is None:
+            return
+        inp = self.query_one("#input", ChatInput)
+        inp.clear()
+        self._palette().hide()
+        self._set_palette_open(False)
+        self._suppress_palette = True
+        inp.insert(f"/{cmd.name} ")
+        self._suppress_palette = False
+        inp.focus()
+
     def _handle_input(self, text: str) -> None:
         text = text.strip()
         if not text:
@@ -600,15 +639,15 @@ class XAgentTUI(App):
         if self._busy:
             self._append_error("Agent is busy, please wait.")
             return
-        if text == "/new":
-            self._new_chat()
-            return
-        if text.startswith("/session"):
+        if text.startswith("/"):
             parts = text.split(None, 1)
-            if len(parts) == 2:
-                self._switch_session(parts[1])
-            else:
-                self._append_error("Usage: /session <session-id>")
+            name = parts[0][1:]
+            args = parts[1] if len(parts) > 1 else ""
+            for cmd in get_commands():
+                if cmd.name == name or name in cmd.aliases:
+                    cmd.handler(self, args)
+                    return
+            self._append_error(f"Unknown command: /{name}")
             return
         self._send(text)
 
@@ -638,11 +677,15 @@ class XAgentTUI(App):
         self.run_worker(partial(self._turn_worker, text), name="turn", group="turn", thread=True, exclusive=True)
 
     def on_chat_input_submitted(self, message: ChatInput.Submitted) -> None:
+        self._palette().hide()
+        self._set_palette_open(False)
         self._handle_input(message.text)
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-box"):
             pass
+
+        yield CommandPalette(id="command-palette")
 
         with Vertical(id="input-box"):
             yield ChatInput(soft_wrap=True, id="input")
