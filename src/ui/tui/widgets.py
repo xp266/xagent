@@ -212,10 +212,10 @@ class SessionPicker(Vertical):
     DEFAULT_CSS = """
     SessionPicker {
         display: none;
-        width: 60%;
-        height: 60%;
+        width: 50%;
+        height: 50%;
         background: #1A1A1A;
-        border: round white;
+        border: none;
         padding: 1;
     }
     SessionPicker.visible {
