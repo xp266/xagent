@@ -76,6 +76,10 @@ class XAgentTUI(App):
     .tool-bubble > CollapsibleContent > Static {
         color: #808080;
     }
+    .summary-bubble {
+        height: 1;
+        padding: 0 1 0 2;
+    }
     """
 
     def __init__(self):
@@ -148,6 +152,11 @@ class XAgentTUI(App):
                     widgets.append(
                         Vertical(Static(content), classes="bubble reply-bubble")
                     )
+                    total_tokens = self._token_usage.get("total_tokens", 0)
+                    summary = f"模型: gpt-4  Token: {total_tokens}  时间: 01h 23m 45s"
+                    widgets.append(
+                        Vertical(Static(summary), classes="summary-bubble")
+                    )
                 continue
 
         return widgets
@@ -171,6 +180,7 @@ class XAgentTUI(App):
 
     def on_mount(self) -> None:
         self.title = "XAgent"
+        self.query_one("#chat-box").scroll_end(animate=False)
 
 
 def run_tui() -> None:
