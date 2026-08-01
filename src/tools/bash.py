@@ -117,8 +117,6 @@ tool = Tool(
 
 OS: linux, Shell: bash.
 
-Use `/tmp/xagent` for temporary work outside the workspace.
-
 DO NOT use for file operations (read/write/edit/search) — use dedicated tools instead.
 
 Execution rules:

@@ -151,7 +151,7 @@ class CommandPalette(Vertical):
         self._selected = (self._selected + delta) % len(self._commands)
         self._update_selection()
         row = self.query(".cmd-row")[self._selected]
-        self.scroll_to_region(row.region, animate=False)
+        self.scroll_to_widget(row, animate=False)
 
     @property
     def selected_command(self):
@@ -277,7 +277,7 @@ class _ListPicker(Vertical):
         self._update_selection()
         rows = self.query(".picker-row")
         row = rows[self._selected]
-        self.query_one("#picker-list", VerticalScroll).scroll_to_region(row.region, animate=False)
+        self.query_one("#picker-list", VerticalScroll).scroll_to_widget(row, animate=False)
 
     def _on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "picker-search":
@@ -322,6 +322,9 @@ class SessionPicker(_ListPicker):
         def __init__(self, session) -> None:
             super().__init__()
             self.session = session
+
+    class Dismissed(Message):
+        pass
 
     def item_label(self, item) -> str:
         return (
@@ -371,6 +374,9 @@ class ProviderPicker(_ListPicker):
     class AddCustom(Message):
         pass
 
+    class Dismissed(Message):
+        pass
+
     def item_label(self, item) -> str:
         if item is self.ADD_CUSTOM:
             return "+ Add custom provider"
@@ -417,6 +423,9 @@ class ModelPicker(_ListPicker):
         def __init__(self, model: str) -> None:
             super().__init__()
             self.model = model
+
+    class Dismissed(Message):
+        pass
 
     def item_label(self, item) -> str:
         return item
