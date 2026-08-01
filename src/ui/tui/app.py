@@ -60,6 +60,8 @@ class XAgentTUI(PickerMixin, App):
         self._spinner_idx = 0
         self._spinners = {}
         self._waves = []
+        self._add_model_provider_flow = False
+        self._pending_model_provider = None
 
     def _chat(self):
         return self.query_one("#chat-box")
@@ -146,7 +148,12 @@ class XAgentTUI(PickerMixin, App):
 
     def _status_string(self) -> str:
         cfg = get_config()
-        model = cfg.model or "Type /provider to add a provider"
+        if not cfg.base_url:
+            model = "Type /provider to connect a provider"
+        elif not cfg.model:
+            model = "Type /model to select a model"
+        else:
+            model = cfg.model
         total = self._session.token_usage.total_tokens
         limit = get_model_context_limit(model) if cfg.model else 0
         pct = self._context_pct(limit)
@@ -653,8 +660,11 @@ class XAgentTUI(PickerMixin, App):
 
     def _send(self, text: str) -> None:
         cfg = get_config()
+        if not cfg.base_url:
+            self._append_error("No provider connected. Type /provider to connect one.")
+            return
         if not cfg.model:
-            self._append_error("You haven't configured a model yet. Type /provider to configure one.")
+            self._append_error("No model selected. Type /model to select one.")
             return
         self._busy = True
         self._waves.clear()

@@ -39,6 +39,7 @@ class ProviderInfo:
     is_custom: bool = False
     models: list[str] = field(default_factory=list)
     model_meta: dict[str, dict] = field(default_factory=dict)
+    selected_models: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -139,6 +140,7 @@ class ProviderStore:
                 is_custom=False,
                 models=models,
                 model_meta=meta,
+                selected_models=[m for m in stored.get("selected_models", []) if m],
             ))
         for pid, stored in self._config.providers.items():
             if pid.startswith(_CUSTOM_ID_PREFIX):
@@ -149,6 +151,7 @@ class ProviderStore:
                     api_key=stored.get("api_key", ""),
                     is_custom=True,
                     models=list(stored.get("models", [])),
+                    selected_models=[m for m in stored.get("selected_models", []) if m],
                 ))
         result.sort(key=lambda p: (not p.is_custom, p.name.lower()))
         return result
@@ -164,6 +167,23 @@ class ProviderStore:
         if p is None:
             return []
         return p.models
+
+    def get_selected_models(self, pid: str) -> list[str]:
+        stored = self._config.providers.get(pid, {})
+        if not isinstance(stored, dict):
+            return []
+        return [m for m in stored.get("selected_models", []) if m]
+
+    def add_selected_model(self, pid: str, model: str) -> None:
+        stored = self._config.providers.setdefault(pid, {})
+        if not isinstance(stored, dict) or not model:
+            return
+        sel = [m for m in stored.get("selected_models", []) if m]
+        if model not in sel:
+            sel.append(model)
+        stored["selected_models"] = sel
+        self._config.active_model = model
+        self.save()
 
 
     @property
@@ -203,7 +223,7 @@ class ProviderStore:
         return {
             "base_url": p.base_url,
             "api_key": p.api_key,
-            "model": model or (p.models[0] if p.models else ""),
+            "model": model,
         }
 
 

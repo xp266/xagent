@@ -229,11 +229,13 @@ class _ListPicker(Vertical):
 
     def show(self, items) -> None:
         self._items = items
+        search = self.query_one("#picker-search", Input)
+        search.value = ""
         self._rebuild()
         self._center_presets()
         self.add_class("visible")
         self.call_after_refresh(self._center)
-        self.query_one("#picker-search", Input).focus()
+        search.focus()
 
     def _center_presets(self) -> None:
         try:
@@ -377,6 +379,10 @@ class ProviderPicker(_ListPicker):
     class Dismissed(Message):
         pass
 
+    def __init__(self, items=None, **kwargs) -> None:
+        super().__init__(items=items, **kwargs)
+        self._connected_only = False
+
     def item_label(self, item) -> str:
         if item is self.ADD_CUSTOM:
             return "+ Add custom provider"
@@ -404,7 +410,10 @@ class ProviderPicker(_ListPicker):
             self._filtered = [i for i in self._items if self.item_matches(i, query)]
         else:
             self._filtered = list(self._items)
-        self._filtered = [self.ADD_CUSTOM] + self._filtered
+        if self._connected_only:
+            self._filtered = [i for i in self._filtered if i is not self.ADD_CUSTOM and getattr(i, "api_key", "")]
+        else:
+            self._filtered = [self.ADD_CUSTOM] + self._filtered
         self._selected = 0
         list_box = self.query_one("#picker-list", VerticalScroll)
         for child in list(list_box.children):
@@ -419,19 +428,60 @@ class ProviderPicker(_ListPicker):
 class ModelPicker(_ListPicker):
     placeholder = "Search models..."
 
+    ADD_MODEL = object()
+
     class Selected(Message):
         def __init__(self, model: str) -> None:
             super().__init__()
             self.model = model
 
+    class AddModel(Message):
+        pass
+
     class Dismissed(Message):
         pass
 
+    def __init__(self, items=None, **kwargs) -> None:
+        super().__init__(items=items, **kwargs)
+        self._add_enabled = False
+
     def item_label(self, item) -> str:
+        if item is self.ADD_MODEL:
+            return "+ Add model"
         return item
 
     def item_matches(self, item, query: str) -> bool:
+        if item is self.ADD_MODEL:
+            return "add" in query or "model" in query
         return query in item.lower()
+
+    def _select_item(self, item) -> None:
+        if item is self.ADD_MODEL:
+            self.post_message(self.AddModel())
+        else:
+            self.post_message(self.Selected(item))
+
+    def _rebuild(self) -> None:
+        try:
+            search = self.query_one("#picker-search", Input)
+        except Exception:
+            return
+        query = search.value.strip().lower()
+        if query:
+            self._filtered = [i for i in self._items if self.item_matches(i, query)]
+        else:
+            self._filtered = list(self._items)
+        if self._add_enabled:
+            self._filtered = [self.ADD_MODEL] + self._filtered
+        self._selected = 0
+        list_box = self.query_one("#picker-list", VerticalScroll)
+        for child in list(list_box.children):
+            child.remove()
+        for i, item in enumerate(self._filtered):
+            row = Static(self.item_label(item), classes="picker-row")
+            if i == 0:
+                row.add_class("selected")
+            list_box.mount(row)
 
 
 class ProviderKeyDialog(Vertical):

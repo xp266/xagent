@@ -30,22 +30,60 @@ class PickerMixin:
     def _open_provider_picker(self) -> None:
         self._palette().hide()
         self._set_palette_open(False)
-        self._provider_picker().show(list_providers())
+        picker = self._provider_picker()
+        picker._connected_only = False
+        picker.show(list_providers())
 
     def _open_model_picker(self) -> None:
         store = get_store()
         provider = store.get_active()
         if provider is None:
-            self._append_error("No active provider. Use /provider to select one first.")
+            self._append_error("No provider connected. Use /provider to connect one first.")
+            self.query_one("#input", ChatInput).focus()
             return
         self._palette().hide()
         self._set_palette_open(False)
-        self._model_picker().show(store.get_provider_models(provider.id))
+        picker = self._model_picker()
+        picker._add_enabled = True
+        picker.show(store.get_selected_models(provider.id))
+
+    def _open_model_picker_all(self, provider) -> None:
+        store = get_store()
+        models = store.get_provider_models(provider.id)
+        if not models:
+            self._append_error(f"No models available for {provider.name}. The model list could not be loaded.")
+            self.query_one("#input", ChatInput).focus()
+            return
+        self._pending_model_provider = provider
+        self._palette().hide()
+        self._set_palette_open(False)
+        picker = self._model_picker()
+        picker._add_enabled = False
+        picker.show(models)
+
+    def _open_add_model_flow(self) -> None:
+        store = get_store()
+        connected = [p for p in store.list_providers() if p.api_key]
+        if not connected:
+            self._append_error("Connect a provider first (/provider), then add its models.")
+            self.query_one("#input", ChatInput).focus()
+            return
+        self._palette().hide()
+        self._set_palette_open(False)
+        picker = self._provider_picker()
+        picker._connected_only = True
+        picker.show(connected)
+        self._add_model_provider_flow = True
 
     def _close_key_dialog(self) -> None:
         self._key_dialog().hide()
 
     def on_provider_picker_selected(self, message: ProviderPicker.Selected) -> None:
+        if getattr(self, "_add_model_provider_flow", False):
+            self._add_model_provider_flow = False
+            self._provider_picker()._connected_only = False
+            self._open_model_picker_all(message.provider)
+            return
         self._close_key_dialog()
         self._key_dialog().show(
             provider=message.provider,
@@ -58,9 +96,12 @@ class PickerMixin:
         )
 
     def on_provider_picker_dismissed(self, message: ProviderPicker.Dismissed) -> None:
+        self._add_model_provider_flow = False
+        self._provider_picker()._connected_only = False
         self.query_one("#input", ChatInput).focus()
 
     def on_provider_picker_add_custom(self, message: ProviderPicker.AddCustom) -> None:
+        self._add_model_provider_flow = False
         self._key_dialog().show(is_custom=True)
 
     def on_provider_key_dialog_saved(self, message: ProviderKeyDialog.Saved) -> None:
@@ -72,8 +113,9 @@ class PickerMixin:
             store._config.providers.setdefault(provider.id, {})["api_key"] = values["api_key"]
             store.save()
             store.set_active_provider(provider.id)
+            store.set_active_model("")
             self._apply_active_provider(provider.id, store.get_provider(provider.id))
-            self.query_one("#input", ChatInput).focus()
+            self._open_model_picker_all(store.get_provider(provider.id))
             return
 
         if values.get("base_url"):
@@ -84,11 +126,11 @@ class PickerMixin:
                 pid=provider.id if provider is not None and provider.is_custom else "",
             )
             store.set_active_provider(pid)
+            store.set_active_model("")
             self._apply_active_provider(pid, store.get_provider(pid))
-            self.run_worker(self._refresh_custom_models(pid), thread=True)
-            self.query_one("#input", ChatInput).focus()
+            self.run_worker(self._refresh_custom_models(pid, open_picker=True), thread=True)
 
-    async def _refresh_custom_models(self, pid: str) -> None:
+    async def _refresh_custom_models(self, pid: str, open_picker: bool = False) -> None:
         store = get_store()
         provider = store.get_provider(pid)
         if provider is None or not provider.base_url:
@@ -99,23 +141,41 @@ class PickerMixin:
         except Exception as e:
             models = []
         store.set_custom_models(pid, models)
-        self.call_from_thread(self._custom_models_refreshed, pid, models)
+        self.call_from_thread(self._custom_models_refreshed, pid, models, open_picker)
 
-    def _custom_models_refreshed(self, pid: str, models: list[str]) -> None:
-        self._update_status()
+    def _custom_models_refreshed(self, pid: str, models: list[str], open_picker: bool = False) -> None:
+        if open_picker:
+            store = get_store()
+            provider = store.get_provider(pid)
+            if provider is not None and models:
+                self._open_model_picker_all(provider)
+            else:
+                self._append_error(f"No models available for {pid}. The model list could not be fetched.")
+                self._update_status()
+                self.query_one("#input", ChatInput).focus()
+        else:
+            self._update_status()
 
     def on_provider_key_dialog_canceled(self, message: ProviderKeyDialog.Canceled) -> None:
         self.query_one("#input", ChatInput).focus()
 
     def on_model_picker_selected(self, message: ModelPicker.Selected) -> None:
         store = get_store()
-        store.set_active_model(message.model)
+        provider = getattr(self, "_pending_model_provider", None) or store.get_active()
+        self._pending_model_provider = None
+        if provider is not None:
+            store.set_active_provider(provider.id)
+            store.add_selected_model(provider.id, message.model)
         self._session.reset_provider()
         self._ctx_usage_tokens = 0
         self._update_status()
         self.query_one("#input", ChatInput).focus()
 
+    def on_model_picker_add_model(self, message: ModelPicker.AddModel) -> None:
+        self._open_add_model_flow()
+
     def on_model_picker_dismissed(self, message: ModelPicker.Dismissed) -> None:
+        self._pending_model_provider = None
         self.query_one("#input", ChatInput).focus()
 
     def _apply_active_provider(self, pid: str, provider) -> None:
@@ -124,8 +184,6 @@ class PickerMixin:
             return
         if store.active_provider_id != pid:
             store.set_active_provider(pid)
-        if not store.active_model or (provider.models and store.active_model not in provider.models):
-            store.set_active_provider(pid, model=provider.models[0] if provider.models else "")
         self._session.reset_provider()
         self._ctx_usage_tokens = 0
         self._update_status()
