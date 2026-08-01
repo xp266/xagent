@@ -5,20 +5,12 @@ from textual.widgets import Static, TextArea, Input, Markdown, Collapsible
 
 
 class LazyMarkdown(Markdown):
-    """Markdown that defers parsing until explicitly activated.
-
-    With ``auto=True`` (default) the app calls ``activate_pending()`` after all
-    widgets are mounted. With ``auto=False`` parsing is deferred until
-    ``activate()`` is called (e.g. on Collapsible expand).
-    """
-
     def __init__(self, markdown: str = "", *, auto: bool = True, **kwargs) -> None:
         self._lazy_source = markdown
         self._auto = auto
         super().__init__("", **kwargs)
 
     def set_markdown(self, markdown: str) -> None:
-        """Set the source to parse on next activation."""
         self._lazy_source = markdown
 
     @property
@@ -26,7 +18,6 @@ class LazyMarkdown(Markdown):
         return bool(self._lazy_source)
 
     async def activate(self) -> None:
-        """Parse and display the pending markdown."""
         source = self._lazy_source
         self._lazy_source = ""
         if source:
@@ -34,8 +25,6 @@ class LazyMarkdown(Markdown):
 
 
 class LazyCollapsible(Collapsible):
-    """Collapsible that activates lazy children when expanded."""
-
     def _watch_collapsed(self, collapsed: bool) -> None:
         super()._watch_collapsed(collapsed)
         if not collapsed:
@@ -48,24 +37,21 @@ class LazyCollapsible(Collapsible):
 
 
 class ChatInput(TextArea):
-
     class Submitted(Message):
         def __init__(self, text: str) -> None:
             super().__init__()
             self.text = text
 
     class Navigate(Message):
-        """Request the palette to move selection (up/down)."""
-
         def __init__(self, delta: int) -> None:
             super().__init__()
             self.delta = delta
 
     class AcceptPalette(Message):
-        """Request the palette to accept the selected command."""
+        pass
 
     class TextEdited(Message):
-        """Input text changed (used to refresh the command palette)."""
+        pass
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -102,13 +88,6 @@ class ChatInput(TextArea):
 
 
 class CommandPalette(Vertical):
-    """A small popup listing commands matching the typed slash prefix.
-
-    The palette is shown above the input when the user types ``/``.
-    Navigation (up/down) and selection (enter) are handled by the parent
-    via posted messages.
-    """
-
     DEFAULT_CSS = """
     CommandPalette {
         display: none;
@@ -139,7 +118,6 @@ class CommandPalette(Vertical):
         self._selected: int = 0
 
     def show(self, commands: list) -> None:
-        """Show the palette with matching commands."""
         self._commands = commands
         self._selected = 0
         for child in list(self.children):
@@ -183,7 +161,6 @@ class CommandPalette(Vertical):
 
 
 def _format_session_time(iso: str) -> str:
-    """Format an ISO timestamp into a short readable string."""
     import datetime
     try:
         dt = datetime.datetime.fromisoformat(iso)
@@ -203,18 +180,11 @@ def _format_session_time(iso: str) -> str:
 
 
 class _ListPicker(Vertical):
-    """Centered modal dialog with a search box and a filtered list.
-
-    Subclasses implement ``item_label(item)`` and ``item_matches(item, query)``
-    and define the concrete ``Selected``/``Dismissed`` messages. Navigation
-    (up/down) and selection (enter) are handled here.
-    """
-
     class Selected(Message):
-        """An item was chosen from the picker."""
+        pass
 
     class Dismissed(Message):
-        """The picker was closed without selection."""
+        pass
 
     placeholder = "Search..."
     footer_text = "Press ESC to exit"
@@ -238,7 +208,6 @@ class _ListPicker(Vertical):
         yield Static(self.footer_text, id="picker-footer")
 
     def _rebuild(self) -> None:
-        """Rebuild the list from the current filter."""
         try:
             search = self.query_one("#picker-search", Input)
         except Exception:
@@ -267,7 +236,6 @@ class _ListPicker(Vertical):
         self.query_one("#picker-search", Input).focus()
 
     def _center_presets(self) -> None:
-        """Set centering offset before showing to avoid a flash at the top-left."""
         try:
             parent_w = self.screen.size.width
             parent_h = self.screen.size.height
@@ -278,7 +246,6 @@ class _ListPicker(Vertical):
             pass
 
     def _center(self) -> None:
-        """Recenter the picker once it has real layout dimensions."""
         try:
             parent_w = self.screen.size.width
             parent_h = self.screen.size.height
@@ -301,7 +268,6 @@ class _ListPicker(Vertical):
             row.set_class(i == self._selected, "selected")
 
     def _select_item(self, item) -> None:
-        """Handle an item chosen via enter. Subclasses may override."""
         self.post_message(self.Selected(item))
 
     def move(self, delta: int) -> None:
@@ -350,17 +316,9 @@ class _ListPicker(Vertical):
 
 
 class SessionPicker(_ListPicker):
-    """Centered modal dialog for picking a session.
-
-    Shows a search box at the top and a scrollable list of sessions
-    (``id - name - time``). Filtering is applied live by id, name or time.
-    """
-
     placeholder = "Search sessions..."
 
     class Selected(Message):
-        """A session was chosen from the picker."""
-
         def __init__(self, session) -> None:
             super().__init__()
             self.session = session
@@ -379,7 +337,6 @@ class SessionPicker(_ListPicker):
         )
 
     def _rebuild(self) -> None:
-        """Rebuild the list from the current filter."""
         try:
             search = self.query_one("#picker-search", Input)
         except Exception:
@@ -402,21 +359,17 @@ class SessionPicker(_ListPicker):
 
 
 class ProviderPicker(_ListPicker):
-    """Centered modal dialog for picking an API provider."""
-
     placeholder = "Search providers..."
 
     ADD_CUSTOM = object()
 
     class Selected(Message):
-        """A provider was chosen from the picker."""
-
         def __init__(self, provider) -> None:
             super().__init__()
             self.provider = provider
 
     class AddCustom(Message):
-        """The user chose to add a new custom provider."""
+        pass
 
     def item_label(self, item) -> str:
         if item is self.ADD_CUSTOM:
@@ -458,13 +411,9 @@ class ProviderPicker(_ListPicker):
 
 
 class ModelPicker(_ListPicker):
-    """Centered modal dialog for picking a model of the active provider."""
-
     placeholder = "Search models..."
 
     class Selected(Message):
-        """A model was chosen from the picker."""
-
         def __init__(self, model: str) -> None:
             super().__init__()
             self.model = model
@@ -477,23 +426,14 @@ class ModelPicker(_ListPicker):
 
 
 class ProviderKeyDialog(Vertical):
-    """Small modal for entering an API key (and base URL for custom providers).
-
-    Two modes:
-      - built-in provider: single ``api-key`` input.
-      - custom provider: ``custom-name``, ``custom-url`` and ``api-key`` inputs.
-    """
-
     class Saved(Message):
-        """The dialog was confirmed with values."""
-
         def __init__(self, values: dict, provider=None) -> None:
             super().__init__()
             self.values = values
             self.provider = provider
 
     class Canceled(Message):
-        """The dialog was closed without saving."""
+        pass
 
     def __init__(self, provider=None, is_custom: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)

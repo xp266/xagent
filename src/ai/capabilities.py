@@ -76,7 +76,6 @@ def get_model_context_limit(model_name: str) -> int:
 
 
 def get_model_output_limit(model_name: str) -> int:
-    """Max output tokens for a model (0 if unknown)."""
     global _MODELS_DB
     if _MODELS_DB is None:
         _MODELS_DB = _load_models_db()

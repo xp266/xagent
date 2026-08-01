@@ -3,11 +3,12 @@ import sys
 import importlib.util
 
 from src.types.tools import Tool, ToolResult
-from src.agent.truncate import TruncateService
 
 
 class ToolRegistry:
     def __init__(self, truncation_dir: str = ""):
+        from src.agent.truncate import TruncateService
+
         self._tools: dict[str, Tool] = {}
         self._truncate = TruncateService(truncation_dir)
 

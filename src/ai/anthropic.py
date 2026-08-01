@@ -1,18 +1,3 @@
-"""Anthropic Messages API provider (SSE streaming via httpx).
-
-The Anthropic request/response format differs a lot from OpenAI's:
-
-- the system prompt is a top-level ``system`` field, not a message;
-- content is an array of typed blocks (text / thinking / tool_use / tool_result);
-- tool schemas use ``input_schema`` instead of ``function.parameters``;
-- tool calls are ``tool_use`` content blocks, not a separate ``tool_calls`` field;
-- tool results are ``tool_result`` blocks nested in a ``user`` message;
-- usage is reported as input_tokens / output_tokens.
-
-Helpers that cannot be shared with the OpenAI provider are kept here under
-``_anthropic``-suffixed names so the two formats stay independent.
-"""
-
 from __future__ import annotations
 
 import json
@@ -28,8 +13,7 @@ from src.types.events import StreamEvent, TokenUsage
 _ANTHROPIC_VERSION = "2023-06-01"
 _DEFAULT_MAX_TOKENS = 8192
 
-# Anthropic stop_reason -> OpenAI-style finish_reason. The agent loop decides
-# whether to continue tool execution by comparing finish_reason to "tool_calls".
+
 _ANTHROPIC_STOP_REASONS = {
     "tool_use": "tool_calls",
     "end_turn": "stop",
@@ -39,7 +23,6 @@ _ANTHROPIC_STOP_REASONS = {
 
 
 def _split_data_url(url: str) -> tuple[str, str] | None:
-    """Return ``(mime, base64)`` for a data URL, else None."""
     if url.startswith("data:") and ";base64," in url:
         head, b64 = url[5:].split(";base64,", 1)
         return head, b64
@@ -47,7 +30,6 @@ def _split_data_url(url: str) -> tuple[str, str] | None:
 
 
 def _user_content_to_anthropic(content, capabilities: Capabilities) -> list[dict]:
-    """Convert OpenAI-style user content into Anthropic content blocks."""
     if isinstance(content, str):
         return [{"type": "text", "text": content}]
     if not isinstance(content, list):
@@ -89,12 +71,13 @@ def _user_content_to_anthropic(content, capabilities: Capabilities) -> list[dict
 
 
 def _assistant_content_to_anthropic(msg: dict) -> list[dict]:
-    """Convert an OpenAI-style assistant message into Anthropic blocks.
-
-    ``reasoning_content`` is dropped: Anthropic has no such field, and
-    thinking is emitted as its own block only when requested.
-    """
     blocks = []
+    reasoning = msg.get("reasoning_content") or ""
+    if reasoning:
+        thinking_block: dict = {"type": "thinking", "thinking": reasoning}
+        if msg.get("signature"):
+            thinking_block["signature"] = msg["signature"]
+        blocks.append(thinking_block)
     content = msg.get("content")
     if content:
         blocks.append({"type": "text", "text": content})
@@ -114,7 +97,6 @@ def _assistant_content_to_anthropic(msg: dict) -> list[dict]:
 
 
 def _merge_anthropic_messages(messages: list[dict]) -> list[dict]:
-    """Merge consecutive same-role messages (tool results collapse into one)."""
     merged: list[dict] = []
     for msg in messages:
         if merged and merged[-1]["role"] == msg["role"]:
@@ -125,7 +107,6 @@ def _merge_anthropic_messages(messages: list[dict]) -> list[dict]:
 
 
 def _messages_to_anthropic(messages: list[dict], capabilities: Capabilities) -> tuple[str, list[dict]]:
-    """Return ``(system, anthropic_messages)`` for the Messages API."""
     system = ""
     result: list[dict] = []
     for msg in messages:
@@ -140,19 +121,30 @@ def _messages_to_anthropic(messages: list[dict], capabilities: Capabilities) -> 
             if blocks:
                 result.append({"role": "assistant", "content": blocks})
         elif role == "tool":
+            result_block: dict = {
+                "type": "tool_result",
+                "tool_use_id": msg.get("tool_call_id", ""),
+                "content": msg.get("content", "") or "",
+            }
+            if msg.get("is_error"):
+                result_block["is_error"] = True
             result.append({
                 "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": msg.get("tool_call_id", ""),
-                    "content": msg.get("content", "") or "",
-                }],
+                "content": [result_block],
             })
     return system, _merge_anthropic_messages(result)
 
 
+def _close_schema(schema) -> dict:
+    if not isinstance(schema, dict):
+        return schema
+    closed = {k: _close_schema(v) for k, v in schema.items() if k not in ("$schema", "$defs", "$ref")}
+    if closed.get("type") == "object" or "properties" in closed:
+        closed.setdefault("additionalProperties", False)
+    return closed
+
+
 def _tools_to_anthropic(tools: list[dict] | None) -> list[dict] | None:
-    """Convert OpenAI-style tool schemas into Anthropic tool definitions."""
     if not tools:
         return None
     result = []
@@ -163,7 +155,7 @@ def _tools_to_anthropic(tools: list[dict] | None) -> list[dict] | None:
         result.append({
             "name": fn.get("name", ""),
             "description": fn.get("description", "") or "",
-            "input_schema": fn.get("parameters") or {"type": "object", "properties": {}},
+            "input_schema": _close_schema(fn.get("parameters")) or {"type": "object", "properties": {}},
         })
     return result or None
 
@@ -177,7 +169,6 @@ def _extract_api_error(body: str) -> str:
 
 
 def _iter_sse_events(resp: httpx.Response) -> Iterator[tuple[str, str]]:
-    """Yield ``(event_name, data)`` pairs from an SSE stream."""
     event_name = ""
     data_lines: list[str] = []
     for line in resp.iter_lines():
@@ -195,11 +186,11 @@ def _iter_sse_events(resp: httpx.Response) -> Iterator[tuple[str, str]]:
 
 
 def _stream_anthropic_events(resp: httpx.Response) -> Iterator[StreamEvent]:
-    """Translate Anthropic SSE events into the app's StreamEvents."""
     step_started = False
     reasoning_active = False
     text_active = False
     current_type: str | None = None
+    thinking_signature = ""
     tool_id = ""
     tool_name = ""
     tool_input_raw = ""
@@ -232,6 +223,8 @@ def _stream_anthropic_events(resp: httpx.Response) -> Iterator[StreamEvent]:
                 tool_name = block.get("name", "")
                 tool_input_raw = ""
                 yield StreamEvent(type="tool-input-start", data={"id": tool_id, "name": tool_name})
+            elif current_type == "thinking":
+                thinking_signature = block.get("signature", "")
             continue
 
         if name == "content_block_delta":
@@ -253,6 +246,8 @@ def _stream_anthropic_events(resp: httpx.Response) -> Iterator[StreamEvent]:
                     yield StreamEvent(type="reasoning-start")
                     reasoning_active = True
                 yield StreamEvent(type="reasoning-delta", data=delta.get("thinking", ""))
+            elif dtype == "signature_delta":
+                thinking_signature = delta.get("signature", "")
             elif dtype == "input_json_delta":
                 partial = delta.get("partial_json", "")
                 tool_input_raw += partial
@@ -271,6 +266,9 @@ def _stream_anthropic_events(resp: httpx.Response) -> Iterator[StreamEvent]:
                 if reasoning_active:
                     yield StreamEvent(type="reasoning-end")
                     reasoning_active = False
+                if thinking_signature:
+                    yield StreamEvent(type="signature", data=thinking_signature)
+                    thinking_signature = ""
             elif current_type == "text":
                 if text_active:
                     yield StreamEvent(type="text-end")

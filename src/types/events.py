@@ -16,6 +16,7 @@ class TokenUsage(BaseModel):
 class LLMResponse(BaseModel):
     content: str = ""
     reasoning: str = ""
+    signature: str = ""
     tool_calls: list = []
     finish_reason: str = ""
     usage: TokenUsage = TokenUsage()

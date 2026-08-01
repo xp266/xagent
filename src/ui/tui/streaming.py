@@ -12,7 +12,6 @@ def unescape_json(s: str) -> str:
 
 
 def json_field(raw: str, key: str) -> str:
-    """Extract a completed string field value from streamed JSON args."""
     m = re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"', raw)
     if not m:
         return ""
@@ -20,7 +19,6 @@ def json_field(raw: str, key: str) -> str:
 
 
 def json_tail_field(raw: str, key: str) -> str:
-    """Extract a string field value that may still be streaming (last field)."""
     m = re.search(rf'"{key}"\s*:\s*"(.*)$', raw, re.S)
     if not m:
         return ""
@@ -29,7 +27,6 @@ def json_tail_field(raw: str, key: str) -> str:
 
 
 def json_prefix_field(raw: str, key: str) -> str:
-    """Extract a non-last string field value that may still be streaming."""
     m = re.search(rf'"{key}"\s*:\s*"(.*?)(?="\s*[,}}]|$)', raw, re.S)
     if not m:
         return ""
@@ -37,7 +34,6 @@ def json_prefix_field(raw: str, key: str) -> str:
 
 
 def stream_args(raw: str, name: str) -> dict:
-    """Best-effort parse of partial streamed tool args JSON."""
     if not raw:
         return {}
     if name == "bash":

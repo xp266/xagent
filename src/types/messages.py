@@ -55,6 +55,7 @@ class UserMessage(BaseModel):
 class AssistantMessage(BaseModel):
     content: str = ""
     reasoning: str = ""
+    signature: str = ""
     tool_calls: list[ToolCall] = []
     finish_reason: str = ""
 
@@ -62,6 +63,8 @@ class AssistantMessage(BaseModel):
         msg: dict = {"role": "assistant", "content": self.content or None}
         if self.reasoning:
             msg["reasoning_content"] = self.reasoning
+        if self.signature:
+            msg["signature"] = self.signature
         if self.tool_calls:
             msg["tool_calls"] = [tc.to_api() for tc in self.tool_calls]
         return msg
@@ -72,6 +75,9 @@ class AssistantMessage(BaseModel):
         rc = d.get(reasoning_field)
         if rc:
             msg.reasoning = rc
+        sig = d.get("signature")
+        if sig:
+            msg.signature = sig
         for tc in d.get("tool_calls", []):
             msg.tool_calls.append(ToolCall.from_api(tc))
         return msg
@@ -84,13 +90,17 @@ class ToolMessage(BaseModel):
     attachments: list = []
 
     def to_api(self) -> dict:
-        return {"role": "tool", "tool_call_id": self.tool_call_id, "content": self.content}
+        msg = {"role": "tool", "tool_call_id": self.tool_call_id, "content": self.content}
+        if self.is_error:
+            msg["is_error"] = True
+        return msg
 
     @classmethod
     def from_api(cls, d: dict) -> "ToolMessage":
         return cls(
             tool_call_id=d.get("tool_call_id", ""),
             content=d.get("content", ""),
+            is_error=bool(d.get("is_error")),
         )
 
 

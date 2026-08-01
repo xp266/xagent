@@ -1,28 +1,3 @@
-"""Provider registry and persistent configuration.
-
-Providers are OpenAI-compatible endpoints. Built-in providers are loaded from
-``data/models.json`` (id, display name, base URL from the ``api`` field and
-model list). Custom providers (name + base_url + api_key) are stored in
-``<data_dir>/config.json`` together with the active provider/model selection.
-
-Config file layout::
-
-    {
-      "active_provider": "deepseek",
-      "active_model": "deepseek-chat",
-      "exa_api_key": "...",
-      "providers": {
-        "deepseek": { "api_key": "..." },
-        "my-custom": {
-          "name": "My Custom",
-          "base_url": "https://...",
-          "api_key": "...",
-          "models": ["m1", "m2"]
-        }
-      }
-    }
-"""
-
 from __future__ import annotations
 
 import json
@@ -36,8 +11,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 _MODELS_PATH = os.path.join(_PROJECT_ROOT, "data", "models.json")
 _CONFIG_PATH = os.path.join(data_dir(), "config.json")
 
-# Well-known providers that lack an ``api`` field in models.json but expose a
-# standard /v1 endpoint.
+
 FALLBACK_BASE_URL: dict[str, str] = {
     "openai": "https://api.openai.com/v1",
     "xai": "https://api.x.ai/v1",
@@ -76,14 +50,12 @@ class AppConfig:
 
 
 class ProviderStore:
-    """Loads/saves the JSON config and exposes provider lookups."""
-
     def __init__(self, path: str = _CONFIG_PATH) -> None:
         self.path = path
         self._config = self._load()
         self._builtin = self._load_builtin()
 
-    # ------------------------------------------------------------------ load
+
     def _load(self) -> AppConfig:
         if not os.path.isfile(self.path):
             return AppConfig()
@@ -112,7 +84,7 @@ class ProviderStore:
             return {}
         return data
 
-    # ----------------------------------------------------------------- save
+
     def save(self) -> None:
         payload = {
             "active_provider": self._config.active_provider,
@@ -133,7 +105,7 @@ class ProviderStore:
         except OSError:
             pass
 
-    # ------------------------------------------------------------- built-in
+
     def _builtin_base_url(self, pid: str) -> str:
         entry = self._builtin.get(pid, {})
         return entry.get("api") or FALLBACK_BASE_URL.get(pid, "")
@@ -150,7 +122,7 @@ class ProviderStore:
                 meta[mid] = m
         return ids, meta
 
-    # --------------------------------------------------------------- public
+
     def list_providers(self) -> list[ProviderInfo]:
         result = []
         for pid in self._builtin:
@@ -193,7 +165,7 @@ class ProviderStore:
             return []
         return p.models
 
-    # --------------------------------------------------------------- active
+
     @property
     def active_provider_id(self) -> str:
         return self._config.active_provider
@@ -224,7 +196,6 @@ class ProviderStore:
         return self.get_provider(self._config.active_provider)
 
     def resolve(self) -> dict:
-        """Return ``{base_url, api_key, model}`` for the active provider."""
         model = self._config.active_model
         p = self.get_active()
         if p is None:
@@ -235,7 +206,7 @@ class ProviderStore:
             "model": model or (p.models[0] if p.models else ""),
         }
 
-    # -------------------------------------------------------------- custom
+
     def save_custom_provider(
         self,
         name: str,
@@ -272,14 +243,12 @@ class ProviderStore:
 
 
 def is_anthropic_provider(provider: ProviderInfo | None) -> bool:
-    """Whether a provider speaks the Anthropic Messages API."""
     if provider is None:
         return False
     return "anthropic" in (provider.base_url or "").lower()
 
 
 def fetch_models(base_url: str, api_key: str) -> list[str]:
-    """Fetch an OpenAI-compatible model list via ``GET {base_url}/models``."""
     import urllib.request
 
     url = base_url.rstrip("/") + "/models"

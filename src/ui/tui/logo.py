@@ -11,16 +11,16 @@ LOGO_ART = [
 ]
 
 _LAYER_COLORS = {
-    1: "#0771ae",
-    2: "#0771ae",
-    3: "#0e5c85",
-    4: "#0e5c85",
-    5: "#0e5c85",
-    6: "#093c5a",
-    7: "#093c5a",
+    1: "#0c9cf0",
+    2: "#0b90dc",
+    3: "#09699d",
+    4: "#075681",
+    5: "#104c6c",
+    6: "#0e3d58",
+    7: "#0b3750",
 }
 
-_DEFAULT_COLOR = "#3E525E"
+_DEFAULT_COLOR = "#30373C"
 
 
 def build_logo_text() -> Text:

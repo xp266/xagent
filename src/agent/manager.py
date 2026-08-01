@@ -17,7 +17,6 @@ def _messages_to_api(messages: list) -> list[dict]:
 
 
 class MessageManager:
-
     def __init__(self, system_prompt: str = "", session=None):
         self._session = session
         self._messages: list[Message | dict] = list(session.messages) if session else []
@@ -46,15 +45,17 @@ class MessageManager:
         self._messages.append(AssistantMessage(
             content=response.content,
             reasoning=response.reasoning,
+            signature=response.signature,
             tool_calls=tool_calls,
             finish_reason=response.finish_reason,
         ))
 
-    def add_tool(self, tool_call_id: str, content: str, attachments: list | None = None) -> None:
+    def add_tool(self, tool_call_id: str, content: str, attachments: list | None = None, is_error: bool = False) -> None:
         self._messages.append(ToolMessage(
             tool_call_id=tool_call_id,
             content=content,
             attachments=attachments or [],
+            is_error=is_error,
         ))
         if attachments:
             self._messages.append(UserMessage(content=SYNTHETIC_ATTACHMENT_PROMPT))

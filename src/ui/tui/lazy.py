@@ -9,13 +9,6 @@ from textual.widgets import Static
 
 
 class LazyText(Static):
-    """Line-based lazy-rendering widget for large text content.
-
-    Pre-splits content into per-line Content objects once on content/width
-    change, then builds Strips lazily on first render_line access.  This
-    avoids O(N) full-content strip building on every dirty refresh.
-    """
-
     def __init__(self, content: str | RichText = "", **kwargs) -> None:
         super().__init__(content, **kwargs)
         self._lines: list[Content] = []
@@ -49,7 +42,7 @@ class LazyText(Static):
             return Strip.blank(self.size.width)
         if self._strips[y] is None:
             self._strips[y] = _build_strip(self._lines[y])
-        return self._strips[y].apply_style(self.visual_style.rich_style)  # type: ignore
+        return self._strips[y].apply_style(self.visual_style.rich_style)
 
     def selection_updated(self, selection) -> None:
         pass

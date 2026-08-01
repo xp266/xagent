@@ -10,14 +10,12 @@ _CODE_TOOLS = {"write", "edit", "read"}
 
 
 def _lang_for(path: str) -> str:
-    """Infer a pygments language name from a file path."""
     if not path:
         return "text"
     return guess_language(path, path)
 
 
 def _code_block(lang: str, code: str) -> str:
-    """Wrap code in a fenced markdown code block."""
     code = (code or "").rstrip("\n")
     return f"```{lang}\n{code}\n```\n"
 
@@ -104,10 +102,6 @@ def tool_render(name, args, result, is_error, preview=False):
 
 
 def tool_markdown(name, args, result, is_error, preview=False):
-    """Render write/edit/read tool output as markdown with language highlighting.
-
-    Returns (title, markdown_str) for code tools, or None to keep plain rendering.
-    """
     result = result or ""
     if name == "write":
         path = args.get("path", "")
