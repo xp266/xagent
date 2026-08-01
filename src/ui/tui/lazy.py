@@ -76,35 +76,45 @@ def _build_strip(line: Content, offset_y: int) -> Strip:
     spans = list(line.spans)
     if not spans:
         return Strip([Segment(plain, Style(meta={"offset": (0, offset_y)}))])
-    spans.sort(key=lambda s: s.start)
-    segments: list[Segment] = []
-    pos = 0
-    x = 0
+    events: list[tuple[int, int, Style]] = []
     for span in spans:
-        if span.start > pos:
-            text = plain[pos:span.start]
-            segments.append(Segment(text, Style(meta={"offset": (x, offset_y)})))
-            x += len(text)
+        start, end = span.start, span.end
+        if start < 0 or end > len(plain) or start >= end:
+            continue
         style_raw = span.style
         if isinstance(style_raw, str):
             seg_style = Style.parse(style_raw)
         elif style_raw is not None:
             seg_style = style_raw.rich_style
         else:
-            seg_style = None
-        text = plain[span.start:span.end]
-        offset_style = Style(meta={"offset": (x, offset_y)})
-        segments.append(
-            Segment(
-                text,
-                seg_style + offset_style
-                if seg_style is not None
-                else offset_style,
-            )
-        )
-        x += len(text)
-        pos = span.end
+            continue
+        events.append((start, 1, seg_style))
+        events.append((end, -1, seg_style))
+    events.sort(key=lambda e: (e[0], -e[1]))
+    segments: list[Segment] = []
+    active: list[Style] = []
+    pos = 0
+    x = 0
+    for boundary, delta, seg_style in events:
+        if boundary > pos:
+            if active:
+                seg = Style.combine(active)
+            else:
+                seg = None
+            if seg is not None:
+                segments.append(Segment(plain[pos:boundary], seg + Style(meta={"offset": (x, offset_y)})))
+            else:
+                segments.append(Segment(plain[pos:boundary], Style(meta={"offset": (x, offset_y)})))
+            x += boundary - pos
+            pos = boundary
+        if delta > 0:
+            active.append(seg_style)
+        elif seg_style in active:
+            active.remove(seg_style)
     if pos < len(plain):
-        text = plain[pos:]
-        segments.append(Segment(text, Style(meta={"offset": (x, offset_y)})))
+        if active:
+            seg = Style.combine(active) + Style(meta={"offset": (x, offset_y)})
+        else:
+            seg = Style(meta={"offset": (x, offset_y)})
+        segments.append(Segment(plain[pos:], seg))
     return Strip(segments)

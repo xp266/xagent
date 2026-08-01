@@ -115,29 +115,29 @@ def tool_block(name, args, result, is_error, preview=False):
         if preview:
             max_preview = 100
             if len(lines) > max_preview:
-                body = Text(f"( {len(lines)} lines, streaming )\n\n")
-                body.append("\n".join(lines[-max_preview:]))
+                body = f"( {len(lines)} lines, streaming )\n\n" + "\n".join(lines[-max_preview:])
             else:
-                body = Text("\n".join(lines))
+                body = "\n".join(lines)
+            body = f"```\n{body}"
         else:
-            body = Text(content)
+            body = f"```{_lang_for(path)}\n" + "\n".join(lines) + "\n```"
         if is_error and result:
-            body.append(f"\n\n{result}")
+            body = body.rstrip("\n") + f"\n\n{result}"
         return f"write {path}", body
     if name == "edit":
         file_path = args.get("filePath", "") or args.get("path", "")
         old_str = args.get("oldString", "") or ""
         new_str = args.get("newString", "") or ""
-        body = Text()
+        diff = []
         for line in old_str.rstrip("\n").split("\n"):
-            body.append("- ", style="#FF9E9E")
-            body.append(f"{line}\n")
+            diff.append(f"- {line}")
         for line in new_str.rstrip("\n").split("\n"):
-            body.append("+ ", style="#9FD28A")
-            body.append(f"{line}\n")
-        body.rstrip()
+            diff.append(f"+ {line}")
+        body = f"```{_lang_for(file_path)}\n" + "\n".join(diff)
+        if not preview:
+            body += "\n```"
         if is_error and result:
-            body.append(f"\n\n{result}")
+            body = body.rstrip("\n") + f"\n\n{result}"
         return f"edit {file_path}", body
     return None
 

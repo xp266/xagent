@@ -19,6 +19,7 @@ from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.dialogs import PickerMixin
 from src.ui.tui.logo import build_logo_text
 from src.ui.tui.lazy import LazyText
+from src.ui.tui.markdown import render_markdown
 from src.ui.tui.render import (
     block_tool, clean_result, code_tool, fmt_duration, fmt_pct, is_error_result,
     tool_block, tool_markdown, tool_render,
@@ -109,11 +110,10 @@ class XAgentTUI(PickerMixin, App):
             cur["thinking"].update(cur["reasoning_text"])
 
         if cur["reply"] is not None and cur.get("reply_text"):
-            md = cur["reply"]
             reply_text = cur["reply_text"]
             prev_len = cur.get("reply_appended", 0)
             if len(reply_text) > prev_len:
-                md.update(reply_text)
+                cur["reply"].update(render_markdown(reply_text))
                 cur["reply_appended"] = len(reply_text)
 
         for tc_id, tool in cur["tools"].items():
@@ -133,7 +133,7 @@ class XAgentTUI(PickerMixin, App):
                 if tool["title"] != title:
                     tool["title"] = title
                     self._render_tool_spinner(tool)
-                tool["st"].update(body)
+                tool["st"].update(render_markdown(body))
             else:
                 title, t = tool_render(name, args, None, False, preview=True)
                 title = title.strip() or name
@@ -394,7 +394,7 @@ class XAgentTUI(PickerMixin, App):
             if tool["title"] != title:
                 tool["title"] = title
                 self._render_tool_spinner(tool)
-            tool["st"].update(body)
+            tool["st"].update(render_markdown(body, numbered=(name == "write")))
         else:
             title, t = tool_render(name, args, None, False)
             tool["title"] = title
@@ -414,7 +414,7 @@ class XAgentTUI(PickerMixin, App):
             title, body = tool_block(name, tool["input"], result, is_error)
             tool["title"] = title
             tool["header"].update(Text(title))
-            tool["st"].update(body)
+            tool["st"].update(render_markdown(body, numbered=(name == "write")))
             if is_error:
                 tool["col"].add_class("tool-error")
             tool["done"] = True
@@ -427,7 +427,7 @@ class XAgentTUI(PickerMixin, App):
                 tool["title"] = m_title
                 if str(tool["title_widget"].label) != m_title:
                     tool["title_widget"].label = m_title
-                self._set_tool_content(tool["col"], LazyText(m, markup=False))
+                self._set_tool_content(tool["col"], LazyText(render_markdown(m)))
                 if is_error:
                     tool["col"].add_class("tool-error")
                 tool["done"] = True
@@ -623,7 +623,7 @@ class XAgentTUI(PickerMixin, App):
                     ))
 
                 if content:
-                    chat.mount(Vertical(LazyText(content, markup=False), classes="bubble reply-bubble"))
+                    chat.mount(Vertical(LazyText(render_markdown(content)), classes="bubble reply-bubble"))
 
                 for tc in tool_calls:
                     fn = tc.get("function", {})
@@ -638,7 +638,7 @@ class XAgentTUI(PickerMixin, App):
                         title, body = tool_block(name, args, result, is_error)
                         chat.mount(Vertical(
                             Static(Text(title), classes="tool-block-header"),
-                            LazyText(body, markup=False),
+                            LazyText(render_markdown(body, numbered=(name == "write"))),
                             classes="bubble tool-block" + (" tool-error" if is_error else ""),
                         ))
                         continue
@@ -646,7 +646,7 @@ class XAgentTUI(PickerMixin, App):
                     md = tool_markdown(name, args, result, is_error)
                     if md is not None:
                         title, m = md
-                        content_widget = LazyText(m, markup=False)
+                        content_widget = LazyText(render_markdown(m))
                     else:
                         title, t = tool_render(name, args, result, is_error)
                         content_widget = LazyText(t)
