@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import time
@@ -7,7 +6,7 @@ from functools import partial
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.content import Content
-from textual.widgets import Static, Collapsible, Markdown
+from textual.widgets import Static, Collapsible
 from rich.text import Text
 
 from src.agent import get_session_manager, run_session_turn, name_session_from_first_message
@@ -20,9 +19,12 @@ from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.dialogs import PickerMixin
 from src.ui.tui.logo import build_logo_text
 from src.ui.tui.lazy import LazyText
-from src.ui.tui.render import clean_result, code_tool, fmt_duration, fmt_pct, is_error_result, tool_markdown, tool_render
+from src.ui.tui.render import (
+    block_tool, clean_result, code_tool, fmt_duration, fmt_pct, is_error_result,
+    tool_block, tool_markdown, tool_render,
+)
 from src.ui.tui.streaming import stream_args
-from src.ui.tui.widgets import ChatInput, CommandPalette, LazyCollapsible, LazyMarkdown, ModelPicker, ProviderKeyDialog, ProviderPicker, SessionPicker
+from src.ui.tui.widgets import ChatInput, CommandPalette, ModelPicker, ProviderKeyDialog, ProviderPicker, SessionPicker
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
@@ -111,15 +113,11 @@ class XAgentTUI(PickerMixin, App):
             reply_text = cur["reply_text"]
             prev_len = cur.get("reply_appended", 0)
             if len(reply_text) > prev_len:
-                stream = cur.get("reply_stream")
-                if stream is not None:
-                    self.run_worker(stream.write(reply_text[prev_len:]))
-                else:
-                    md.append(reply_text[prev_len:])
+                md.update(reply_text)
                 cur["reply_appended"] = len(reply_text)
 
-        for tc_id, (st_widget, col) in cur["tools"].items():
-            if tc_id in cur.get("tool_done", set()):
+        for tc_id, tool in cur["tools"].items():
+            if tool.get("done"):
                 continue
             info = cur["tool_buffers"].get(tc_id)
             if info is None:
@@ -129,12 +127,20 @@ class XAgentTUI(PickerMixin, App):
                 continue
             info["_last_len"] = raw_len
             args = stream_args(info["raw"], info["name"])
-            title, t = tool_render(info["name"], args, None, False, preview=True)
-            title = title.strip() or info["name"]
-            if str(col._title.label) != title:
-                col._title.label = title
-                self._render_spinner(col._title)
-            st_widget.update(t)
+            name = info["name"]
+            if block_tool(name):
+                title, body = tool_block(name, args, None, False, preview=True)
+                if tool["title"] != title:
+                    tool["title"] = title
+                    self._render_tool_spinner(tool)
+                tool["st"].update(body)
+            else:
+                title, t = tool_render(name, args, None, False, preview=True)
+                title = title.strip() or name
+                if str(tool["title_widget"].label) != title:
+                    tool["title_widget"].label = title
+                    self._render_tool_spinner(tool)
+                tool["st"].update(t)
 
         self._scroll_end()
 
@@ -213,13 +219,50 @@ class XAgentTUI(PickerMixin, App):
     def _stop_all_spinners(self) -> None:
         for title in list(self._spinners):
             self._stop_spinner(title)
+        if self._current is not None:
+            for tool in self._current["tools"].values():
+                self._stop_tool_spinner(tool)
 
     def _tick_spinners(self) -> None:
-        if not self._spinners:
+        cur = self._current
+        tool_spinning = cur is not None and any(t.get("spinning") for t in cur["tools"].values())
+        if not self._spinners and not tool_spinning:
             return
         self._spinner_idx += 1
         for title in list(self._spinners):
             self._render_spinner(title)
+        if cur is not None:
+            for tool in cur["tools"].values():
+                self._render_tool_spinner(tool)
+
+    def _start_tool_spinner(self, tool) -> None:
+        tool["spinning"] = True
+        self._render_tool_spinner(tool)
+
+    def _render_tool_spinner(self, tool) -> None:
+        if not tool["spinning"]:
+            return
+        frame = _SPINNER_FRAMES[self._spinner_idx % len(_SPINNER_FRAMES)]
+        label = f"{frame} {tool['title']}"
+        if tool["header"] is not None:
+            tool["header"].update(Text(label))
+        else:
+            title_widget = tool["title_widget"]
+            if title_widget is not None:
+                title_widget.update(Content(label))
+
+    def _stop_tool_spinner(self, tool) -> None:
+        if not tool["spinning"]:
+            return
+        tool["spinning"] = False
+        if tool["header"] is not None:
+            tool["header"].update(Text(tool["title"]))
+        else:
+            title_widget = tool["title_widget"]
+            if title_widget is not None:
+                if str(title_widget.label) != tool["title"]:
+                    title_widget.label = tool["title"]
+                title_widget._update_label()
 
     def _tick_animations(self) -> None:
         if self._busy:
@@ -282,29 +325,52 @@ class XAgentTUI(PickerMixin, App):
     def _ensure_reply(self):
         cur = self._current
         if cur["reply"] is None:
-            st = Markdown("")
+            st = LazyText("", markup=False)
             self._chat().mount(Vertical(st, classes="bubble reply-bubble"))
             cur["reply"] = st
-            cur["reply_stream"] = Markdown.get_stream(st)
-            cur["reply_stream"].start()
         return cur["reply"]
 
     def _add_tool_streaming(self, tc_id: str, name: str) -> None:
-        title, t = tool_render(name, {}, None, False)
-        st = LazyText(t)
-        col = Collapsible(
-            st,
-            title=title,
-            classes="bubble tool-bubble",
-            collapsed=True,
-            collapsed_symbol="▸",
-            expanded_symbol="▾",
-        )
-        self._chat().mount(col)
-        self._current["tools"][tc_id] = (st, col)
+        tool = {
+            "name": name,
+            "title": name,
+            "spinning": False,
+            "done": False,
+            "input": {},
+            "header": None,
+            "st": None,
+            "col": None,
+            "title_widget": None,
+        }
+        if block_tool(name):
+            header = Static("", classes="tool-block-header")
+            st = LazyText("", markup=False)
+            col = Vertical(header, st, classes="bubble tool-block")
+            tool["header"] = header
+            tool["st"] = st
+            tool["col"] = col
+            self._chat().mount(col)
+        else:
+            title, t = tool_render(name, {}, None, False)
+            st = LazyText(t)
+            col = Collapsible(
+                st,
+                title=title,
+                classes=f"bubble tool-bubble tool-{name}",
+                collapsed=True,
+                collapsed_symbol="▸",
+                expanded_symbol="▾",
+            )
+            tool["title"] = title
+            tool["st"] = st
+            tool["col"] = col
+            tool["title_widget"] = col._title
+            self._chat().mount(col)
+        self._current["tools"][tc_id] = tool
         self._current["tool_inputs"][tc_id] = {}
         self._current["tool_buffers"][tc_id] = {"name": name, "raw": ""}
-        self._start_spinner(col._title)
+        if not block_tool(name):
+            self._start_tool_spinner(tool)
 
     def _set_tool_content(self, col, widget) -> None:
         contents = col.query_one("Contents")
@@ -315,49 +381,72 @@ class XAgentTUI(PickerMixin, App):
     def _finalize_tool_stream(self, tc_id: str, name: str, args: dict) -> None:
         if tc_id not in self._current["tools"]:
             self._add_tool_streaming(tc_id, name)
-        pair = self._current["tools"].get(tc_id)
-        if pair is None:
+        tool = self._current["tools"].get(tc_id)
+        if tool is None:
             return
-        st, col = pair
         info = self._current["tool_buffers"].setdefault(tc_id, {"name": name, "raw": ""})
         info["name"] = name
+        tool["name"] = name
+        tool["input"] = args
         self._current["tool_inputs"][tc_id] = args
-        title, t = tool_render(name, args, None, False)
-        if str(col._title.label) != title:
-            col._title.label = title
-            self._render_spinner(col._title)
-        st.update(t)
+        if block_tool(name):
+            title, body = tool_block(name, args, None, False)
+            if tool["title"] != title:
+                tool["title"] = title
+                self._render_tool_spinner(tool)
+            tool["st"].update(body)
+        else:
+            title, t = tool_render(name, args, None, False)
+            tool["title"] = title
+            if str(tool["title_widget"].label) != title:
+                tool["title_widget"].label = title
+                self._render_tool_spinner(tool)
+            tool["st"].update(t)
 
     def _set_tool_result(self, tc_id: str, name: str, result: str, is_error: bool) -> None:
-        pair = self._current["tools"].get(tc_id)
-        if pair is None:
+        tool = self._current["tools"].get(tc_id)
+        if tool is None:
             return
-        st, col = pair
-        self._stop_spinner(col._title)
-        args = self._current["tool_inputs"].get(tc_id, {})
-        title, t = tool_render(name, args, result, is_error)
-        if str(col._title.label) != title:
-            col._title.label = title
+        self._stop_tool_spinner(tool)
+        tool["name"] = name
+        tool["input"] = self._current["tool_inputs"].get(tc_id, {})
+        if block_tool(name):
+            title, body = tool_block(name, tool["input"], result, is_error)
+            tool["title"] = title
+            tool["header"].update(Text(title))
+            tool["st"].update(body)
+            if is_error:
+                tool["col"].add_class("tool-error")
+            tool["done"] = True
+            self._current["tool_done"].add(tc_id)
+            return
         if code_tool(name):
-            md = tool_markdown(name, args, result, is_error)
+            md = tool_markdown(name, tool["input"], result, is_error)
             if md is not None:
                 m_title, m = md
-                if str(col._title.label) != m_title:
-                    col._title.label = m_title
-                self._set_tool_content(col, Markdown(m))
-                self._current["tool_done"].add(tc_id)
+                tool["title"] = m_title
+                if str(tool["title_widget"].label) != m_title:
+                    tool["title_widget"].label = m_title
+                self._set_tool_content(tool["col"], LazyText(m, markup=False))
                 if is_error:
-                    col.add_class("tool-error")
+                    tool["col"].add_class("tool-error")
+                tool["done"] = True
+                self._current["tool_done"].add(tc_id)
                 return
-        st.update(t)
+        title, t = tool_render(name, tool["input"], result, is_error)
+        tool["title"] = title
+        if str(tool["title_widget"].label) != title:
+            tool["title_widget"].label = title
+        tool["st"].update(t)
         if is_error:
-            col.add_class("tool-error")
+            tool["col"].add_class("tool-error")
+        tool["done"] = True
         self._current["tool_done"].add(tc_id)
 
-    def _add_summary(self, tokens: int, elapsed: float) -> None:
+    def _add_summary(self, elapsed: float) -> None:
         cfg = get_config()
         model = cfg.model or "?"
-        summary = f"{model}  {tokens:,} tokens  {fmt_duration(elapsed)}"
+        summary = f"{model} - {fmt_duration(elapsed)}"
         self._chat().mount(Vertical(Static(summary), classes="summary-bubble"))
         self._scroll_end()
 
@@ -386,11 +475,7 @@ class XAgentTUI(PickerMixin, App):
         elif t == "text-start":
             self._flush_streaming_content(force=True)
             self._remove_empty_thinking()
-            old_stream = cur.get("reply_stream")
-            if old_stream is not None:
-                self.run_worker(old_stream.stop())
             cur["reply"] = None
-            cur["reply_stream"] = None
             cur["reply_text"] = ""
             cur["reply_appended"] = 0
             self._ensure_reply()
@@ -436,7 +521,6 @@ class XAgentTUI(PickerMixin, App):
         elif t == "step-finish":
             usage = event.data.get("usage", {}) or {}
             cur["steps"] += 1
-            cur["tokens"] += usage.get("total_tokens", 0)
             self._ctx_usage_tokens = usage.get("prompt_tokens", 0)
             self._update_status()
         elif t == "provider-error":
@@ -455,12 +539,8 @@ class XAgentTUI(PickerMixin, App):
     def _finalize_turn(self, elapsed: float) -> None:
         self._flush_streaming_content(force=True)
         cur = self._current
-        if cur:
-            stream = cur.get("reply_stream")
-            if stream is not None:
-                self.run_worker(stream.stop())
         if cur and cur["steps"] > 0:
-            self._add_summary(cur["tokens"], elapsed)
+            self._add_summary(elapsed)
         self._remove_empty_thinking()
         self._stop_all_spinners()
         self._waves.clear()
@@ -502,6 +582,11 @@ class XAgentTUI(PickerMixin, App):
         self._sm.current = s.id
         self._session = s
         self._ctx_usage_tokens = 0
+        for msg in reversed(s.messages):
+            meta = msg.get("_meta")
+            if meta and meta.get("prompt_tokens"):
+                self._ctx_usage_tokens = meta["prompt_tokens"]
+                break
         self._render_messages()
         self._update_status()
         self.query_one("#input", ChatInput).focus()
@@ -538,7 +623,7 @@ class XAgentTUI(PickerMixin, App):
                     ))
 
                 if content:
-                    chat.mount(Vertical(LazyMarkdown(content), classes="bubble reply-bubble"))
+                    chat.mount(Vertical(LazyText(content, markup=False), classes="bubble reply-bubble"))
 
                 for tc in tool_calls:
                     fn = tc.get("function", {})
@@ -549,15 +634,23 @@ class XAgentTUI(PickerMixin, App):
                         args = {}
                     result = clean_result(name, tool_results.get(tc.get("id", ""), ""))
                     is_error = is_error_result(name, result)
-                    classes = "bubble tool-bubble" + (" tool-error" if is_error else "")
+                    if block_tool(name):
+                        title, body = tool_block(name, args, result, is_error)
+                        chat.mount(Vertical(
+                            Static(Text(title), classes="tool-block-header"),
+                            LazyText(body, markup=False),
+                            classes="bubble tool-block" + (" tool-error" if is_error else ""),
+                        ))
+                        continue
+                    classes = f"bubble tool-bubble tool-{name}" + (" tool-error" if is_error else "")
                     md = tool_markdown(name, args, result, is_error)
                     if md is not None:
                         title, m = md
-                        content_widget = LazyMarkdown(m, auto=False)
+                        content_widget = LazyText(m, markup=False)
                     else:
                         title, t = tool_render(name, args, result, is_error)
                         content_widget = LazyText(t)
-                    chat.mount(LazyCollapsible(
+                    chat.mount(Collapsible(
                         content_widget,
                         title=title,
                         classes=classes,
@@ -569,10 +662,13 @@ class XAgentTUI(PickerMixin, App):
                 if content:
                     if self._is_turn_end(messages, idx):
                         cfg = get_config()
-                        model = cfg.model or "?"
-                        total = self._session.token_usage.total_tokens
+                        meta = msg.get("_meta") or {}
+                        model = meta.get("model") or (cfg.model or "?")
+                        summary = model
+                        if meta.get("elapsed") is not None:
+                            summary += f" - {fmt_duration(meta['elapsed'])}"
                         chat.mount(Vertical(
-                            Static(f"{model}  {total:,} tokens"),
+                            Static(summary),
                             classes="summary-bubble",
                         ))
 
@@ -581,13 +677,6 @@ class XAgentTUI(PickerMixin, App):
         else:
             self._hide_logo()
 
-        self.run_worker(self._activate_pending_markdown())
-
-    async def _activate_pending_markdown(self) -> None:
-        await asyncio.sleep(0)
-        for md in self._chat().query(LazyMarkdown):
-            if md._auto and md.is_pending:
-                await md.activate()
         self.call_after_refresh(self._scroll_end_force)
 
     def _scroll_end_force(self) -> None:
@@ -670,11 +759,9 @@ class XAgentTUI(PickerMixin, App):
         self._waves.clear()
         self._current = {
             "steps": 0,
-            "tokens": 0,
             "reasoning_text": "",
             "reply_text": "",
             "reply_appended": 0,
-            "reply_stream": None,
             "thinking": None,
             "reply": None,
             "tools": {},

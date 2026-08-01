@@ -1,18 +1,36 @@
 import json
+import time
 from collections.abc import Iterator
 
 from src.agent.loop import agent_stream
 from src.agent.session import Session, get_session_manager
 from src.types.events import LLMResponse, StreamEvent, TokenUsage
+from src.types.messages import AssistantMessage
+
+
+def _attach_turn_meta(session: Session, model: str, usage: TokenUsage, prompt_tokens: int, elapsed: float) -> None:
+    meta = {
+        "model": model,
+        "prompt_tokens": prompt_tokens,
+        "total_tokens": usage.total_tokens,
+        "elapsed": round(elapsed, 2),
+    }
+    for msg in reversed(session.msgs.get_messages()):
+        if isinstance(msg, AssistantMessage):
+            msg.meta = dict(meta)
+            return
 
 
 def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]:
     session.msgs.add_user(user_input)
+    start = time.monotonic()
 
     while True:
         response = LLMResponse()
         tool_calls_pending = []
         tool_results = []
+        turn_usage = TokenUsage()
+        last_prompt_tokens = 0
 
         try:
             stream = agent_stream(
@@ -41,6 +59,12 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                     response.finish_reason = event.data.get("finish_reason", "")
                     usage = event.data.get("usage", {})
                     if usage:
+                        last_prompt_tokens = usage.get("prompt_tokens", 0)
+                        turn_usage = TokenUsage(
+                            prompt_tokens=turn_usage.prompt_tokens + usage.get("prompt_tokens", 0),
+                            completion_tokens=turn_usage.completion_tokens + usage.get("completion_tokens", 0),
+                            total_tokens=turn_usage.total_tokens + usage.get("total_tokens", 0),
+                        )
                         session.token_usage = TokenUsage(
                             prompt_tokens=session.token_usage.prompt_tokens + usage.get("prompt_tokens", 0),
                             completion_tokens=session.token_usage.completion_tokens + usage.get("completion_tokens", 0),
@@ -78,5 +102,6 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
         if response.finish_reason != "tool_calls":
             break
 
+    _attach_turn_meta(session, session.provider.model, turn_usage, last_prompt_tokens, time.monotonic() - start)
     session.sync_messages()
     get_session_manager().save(session)

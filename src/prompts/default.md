@@ -36,4 +36,5 @@ example:
 
 # Tool Rules
 - Multiple types of tools can be invoked within a single response. Batch invoke tools to efficiently retrieve multiple independent pieces of information. Merge multiple Shell commands into one message for parallel execution whenever possible.
+- IMPORTANT: When you need real-time information, always first execute a command to obtain the current system time.
 - IMPORTANT: Exercise caution when executing potentially hazardous commands.

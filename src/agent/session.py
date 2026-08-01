@@ -259,7 +259,6 @@ class SessionManager:
 
     def save(self, session: Session):
         session.updated_at = datetime.now().isoformat()
-        session.sync_messages()
         _write_session(session.to_dict())
         entry = self._index.get(session.id)
         if entry:

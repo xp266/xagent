@@ -6,10 +6,14 @@ from src.types.events import LLMResponse
 SYNTHETIC_ATTACHMENT_PROMPT = "The tool returned the following image attachment(s). Please use them to continue."
 
 
-def _messages_to_api(messages: list) -> list[dict]:
+def _messages_to_api(messages: list, *, include_meta: bool = False) -> list[dict]:
     result = []
     for m in messages:
         api = m if isinstance(m, dict) else m.to_api()
+        if include_meta and isinstance(m, AssistantMessage) and m.meta:
+            api["_meta"] = dict(m.meta)
+        elif isinstance(api, dict) and "_meta" in api and not include_meta:
+            api = {k: v for k, v in api.items() if k != "_meta"}
         if api.get("role") == "assistant" and not api.get("content") and not api.get("tool_calls"):
             continue
         result.append(api)
@@ -68,4 +72,4 @@ class MessageManager:
 
     def save(self) -> None:
         if self._session:
-            self._session.messages = _messages_to_api(self._messages)
+            self._session.messages = _messages_to_api(self._messages, include_meta=True)

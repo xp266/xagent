@@ -7,6 +7,7 @@ from textual.highlight import guess_language
 _READ_HEADER_RE = re.compile(r"^\([^,]+(?:, \d+ lines|, lines [\d-]+/\d+)\)$")
 
 _CODE_TOOLS = {"write", "edit", "read"}
+_BLOCK_TOOLS = {"write", "edit"}
 
 
 def _lang_for(path: str) -> str:
@@ -18,6 +19,10 @@ def _lang_for(path: str) -> str:
 def _code_block(lang: str, code: str) -> str:
     code = (code or "").rstrip("\n")
     return f"```{lang}\n{code}\n```\n"
+
+
+def block_tool(name) -> bool:
+    return name in _BLOCK_TOOLS
 
 
 def is_error_result(name, result):
@@ -55,9 +60,9 @@ def tool_render(name, args, result, is_error, preview=False):
     if name == "bash":
         cmd = args.get("command", "")
         t = Text()
-        t.append(f"$ {cmd}", style="bold #70AD47")
+        t.append(f"$ {cmd}")
         if result:
-            t.append("\n" + result, style="bold #FF5555" if is_error else "#9B9B9B")
+            t.append("\n" + result, style="#9B9B9B")
         return "bash", t
     if name == "write":
         path = args.get("path", "")
@@ -74,7 +79,7 @@ def tool_render(name, args, result, is_error, preview=False):
             numbered = "\n".join(f"{i} {line}" for i, line in enumerate(lines, 1))
             t = Text(numbered)
         if is_error and result:
-            t.append(f"\n\n{result}", style="bold #FF5555")
+            t.append(f"\n\n{result}")
         return f"write {path}", t
     if name == "edit":
         file_path = args.get("filePath", "")
@@ -91,14 +96,50 @@ def tool_render(name, args, result, is_error, preview=False):
             t.append(f"{line}\n")
         t.rstrip()
         if is_error and result:
-            t.append(f"\n\n{result}", style="bold #FF5555")
+            t.append(f"\n\n{result}")
         return f"edit {file_path}", t
     if args:
         arg_str = " ".join(f"{k}={v}" for k, v in args.items())
         title = f"{name}  {{{arg_str}}}"
     else:
         title = name
-    return title, Text(result, style="bold #FF5555" if is_error else None)
+    return title, Text(result)
+
+
+def tool_block(name, args, result, is_error, preview=False):
+    result = result or ""
+    if name == "write":
+        path = args.get("path", "")
+        content = args.get("content", "")
+        lines = content.rstrip("\n").split("\n")
+        if preview:
+            max_preview = 100
+            if len(lines) > max_preview:
+                body = Text(f"( {len(lines)} lines, streaming )\n\n")
+                body.append("\n".join(lines[-max_preview:]))
+            else:
+                body = Text("\n".join(lines))
+        else:
+            body = Text(content)
+        if is_error and result:
+            body.append(f"\n\n{result}")
+        return f"write {path}", body
+    if name == "edit":
+        file_path = args.get("filePath", "") or args.get("path", "")
+        old_str = args.get("oldString", "") or ""
+        new_str = args.get("newString", "") or ""
+        body = Text()
+        for line in old_str.rstrip("\n").split("\n"):
+            body.append("- ", style="#FF9E9E")
+            body.append(f"{line}\n")
+        for line in new_str.rstrip("\n").split("\n"):
+            body.append("+ ", style="#9FD28A")
+            body.append(f"{line}\n")
+        body.rstrip()
+        if is_error and result:
+            body.append(f"\n\n{result}")
+        return f"edit {file_path}", body
+    return None
 
 
 def tool_markdown(name, args, result, is_error, preview=False):

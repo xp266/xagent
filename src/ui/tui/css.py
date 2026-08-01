@@ -1,8 +1,14 @@
 CSS = """
+    Screen {
+        & > .screen--selection {
+            background: $primary;
+            color: $text;
+        }
+    }
     #chat-box {
         height: 1fr;
         border: none;
-        padding: 1;
+        padding: 1 1 1 2;
         scrollbar-size: 2 1;
         scrollbar-color: #808080;
     }
@@ -150,6 +156,7 @@ CSS = """
 
     .user-bubble, .reply-bubble {
         padding: 1 1 1 1;
+        margin: 0 3 0 1;
     }
     .reply-bubble {
         padding: 1 1 0 1;
@@ -167,21 +174,37 @@ CSS = """
         background: transparent;
         padding: 1 1 0 1;
     }
+    .tool-block {
+        background: #1A1A1A;
+        padding: 1;
+        margin: 1 3 0 1;
+    }
+    .tool-block > .tool-block-header {
+        color: #808080;
+        margin-bottom: 1;
+    }
+    .tool-block.tool-error > .tool-block-header {
+        color: #A75252;
+    }
     .thinking-bubble > CollapsibleTitle {
         color: #5B9BD5;
     }
     .tool-bubble > CollapsibleTitle {
-        color: #70AD47;
+        color: #808080;
+    }
+    .tool-bubble.tool-bash > CollapsibleTitle {
+        color: #888888;
+    }
+    .tool-bubble.tool-error > CollapsibleTitle,
+    .tool-bubble.tool-error.-collapsed > CollapsibleTitle {
+        color: #A75252;
     }
     .thinking-bubble > Contents > Static {
         color: #9B9B9B;
     }
-    .tool-error > CollapsibleTitle {
-        color: #FF5555;
-    }
     .summary-bubble {
         height: 1;
-        margin: 1 0 1 0;
+        margin: 1 0 1 1;
         padding: 0 1 0 1;
     }
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Union
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ImageContent(BaseModel):
@@ -58,6 +58,7 @@ class AssistantMessage(BaseModel):
     signature: str = ""
     tool_calls: list[ToolCall] = []
     finish_reason: str = ""
+    meta: dict = Field(default_factory=dict)
 
     def to_api(self) -> dict:
         msg: dict = {"role": "assistant", "content": self.content or None}
@@ -80,6 +81,8 @@ class AssistantMessage(BaseModel):
             msg.signature = sig
         for tc in d.get("tool_calls", []):
             msg.tool_calls.append(ToolCall.from_api(tc))
+        if d.get("_meta"):
+            msg.meta = d["_meta"]
         return msg
 
 
