@@ -114,10 +114,10 @@ class CommandPalette(Vertical):
         display: none;
         height: auto;
         max-height: 8;
-        border: round #334466;
+        border: none;
         background: #1A1A1A;
         padding: 0;
-        margin: 0 2 0 2;
+        margin: 0 0 7 0;
         overflow-y: auto;
         scrollbar-size: 0 0;
     }
@@ -202,74 +202,40 @@ def _format_session_time(iso: str) -> str:
     return dt.strftime("%Y-%m-%d")
 
 
-class SessionPicker(Vertical):
-    """Centered modal dialog for picking a session.
+class _ListPicker(Vertical):
+    """Centered modal dialog with a search box and a filtered list.
 
-    Shows a search box at the top and a scrollable list of sessions
-    (``id - name - time``). Filtering is applied live by id, name or time.
-    """
-
-    DEFAULT_CSS = """
-    SessionPicker {
-        display: none;
-        layer: overlay;
-        width: 45%;
-        height: 45%;
-        background: #1A1A1A;
-        border: none;
-        padding: 1;
-    }
-    SessionPicker.visible {
-        display: block;
-    }
-    SessionPicker #picker-search {
-        height: 1;
-        border: none;
-        background: #222222;
-        margin-bottom: 1;
-    }
-    SessionPicker #picker-list {
-        height: 1fr;
-        border: none;
-        padding: 0;
-        scrollbar-size: 1 1;
-    }
-    SessionPicker #picker-footer {
-        height: 1;
-        padding: 0;
-        content-align: left bottom;
-        color: #888888;
-    }
-    SessionPicker .picker-row {
-        height: 1;
-        padding: 0 1;
-    }
-    SessionPicker .picker-row.selected {
-        background: #334466;
-    }
+    Subclasses implement ``item_label(item)`` and ``item_matches(item, query)``
+    and define the concrete ``Selected``/``Dismissed`` messages. Navigation
+    (up/down) and selection (enter) are handled here.
     """
 
     class Selected(Message):
-        """A session was chosen from the picker."""
-
-        def __init__(self, session) -> None:
-            super().__init__()
-            self.session = session
+        """An item was chosen from the picker."""
 
     class Dismissed(Message):
         """The picker was closed without selection."""
 
-    def __init__(self, sessions=None, **kwargs) -> None:
+    placeholder = "Search..."
+    footer_text = "Press ESC to exit"
+
+    def __init__(self, items=None, **kwargs) -> None:
         super().__init__(**kwargs)
-        self._sessions = sessions or []
+        self._items: list = items or []
         self._filtered: list = []
         self._selected = 0
 
+    def item_label(self, item) -> str:
+        return str(item)
+
+    def item_matches(self, item, query: str) -> bool:
+        return query in self.item_label(item).lower()
+
     def compose(self) -> ComposeResult:
-        yield Input(placeholder="Search sessions...", id="picker-search")
+        yield Input(placeholder=self.placeholder, id="picker-search")
         with VerticalScroll(id="picker-list"):
             pass
-        yield Static("Press ESC to exit", id="picker-footer")
+        yield Static(self.footer_text, id="picker-footer")
 
     def _rebuild(self) -> None:
         """Rebuild the list from the current filter."""
@@ -279,28 +245,21 @@ class SessionPicker(Vertical):
             return
         query = search.value.strip().lower()
         if query:
-            self._filtered = [
-                s for s in self._sessions
-                if query in s.id.lower()
-                or query in s.name.lower()
-                or query in _format_session_time(s.updated_at or s.created_at).lower()
-            ]
+            self._filtered = [i for i in self._items if self.item_matches(i, query)]
         else:
-            self._filtered = list(self._sessions)
-        self._filtered.sort(key=lambda s: s.updated_at or s.created_at, reverse=True)
+            self._filtered = list(self._items)
         self._selected = 0
         list_box = self.query_one("#picker-list", VerticalScroll)
         for child in list(list_box.children):
             child.remove()
-        for i, s in enumerate(self._filtered):
-            label = f"{s.id}  -  {s.name}  -  {_format_session_time(s.updated_at or s.created_at)}"
-            row = Static(label, classes="picker-row")
+        for i, item in enumerate(self._filtered):
+            row = Static(self.item_label(item), classes="picker-row")
             if i == 0:
                 row.add_class("selected")
             list_box.mount(row)
 
-    def show(self, sessions) -> None:
-        self._sessions = sessions
+    def show(self, items) -> None:
+        self._items = items
         self._rebuild()
         self._center_presets()
         self.add_class("visible")
@@ -341,6 +300,10 @@ class SessionPicker(Vertical):
         for i, row in enumerate(rows):
             row.set_class(i == self._selected, "selected")
 
+    def _select_item(self, item) -> None:
+        """Handle an item chosen via enter. Subclasses may override."""
+        self.post_message(self.Selected(item))
+
     def move(self, delta: int) -> None:
         if not self._filtered:
             return
@@ -377,9 +340,315 @@ class SessionPicker(Vertical):
             event.stop()
             event.prevent_default()
             if self._filtered and 0 <= self._selected < len(self._filtered):
+                item = self._filtered[self._selected]
                 self.hide()
-                self.post_message(self.Selected(self._filtered[self._selected]))
+                self._select_item(item)
             else:
                 self.post_message(self.Dismissed())
+            return
+        await super()._on_key(event)
+
+
+class SessionPicker(_ListPicker):
+    """Centered modal dialog for picking a session.
+
+    Shows a search box at the top and a scrollable list of sessions
+    (``id - name - time``). Filtering is applied live by id, name or time.
+    """
+
+    placeholder = "Search sessions..."
+
+    class Selected(Message):
+        """A session was chosen from the picker."""
+
+        def __init__(self, session) -> None:
+            super().__init__()
+            self.session = session
+
+    def item_label(self, item) -> str:
+        return (
+            f"{item.id}  -  {item.name}  -  "
+            f"{_format_session_time(item.updated_at or item.created_at)}"
+        )
+
+    def item_matches(self, item, query: str) -> bool:
+        return (
+            query in item.id.lower()
+            or query in item.name.lower()
+            or query in _format_session_time(item.updated_at or item.created_at).lower()
+        )
+
+    def _rebuild(self) -> None:
+        """Rebuild the list from the current filter."""
+        try:
+            search = self.query_one("#picker-search", Input)
+        except Exception:
+            return
+        query = search.value.strip().lower()
+        if query:
+            self._filtered = [s for s in self._items if self.item_matches(s, query)]
+        else:
+            self._filtered = list(self._items)
+        self._filtered.sort(key=lambda s: s.updated_at or s.created_at, reverse=True)
+        self._selected = 0
+        list_box = self.query_one("#picker-list", VerticalScroll)
+        for child in list(list_box.children):
+            child.remove()
+        for i, s in enumerate(self._filtered):
+            row = Static(self.item_label(s), classes="picker-row")
+            if i == 0:
+                row.add_class("selected")
+            list_box.mount(row)
+
+
+class ProviderPicker(_ListPicker):
+    """Centered modal dialog for picking an API provider."""
+
+    placeholder = "Search providers..."
+
+    ADD_CUSTOM = object()
+
+    class Selected(Message):
+        """A provider was chosen from the picker."""
+
+        def __init__(self, provider) -> None:
+            super().__init__()
+            self.provider = provider
+
+    class AddCustom(Message):
+        """The user chose to add a new custom provider."""
+
+    def item_label(self, item) -> str:
+        if item is self.ADD_CUSTOM:
+            return "+ Add custom provider"
+        tag = "custom" if item.is_custom else "built-in"
+        return f"{item.name}  [{tag}]"
+
+    def item_matches(self, item, query: str) -> bool:
+        if item is self.ADD_CUSTOM:
+            return "add" in query or "custom" in query
+        return query in item.name.lower() or query in item.id.lower()
+
+    def _select_item(self, item) -> None:
+        if item is self.ADD_CUSTOM:
+            self.post_message(self.AddCustom())
+        else:
+            self.post_message(self.Selected(item))
+
+    def _rebuild(self) -> None:
+        try:
+            search = self.query_one("#picker-search", Input)
+        except Exception:
+            return
+        query = search.value.strip().lower()
+        if query:
+            self._filtered = [i for i in self._items if self.item_matches(i, query)]
+        else:
+            self._filtered = list(self._items)
+        self._filtered = [self.ADD_CUSTOM] + self._filtered
+        self._selected = 0
+        list_box = self.query_one("#picker-list", VerticalScroll)
+        for child in list(list_box.children):
+            child.remove()
+        for i, item in enumerate(self._filtered):
+            row = Static(self.item_label(item), classes="picker-row")
+            if i == 0:
+                row.add_class("selected")
+            list_box.mount(row)
+
+
+class ModelPicker(_ListPicker):
+    """Centered modal dialog for picking a model of the active provider."""
+
+    placeholder = "Search models..."
+
+    class Selected(Message):
+        """A model was chosen from the picker."""
+
+        def __init__(self, model: str) -> None:
+            super().__init__()
+            self.model = model
+
+    def item_label(self, item) -> str:
+        return item
+
+    def item_matches(self, item, query: str) -> bool:
+        return query in item.lower()
+
+
+class ProviderKeyDialog(Vertical):
+    """Small modal for entering an API key (and base URL for custom providers).
+
+    Two modes:
+      - built-in provider: single ``api-key`` input.
+      - custom provider: ``custom-name``, ``custom-url`` and ``api-key`` inputs.
+    """
+
+    class Saved(Message):
+        """The dialog was confirmed with values."""
+
+        def __init__(self, values: dict, provider=None) -> None:
+            super().__init__()
+            self.values = values
+            self.provider = provider
+
+    class Canceled(Message):
+        """The dialog was closed without saving."""
+
+    def __init__(self, provider=None, is_custom: bool = False, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._provider = provider
+        self._is_custom = is_custom
+        self._error = ""
+
+    def compose(self) -> ComposeResult:
+        yield Static("API Key for provider", id="dialog-title")
+        yield Input(placeholder="Name", id="custom-name")
+        yield Input(placeholder="Base URL (https://.../v1)", id="custom-url")
+        yield Input(placeholder="API Key", id="api-key", password=True)
+        yield Static(self._error, id="dialog-error")
+        yield Static("Enter to save, ESC to cancel", id="dialog-footer")
+
+    def show(self, provider=None, is_custom: bool = False, values: dict | None = None) -> None:
+        self._provider = provider
+        self._is_custom = is_custom
+        self._error = ""
+        if provider is not None and not is_custom:
+            self.query_one("#dialog-title", Static).update(f"API Key for {provider.name}")
+        else:
+            self.query_one("#dialog-title", Static).update("Add custom provider")
+        if is_custom:
+            self.query_one("#dialog-footer", Static).update("Enter: next field  Up/Down: switch  Enter on API Key: save  ESC: cancel")
+        else:
+            self.query_one("#dialog-footer", Static).update("Enter to save, ESC to cancel")
+        self.query_one("#custom-name").display = is_custom
+        self.query_one("#custom-url").display = is_custom
+        self._set_values(values or {})
+        self._center_presets()
+        self.add_class("visible")
+        self.call_after_refresh(self._center)
+        self.call_after_refresh(self._focus_first)
+
+    def _set_values(self, values: dict) -> None:
+        for field, val in values.items():
+            try:
+                self.query_one(f"#{field}", Input).value = val
+            except Exception:
+                pass
+
+    def _focus_first(self) -> None:
+        widget = None
+        if self._is_custom:
+            widget = self.query_one("#custom-name", Input)
+        else:
+            widget = self.query_one("#api-key", Input)
+        widget.focus()
+
+    def _center_presets(self) -> None:
+        try:
+            parent_w = self.screen.size.width
+            parent_h = self.screen.size.height
+            w = int(parent_w * 0.45)
+            h = int(parent_h * 0.35)
+            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
+        except Exception:
+            pass
+
+    def _center(self) -> None:
+        try:
+            parent_w = self.screen.size.width
+            parent_h = self.screen.size.height
+            w = self.region.width or int(parent_w * 0.45)
+            h = self.region.height or int(parent_h * 0.35)
+            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
+        except Exception:
+            pass
+
+    def hide(self) -> None:
+        self.remove_class("visible")
+
+    @property
+    def is_visible(self) -> bool:
+        return "visible" in self.classes
+
+    def set_error(self, message: str) -> None:
+        self._error = message
+        try:
+            self.query_one("#dialog-error", Static).update(message)
+        except Exception:
+            pass
+
+    def _collect(self) -> dict:
+        def val(field: str) -> str:
+            try:
+                return self.query_one(f"#{field}", Input).value.strip()
+            except Exception:
+                return ""
+
+        if self._is_custom:
+            return {
+                "name": val("custom-name"),
+                "base_url": val("custom-url"),
+                "api_key": val("api-key"),
+            }
+        return {"api_key": val("api-key")}
+
+    def _fields(self) -> list[str]:
+        return ["custom-name", "custom-url", "api-key"] if self._is_custom else ["api-key"]
+
+    def _current_field(self) -> str | None:
+        focused = self.screen.focused
+        if focused is not None and getattr(focused, "id", None) in self._fields():
+            return focused.id
+        return None
+
+    def _on_last_field(self) -> bool:
+        cur = self._current_field()
+        if cur is None:
+            return False
+        return self._fields()[-1] == cur
+
+    def _focus_field(self, delta: int) -> None:
+        fields = self._fields()
+        cur = self._current_field()
+        idx = fields.index(cur) if cur in fields else 0
+        self.query_one(f"#{fields[(idx + delta) % len(fields)]}", Input).focus()
+
+    def _submit(self) -> None:
+        values = self._collect()
+        if self._is_custom:
+            if not values["base_url"]:
+                self.set_error("Base URL is required")
+                return
+            if not values["api_key"]:
+                self.set_error("API Key is required")
+                return
+        elif not values["api_key"]:
+            self.set_error("API Key is required")
+            return
+        self.hide()
+        self.post_message(self.Saved(values, provider=self._provider))
+
+    async def _on_key(self, event: events.Key) -> None:
+        if not self.is_visible:
+            return
+        key = event.key
+        if key == "escape":
+            event.stop()
+            self.hide()
+            self.post_message(self.Canceled())
+            return
+        if key == "enter":
+            event.stop()
+            event.prevent_default()
+            if self._is_custom and self._current_field() is not None and not self._on_last_field():
+                self._focus_field(1)
+            else:
+                self._submit()
+            return
+        if key in ("up", "down") and self._is_custom:
+            event.stop()
+            event.prevent_default()
+            self._focus_field(-1 if key == "up" else 1)
             return
         await super()._on_key(event)

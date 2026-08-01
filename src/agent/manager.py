@@ -9,10 +9,10 @@ SYNTHETIC_ATTACHMENT_PROMPT = "The tool returned the following image attachment(
 def _messages_to_api(messages: list) -> list[dict]:
     result = []
     for m in messages:
-        if isinstance(m, dict):
-            result.append(m)
-        else:
-            result.append(m.to_api())
+        api = m if isinstance(m, dict) else m.to_api()
+        if api.get("role") == "assistant" and not api.get("content") and not api.get("tool_calls"):
+            continue
+        result.append(api)
     return result
 
 
@@ -32,6 +32,8 @@ class MessageManager:
         self._messages.append(UserMessage(content=content))
 
     def add_assistant(self, response: LLMResponse) -> None:
+        if not response.content and not response.tool_calls:
+            return
         tool_calls = []
         for tool_call in response.tool_calls:
             if isinstance(tool_call, dict):

@@ -1,7 +1,7 @@
-import os
 import json
 import httpx
 from src.types.tools import Tool
+from src.utils.config import get_exa_api_key
 
 
 def _extract_texts(data: dict) -> list[str] | None:
@@ -38,7 +38,7 @@ def execute(url: str, timeout: int = 30, **kwargs) -> str:
     elif not url.startswith("https://"):
         url = "https://" + url
 
-    api_key = os.getenv("EXA_API_KEY")
+    api_key = get_exa_api_key()
     mcp_url = f"https://mcp.exa.ai/mcp?exaApiKey={api_key}" if api_key else "https://mcp.exa.ai/mcp"
 
     payload = {

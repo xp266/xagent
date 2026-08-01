@@ -8,8 +8,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from src.utils.paths import data_dir
-from src.utils.config import get_config
 from src.utils.prompts import load as load_prompt
+from src.utils.providers import get_store, is_anthropic_provider
 from src.agent.manager import MessageManager
 from src.agent.loop import agent_stream
 from src.agent.naming import generate_name
@@ -96,19 +96,32 @@ class Session:
     @property
     def provider(self):
         if self._provider is None:
-            from src.ai.openai import OpenAIProvider
+            resolved = get_store().resolve()
+            active = get_store().get_active()
+            if is_anthropic_provider(active):
+                from src.ai.anthropic import AnthropicProvider
 
-            cfg = get_config()
-            self._provider = OpenAIProvider(
-                model=cfg.model,
-                base_url=cfg.base_url,
-                api_key=cfg.api_key,
-            )
+                self._provider = AnthropicProvider(
+                    model=resolved["model"],
+                    base_url=resolved["base_url"],
+                    api_key=resolved["api_key"],
+                )
+            else:
+                from src.ai.openai import OpenAIProvider
+
+                self._provider = OpenAIProvider(
+                    model=resolved["model"],
+                    base_url=resolved["base_url"],
+                    api_key=resolved["api_key"],
+                )
         return self._provider
 
     @provider.setter
     def provider(self, value):
         self._provider = value
+
+    def reset_provider(self) -> None:
+        self._provider = None
 
     @property
     def registry(self):

@@ -5,7 +5,7 @@ from src.utils.media import (
 )
 from src.utils.prompts import load as load_prompt
 from src.utils.text import replace_surrogates, replace_surrogates_in_value
-from src.utils.config import get_config, update_config, Config
+from src.utils.config import get_config, get_exa_api_key, Config
 
 __all__ = [
     "sniff_mime", "is_supported_image", "is_media", "mime_to_modality",
@@ -13,5 +13,5 @@ __all__ = [
     "filter_unsupported_openai_media",
     "load_prompt",
     "replace_surrogates", "replace_surrogates_in_value",
-    "get_config", "update_config", "Config",
+    "get_config", "get_exa_api_key", "Config",
 ]

@@ -33,11 +33,21 @@ def _cmd_exit(app, args: str) -> None:
     app.exit()
 
 
+def _cmd_provider(app, args: str) -> None:
+    app._open_provider_picker()
+
+
+def _cmd_model(app, args: str) -> None:
+    app._open_model_picker()
+
+
 def get_commands() -> list[Command]:
     """All available commands."""
     return [
         Command("new", "Start a new chat", _cmd_new),
         Command("session", "Switch to a session: /session <id>", _cmd_session),
+        Command("provider", "Switch API provider", _cmd_provider),
+        Command("model", "Switch model", _cmd_model),
         Command("exit", "Exit xagent", _cmd_exit),
     ]
 

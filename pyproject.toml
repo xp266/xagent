@@ -4,7 +4,6 @@ version = "0.2.0"
 description = "Interactive AI agent for software engineering tasks"
 requires-python = ">=3.11"
 dependencies = [
-    "python-dotenv",
     "openai",
     "httpx",
     "pydantic>=2.0",

@@ -1,8 +1,8 @@
-import os
 import json
 from datetime import date
 import httpx
 from src.types.tools import Tool
+from src.utils.config import get_exa_api_key
 
 _year = date.today().year
 
@@ -37,7 +37,7 @@ def _extract_result(text: str) -> tuple[str | None, bool]:
 
 def execute(query: str, num_results: int = 8, type: str = "auto",
             livecrawl: str = "fallback", contextMaxCharacters: int = 10000, **kwargs) -> str:
-    api_key = os.getenv("EXA_API_KEY")
+    api_key = get_exa_api_key()
     url = f"https://mcp.exa.ai/mcp?exaApiKey={api_key}" if api_key else "https://mcp.exa.ai/mcp"
 
     payload = {

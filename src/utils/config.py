@@ -1,5 +1,6 @@
-import os
 from pydantic import BaseModel
+
+from src.utils.providers import get_store
 
 
 class Config(BaseModel):
@@ -8,19 +9,14 @@ class Config(BaseModel):
     api_key: str = ""
 
 
-_config = Config(
-    base_url=os.getenv("BASE_URL", ""),
-    model=os.getenv("MODEL_NAME", ""),
-    api_key=os.getenv("API_KEY", ""),
-)
-
-
 def get_config() -> Config:
-    return _config
+    resolved = get_store().resolve()
+    return Config(
+        base_url=resolved["base_url"],
+        model=resolved["model"],
+        api_key=resolved["api_key"],
+    )
 
 
-def update_config(**kwargs) -> Config:
-    for k, v in kwargs.items():
-        if v is not None and hasattr(_config, k):
-            setattr(_config, k, v)
-    return _config
+def get_exa_api_key() -> str:
+    return get_store().exa_api_key
