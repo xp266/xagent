@@ -3,10 +3,72 @@ from __future__ import annotations
 from rich.segment import Segment
 from rich.style import Style
 
-from textual.content import Content
+from textual.content import Content, Span
 from textual.strip import Strip
 from textual.style import Style as TextualStyle
 from textual.widgets import Static
+
+_LINE_NO_RGB = (133, 133, 133)  # markdown._LINE_NO_FG (#858585)
+
+
+def _parse_rich_style(style):
+    if isinstance(style, str):
+        return Style.parse(style)
+    return getattr(style, "rich_style", style)
+
+
+def _pad_line(line: Content, width: int) -> tuple[Content, int | None]:
+    spans = list(line.spans)
+    if not spans:
+        return line, None
+    last = spans[-1]
+    if last.end != len(line.plain):
+        return line, None
+    style = _parse_rich_style(last.style)
+    if style is None or style.bgcolor is None:
+        return line, None
+    if line.plain[last.start:].strip(" "):
+        fill_at = last.end
+    else:
+        fill_at = last.start
+    pad = width - line.cell_length
+    if pad > 0:
+        r, g, b = style.bgcolor.get_truecolor(None)
+        line = line.append_text(" " * pad, f"on #{r:02x}{g:02x}{b:02x}")
+    return line, fill_at
+
+
+def _line_no_end(line: Content) -> int:
+    spans = list(line.spans)
+    if not spans:
+        return 0
+    first = spans[0]
+    if first.start != 0:
+        return 0
+    style = _parse_rich_style(first.style)
+    if style is None or style.color is None or style.bgcolor is not None:
+        return 0
+    try:
+        rgb = style.color.get_truecolor(None)
+    except Exception:
+        return 0
+    if rgb is None or tuple(rgb) != _LINE_NO_RGB:
+        return 0
+    return min(first.end, len(line.plain))
+
+
+def _apply_highlight(line: Content, style, start: int, end: int) -> Content:
+    spans: list = []
+    for s in line.spans:
+        if s.end <= start or s.start >= end:
+            spans.append(s)
+            continue
+        if s.start < start:
+            spans.append(Span(s.start, start, s.style))
+        if s.end > end:
+            spans.append(Span(end, s.end, s.style))
+    spans.append(Span(start, end, style))
+    return Content(line.plain, spans)
 
 
 class LazyText(Static):
@@ -15,6 +77,7 @@ class LazyText(Static):
         self._lines: list[Content] = []
         self._strips: list[Strip | None] = []
         self._strips_key: tuple[int, int] = (-1, 0)
+        self._fill_at: list[int | None] = []
 
     def _content_sig(self) -> int:
         return id(self.visual)
@@ -33,6 +96,17 @@ class LazyText(Static):
             self._lines = []
         while self._lines and self._lines[-1].plain == "":
             self._lines.pop()
+        if width > 0:
+            padded: list[Content] = []
+            fills: list[int | None] = []
+            for line in self._lines:
+                pl, fa = _pad_line(line, width)
+                padded.append(pl)
+                fills.append(fa)
+            self._lines = padded
+            self._fill_at = fills
+        else:
+            self._fill_at = [None] * len(self._lines)
         self._strips = [None] * len(self._lines)
         self._strips_key = (width, self._content_sig())
 
@@ -62,7 +136,7 @@ class LazyText(Static):
                         selection_style = TextualStyle.from_styles(
                             self.screen.get_component_styles("screen--selection")
                         )
-                        line = line.stylize(selection_style, start, end)
+                        line = _apply_highlight(line, selection_style, start, end)
             self._strips[y] = _build_strip(line, y)
         return self._strips[y].apply_style(self.visual_style.rich_style)
 
@@ -70,10 +144,42 @@ class LazyText(Static):
         self._strips = [None] * len(self._lines)
         self.refresh()
 
+    def get_selection(self, selection):
+        if not self._lines:
+            return super().get_selection(selection)
+        start = selection.start
+        end = selection.end
+        if start is None and end is None:
+            y0, x0, y1, x1 = 0, 0, len(self._lines) - 1, -1
+        elif start is None or end is None:
+            return "", "\n"
+        else:
+            if (start.y, start.x) > (end.y, end.x):
+                start, end = end, start
+            y0, x0 = start.y, start.x
+            y1, x1 = end.y, end.x
+        out: list[str] = []
+        for y in range(y0, y1 + 1):
+            line = self._lines[y]
+            plain = line.plain
+            s = x0 if y == y0 else 0
+            e = x1 if y == y1 and x1 >= 0 else -1
+            no_w = _line_no_end(line)
+            if s < no_w:
+                s = no_w
+            fill_at = self._fill_at[y] if y < len(self._fill_at) else None
+            if e < 0 or (fill_at is not None and e > fill_at):
+                e = fill_at if fill_at is not None else len(plain)
+            if fill_at is not None and s >= fill_at:
+                s = no_w
+            out.append(plain[s:e] if s < e else "")
+        return "\n".join(out), "\n"
+
     def update(self, content="", layout=True):
         self._lines = []
         self._strips = []
         self._strips_key = (-1, 0)
+        self._fill_at = []
         super().update(content, layout=layout)
 
 

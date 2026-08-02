@@ -331,6 +331,9 @@ class SessionPicker(_ListPicker):
     placeholder = "Search sessions..."
     footer_text = "Press ESC to exit   |   Ctrl+D to delete"
 
+    _ARM_FOOTER = "Press Ctrl+D again to delete"
+    _ARM_SECONDS = 3.0
+
     class Selected(Message):
         def __init__(self, session) -> None:
             super().__init__()
@@ -343,6 +346,11 @@ class SessionPicker(_ListPicker):
 
     class Dismissed(Message):
         pass
+
+    def __init__(self, items=None, **kwargs) -> None:
+        super().__init__(items=items, **kwargs)
+        self._delete_armed_at = 0.0
+        self._delete_target = None
 
     def item_label(self, item) -> str:
         return (
@@ -357,6 +365,39 @@ class SessionPicker(_ListPicker):
             or query in _format_session_time(item.updated_at or item.created_at).lower()
         )
 
+    def hide(self) -> None:
+        self._disarm_delete()
+        super().hide()
+
+    def _rebuild(self) -> None:
+        super()._rebuild()
+        self._disarm_delete()
+
+    def _arm_delete(self, item) -> None:
+        self._delete_armed_at = time.monotonic()
+        self._delete_target = item
+        self.set_timer(self._ARM_SECONDS, self._check_delete_timeout)
+        try:
+            footer = self.query_one("#picker-footer", Static)
+            footer.update(f"[bold #FF5555]{self._ARM_FOOTER}[/]")
+        except Exception:
+            pass
+
+    def _check_delete_timeout(self) -> None:
+        if self._delete_armed_at and time.monotonic() - self._delete_armed_at >= self._ARM_SECONDS:
+            self._disarm_delete()
+
+    def _disarm_delete(self) -> None:
+        if not self._delete_armed_at:
+            return
+        self._delete_armed_at = 0.0
+        self._delete_target = None
+        try:
+            footer = self.query_one("#picker-footer", Static)
+            footer.update(self.footer_text)
+        except Exception:
+            pass
+
     async def _on_key(self, event: events.Key) -> None:
         if not self.is_visible:
             return
@@ -365,8 +406,17 @@ class SessionPicker(_ListPicker):
             event.prevent_default()
             if self._filtered and 0 <= self._selected < len(self._filtered):
                 item = self._filtered[self._selected]
-                self.post_message(self.Deleted(item))
+                if (
+                    self._delete_target is item
+                    and time.monotonic() - self._delete_armed_at < self._ARM_SECONDS
+                ):
+                    self._disarm_delete()
+                    self.post_message(self.Deleted(item))
+                else:
+                    self._arm_delete(item)
             return
+        if event.key in ("up", "down"):
+            self._disarm_delete()
         await super()._on_key(event)
 
     def _rebuild(self) -> None:

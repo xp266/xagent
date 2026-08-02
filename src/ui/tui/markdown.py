@@ -6,17 +6,23 @@ import unicodedata
 from pygments.lexers import get_lexer_by_name
 from pygments.token import Token
 from pygments.util import ClassNotFound
+from rich.style import Style as RichStyle
 from textual.content import Content, Span
 from textual.highlight import guess_language
 
-_INLINE_CODE_FG = "#B3B3B3"
-_INLINE_CODE_BG = "#2A2A2A"
+_INLINE_CODE_FG = "#D4D4D4"
+_INLINE_CODE_BG = "#3A3D41"
 _QUOTE_FG = "#9B9B9B"
 _HR_FG = "#555555"
 _LINK_FG = "#0178D4"
-_LINE_NO_FG = "#555555"
-_FENCE_BG = "#1A1A1A"
-_OPEN_FENCE_FG = "#666666"
+_LINE_NO_FG = "#858585"
+_FENCE_BG = "#1E1E1E"
+_OPEN_FENCE_FG = "#808080"
+
+_DIFF_DEL_FG = "#FF9E9E"
+_DIFF_DEL_BG = "#4C1616"
+_DIFF_ADD_FG = "#9FD28A"
+_DIFF_ADD_BG = "#1E3A1E"
 
 _HIGHLIGHT_CACHE: dict[tuple, list[Content]] = {}
 _HIGHLIGHT_CACHE_MAX = 100
@@ -45,9 +51,13 @@ _TOKEN_STYLES = {
     Token.Name.Decorator: "#DCDCAA",
     Token.Name.Function: "#DCDCAA",
     Token.Name.Tag: "#569CD6",
+    Token.Name.Attribute: "#9CDCFE",
     Token.Name.Variable: "#9CDCFE",
     Token.Number: "#B5CEA8",
+    Token.Operator: "#D4D4D4",
     Token.Operator.Word: "#569CD6",
+    Token.Generic.Prompt: "#CCCCCC",
+    Token.Generic.Output: "#CCCCCC",
 }
 
 _FENCE_RE = re.compile(r"^```([A-Za-z0-9_+.\-@]*)\s*$")
@@ -264,7 +274,12 @@ def _diff_highlight(code: str, lang: str | None) -> list[Content]:
         hl = _highlight_lines(content, lang)
         for j, hl_line in enumerate(hl):
             prefix = group[j][0]
-            marker_style = "#FF9E9E" if prefix == "-" else "#9FD28A"
+            if prefix == "-":
+                marker_style = f"{_DIFF_DEL_FG} on {_DIFF_DEL_BG}"
+                hl_line = hl_line.stylize(f"on {_DIFF_DEL_BG}")
+            else:
+                marker_style = f"{_DIFF_ADD_FG} on {_DIFF_ADD_BG}"
+                hl_line = hl_line.stylize(f"on {_DIFF_ADD_BG}")
             out.append(Content.assemble((f"{prefix} ", marker_style), hl_line))
     return out
 
@@ -294,7 +309,13 @@ def _numbered_diff_highlight(code: str, lang: str | None) -> list[Content]:
             if kind == " ":
                 parts.append("  ")
             else:
-                parts.append((f"{kind} ", "#FF9E9E" if kind == "-" else "#9FD28A"))
+                if kind == "-":
+                    marker_style = f"{_DIFF_DEL_FG} on {_DIFF_DEL_BG}"
+                    hl_line = hl_line.stylize(f"on {_DIFF_DEL_BG}")
+                else:
+                    marker_style = f"{_DIFF_ADD_FG} on {_DIFF_ADD_BG}"
+                    hl_line = hl_line.stylize(f"on {_DIFF_ADD_BG}")
+                parts.append((f"{kind} ", marker_style))
             parts.append(hl_line)
             out.append(Content.assemble(*parts))
     return out
@@ -356,22 +377,42 @@ def _highlight_lines(code: str, lang: str | None) -> list[Content]:
     return out
 
 
+def _line_bg(c: Content) -> str | None:
+    for s in c._spans:
+        style = s.style
+        if style is None:
+            continue
+        if isinstance(style, str):
+            style = RichStyle.parse(style)
+        if style.bgcolor is not None:
+            r, g, b = style.bgcolor.get_truecolor(None)
+            return f"#{r:02x}{g:02x}{b:02x}"
+    return None
+
+
 def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool = False) -> Content:
     if diff_nums:
         lines = _numbered_diff_highlight(code, lang)
     else:
         lines = _highlight_lines(code, lang)
+    max_cells = max((l.cell_length for l in lines), default=0)
     parts: list = []
     width = len(str(max(1, len(lines))))
     last = len(lines) - 1
     for i, line in enumerate(lines):
         if numbered:
             parts.append((f"{i + 1:>{width}} ", _LINE_NO_FG))
+        bg = _line_bg(line)
+        if bg is None:
+            line = line.stylize(f"on {_FENCE_BG}")
+            bg = _FENCE_BG
         parts.append(line)
+        pad = max_cells - line.cell_length
+        if pad > 0:
+            parts.append((" " * pad, f"on {bg}"))
         if i < last:
             parts.append("\n")
-    content = Content.assemble(*parts)
-    return content.stylize(f"on {_FENCE_BG}")
+    return Content.assemble(*parts)
 
 
 def _open_fence(code: str) -> Content:

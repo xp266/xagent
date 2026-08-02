@@ -17,7 +17,7 @@ from src.types.events import StreamEvent
 from src.ui.tui.css import CSS
 from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.dialogs import PickerMixin
-from src.ui.tui.logo import build_logo_text
+from src.ui.tui.logo import LogoWidget
 from src.ui.tui.lazy import LazyText
 from src.ui.tui.markdown import render_markdown
 from src.ui.tui.render import (
@@ -44,9 +44,16 @@ _BLUE_WAVE = (
     "#F8FAFF",
 )
 
-_WAVE_SPEED = 8.0
+_WAVE_SPEED = 10.0
 
 _RENDER_COOLDOWN = 0.04
+
+
+def _lerp_hex(c1: str, c2: str, t: float) -> str:
+    r = int(c1[1:3], 16) + (int(c2[1:3], 16) - int(c1[1:3], 16)) * t
+    g = int(c1[3:5], 16) + (int(c2[3:5], 16) - int(c1[3:5], 16)) * t
+    b = int(c1[5:7], 16) + (int(c2[5:7], 16) - int(c1[5:7], 16)) * t
+    return f"#{round(r):02x}{round(g):02x}{round(b):02x}"
 
 
 class XAgentTUI(PickerMixin, App):
@@ -61,6 +68,7 @@ class XAgentTUI(PickerMixin, App):
         self._busy = False
         self._current = None
         self._spinner_idx = 0
+        self._last_spinner_time = 0.0
         self._spinners = {}
         self._waves = []
         self._add_model_provider_flow = False
@@ -72,7 +80,7 @@ class XAgentTUI(PickerMixin, App):
     def _show_logo(self) -> None:
         logo = self._logo()
         if logo is None:
-            logo = Vertical(Static(build_logo_text()), id="logo-overlay")
+            logo = Vertical(LogoWidget(), id="logo-overlay")
             self._chat().mount(logo)
         logo.display = True
 
@@ -168,11 +176,17 @@ class XAgentTUI(PickerMixin, App):
     def _wave_color_at(self, index: int, now: float):
         best = None
         for t0 in self._waves:
-            distance = int((now - t0) * _WAVE_SPEED) - index
+            distance = (now - t0) * _WAVE_SPEED - index
             if 0 <= distance < len(_BLUE_WAVE):
                 if best is None or distance < best:
                     best = distance
-        return _BLUE_WAVE[best] if best is not None else None
+        if best is None:
+            return None
+        i = int(best)
+        frac = best - i
+        if i >= len(_BLUE_WAVE) - 1:
+            return _BLUE_WAVE[-1]
+        return _lerp_hex(_BLUE_WAVE[i], _BLUE_WAVE[i + 1], frac)
 
     def _update_status(self, status: str | None = None) -> None:
         if status is None:
@@ -228,6 +242,10 @@ class XAgentTUI(PickerMixin, App):
         tool_spinning = cur is not None and any(t.get("spinning") for t in cur["tools"].values())
         if not self._spinners and not tool_spinning:
             return
+        now = time.monotonic()
+        if now - self._last_spinner_time < 0.1:
+            return
+        self._last_spinner_time = now
         self._spinner_idx += 1
         for title in list(self._spinners):
             self._render_spinner(title)
@@ -820,7 +838,7 @@ class XAgentTUI(PickerMixin, App):
         self._update_status()
         self._show_logo()
         self._scroll_end()
-        self.set_interval(0.1, self._tick_animations, pause=False)
+        self.set_interval(0.033, self._tick_animations, pause=False)
         self.query_one("#input", ChatInput).focus()
 
 
