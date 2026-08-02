@@ -171,13 +171,9 @@ class CanvasBlock:
             padded: list[Content] = []
             fills: list[int | None] = []
             for line in raw:
-                if self.bg:
-                    pl, fa = _pad_line(line, width)
-                    line = pl
-                    fills.append(fa)
-                else:
-                    fills.append(None)
-                padded.append(line)
+                pl, fa = _pad_line(line, width)
+                padded.append(pl)
+                fills.append(fa)
             raw = padded
             self._fill_at = fills
         else:
@@ -313,8 +309,10 @@ class ChatCanvas(Static):
         width = self.size.width if self.size else 80
         block, by = self._block_at(y)
         if block is None:
-            return Strip.blank(width)
-        strip = block.render_line(by, width)
+            strip = Strip.blank(width)
+        else:
+            strip = block.render_line(by, width)
+        strip = strip.apply_style(self.visual_style.rich_style)
         selection = self.text_selection
         if selection is not None and selection.start is not None:
             span = selection.get_span(y)

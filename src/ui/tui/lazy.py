@@ -275,12 +275,16 @@ def _apply_selection(strip: Strip, start: int, end: int, style) -> Strip:
         after = text[cut_b:]
         if before:
             mx = _meta_x(seg_style, x)
-            segments.append(Segment(before, mx if mx is not None else seg_style))
+            segments.append(
+                Segment(before, seg_style + mx if mx is not None else seg_style)
+            )
         if mid:
             mx = _meta_x(seg_style, x + cut_a)
             segments.append(Segment(mid, base + rich_style + (mx if mx is not None else Style())))
         if after:
             mx = _meta_x(seg_style, x + cut_b)
-            segments.append(Segment(after, mx if mx is not None else seg_style))
+            segments.append(
+                Segment(after, seg_style + mx if mx is not None else seg_style)
+            )
         x = seg_end
     return Strip(segments)
