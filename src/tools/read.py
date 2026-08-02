@@ -172,13 +172,8 @@ def to_model_output(data: dict) -> str:
     if meta.get("mime") and meta.get("mime", "").startswith("image/"):
         return data["output"]
 
-    if "entries" in data:
-        entries = data["entries"]
-        lines = [f"{e['path']}  ({e['type']})" for e in entries]
-        result = "\n".join(lines)
-        if data.get("truncated"):
-            result += f"\n... ({meta.get('total', '?')} total, showing first {len(entries)} entries)"
-        return result
+    if "total" in meta and "total_lines" not in meta:
+        return data.get("output", "")
 
     content = data.get("output", "")
     total = meta.get("total_lines", "?")
@@ -212,13 +207,12 @@ tool = Tool(
 
 Usage:
 - Use absolute paths when possible
-- Default: returns up to 2000 lines from the start
 - Use offset to start from a specific line; limit to control how many lines
 - Output: each line prefixed as `<line>: <content>` (e.g., file with "foo\n" returns "1: foo\n")
 - Directories: one entry per line, no line numbers, trailing `/` for subdirectories
 - Lines over 2000 characters are truncated
 - Use grep for content search in large files; use glob to find files by name
-- Supports images and PDFs (returned as file attachments)
+- Supports images (returned as file attachments)
 - Call in parallel for multiple files; avoid tiny repeated slices""",
     parameters={
         "type": "object",

@@ -56,8 +56,7 @@ tool = Tool(
     description="""- Fast file pattern matching (glob) for any codebase size
 - Supports patterns like "**/*.py" or "src/**/*.{py,js}"
 - Returns matching file paths
-- Use for finding files by name patterns
-- For open-ended multi-round searches, use Task tool instead""",
+- Use for finding files by name patterns""",
     parameters={
         "type": "object",
         "properties": {

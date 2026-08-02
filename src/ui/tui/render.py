@@ -106,6 +106,55 @@ def tool_render(name, args, result, is_error, preview=False):
     return title, Text(result)
 
 
+def _edit_hunk(file_path: str, old_str: str, new_str: str, ctx: int = 3):
+    """Locate the edit in the file and build (num, marker, text) rows.
+
+    Works whether the file still contains oldString (pre-edit) or already
+    contains newString (post-edit). Returns None when the position cannot
+    be determined. Line numbers: context and added lines use new-file
+    positions, deleted lines use old-file positions.
+    """
+    if not file_path or not old_str:
+        return None
+    try:
+        with open(os.path.abspath(os.path.expanduser(file_path)), "r", encoding="utf-8") as f:
+            content = f.read()
+    except (OSError, UnicodeDecodeError):
+        return None
+    content = content.replace("\r\n", "\n")
+    lines = content.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    old_lines = old_str.rstrip("\n").split("\n")
+    new_lines = new_str.rstrip("\n").split("\n")
+    delta = len(new_lines) - len(old_lines)
+
+    idx = content.find(old_str)
+    if idx >= 0:
+        start = content[:idx].count("\n") + 1
+        in_block = len(old_lines)
+        after_offset = delta
+    elif new_str and (idx := content.find(new_str)) >= 0:
+        start = content[:idx].count("\n") + 1
+        in_block = len(new_lines)
+        after_offset = 0
+    else:
+        return None
+
+    rows: list = []
+    for i in range(max(0, start - 1 - ctx), start - 1):
+        rows.append((i + 1, " ", lines[i]))
+    for i, text in enumerate(old_lines):
+        rows.append((start + i, "-", text))
+    if new_str:
+        for i, text in enumerate(new_lines):
+            rows.append((start + i, "+", text))
+    after_begin = start - 1 + in_block
+    for i in range(after_begin, min(len(lines), after_begin + ctx)):
+        rows.append((i + 1 + after_offset, " ", lines[i]))
+    return rows
+
+
 def tool_block(name, args, result, is_error, preview=False):
     result = result or ""
     if name == "write":
@@ -128,12 +177,22 @@ def tool_block(name, args, result, is_error, preview=False):
         file_path = args.get("filePath", "") or args.get("path", "")
         old_str = args.get("oldString", "") or ""
         new_str = args.get("newString", "") or ""
-        diff = []
-        for line in old_str.rstrip("\n").split("\n"):
-            diff.append(f"- {line}")
-        for line in new_str.rstrip("\n").split("\n"):
-            diff.append(f"+ {line}")
-        body = f"```{_lang_for(file_path)}\n" + "\n".join(diff)
+        lang = _lang_for(file_path)
+        rows = None
+        if not is_error and not args.get("replaceAll"):
+            rows = _edit_hunk(file_path, old_str, new_str)
+        if rows is not None:
+            body = f"```{lang}@n\n" + "\n".join(
+                f"{num} {marker} {text}" for num, marker, text in rows
+            )
+        else:
+            diff = []
+            for line in old_str.rstrip("\n").split("\n"):
+                diff.append(f"- {line}")
+            if new_str:
+                for line in new_str.rstrip("\n").split("\n"):
+                    diff.append(f"+ {line}")
+            body = f"```{lang}\n" + "\n".join(diff)
         if not preview:
             body += "\n```"
         if is_error and result:

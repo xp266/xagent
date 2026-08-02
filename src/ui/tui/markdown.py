@@ -50,7 +50,8 @@ _TOKEN_STYLES = {
     Token.Operator.Word: "#569CD6",
 }
 
-_FENCE_RE = re.compile(r"^```([A-Za-z0-9_+.-]*)\s*$")
+_FENCE_RE = re.compile(r"^```([A-Za-z0-9_+.\-@]*)\s*$")
+_NUMBERED_DIFF_RE = re.compile(r"^(\d{1,7}) ([ +\-]) (.*)$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _HR_RE = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
 _QUOTE_RE = re.compile(r"^>\s?(.*)$")
@@ -268,6 +269,37 @@ def _diff_highlight(code: str, lang: str | None) -> list[Content]:
     return out
 
 
+def _numbered_diff_highlight(code: str, lang: str | None) -> list[Content]:
+    rows: list[tuple[int, str, str]] = []
+    for l in code.split("\n"):
+        m = _NUMBERED_DIFF_RE.match(l)
+        if m is None:
+            rows.append((0, " ", l))
+        else:
+            rows.append((int(m.group(1)), m.group(2), m.group(3)))
+    maxw = max(4, max(len(str(r[0])) for r in rows))
+    out: list[Content] = []
+    i = 0
+    n = len(rows)
+    while i < n:
+        kind = rows[i][1]
+        group: list[tuple[int, str, str]] = []
+        while i < n and rows[i][1] == kind:
+            group.append(rows[i])
+            i += 1
+        content = "\n".join(g[2] for g in group)
+        hl = _highlight_lines(content, lang)
+        for g, hl_line in zip(group, hl):
+            parts: list = [(f"{g[0]:>{maxw}} ", _LINE_NO_FG)]
+            if kind == " ":
+                parts.append("  ")
+            else:
+                parts.append((f"{kind} ", "#FF9E9E" if kind == "-" else "#9FD28A"))
+            parts.append(hl_line)
+            out.append(Content.assemble(*parts))
+    return out
+
+
 def _highlight_lines(code: str, lang: str | None) -> list[Content]:
     key = (lang, code)
     hit = _HIGHLIGHT_CACHE.get(key)
@@ -324,8 +356,11 @@ def _highlight_lines(code: str, lang: str | None) -> list[Content]:
     return out
 
 
-def _fence_body(code: str, lang: str | None, *, numbered: bool) -> Content:
-    lines = _highlight_lines(code, lang)
+def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool = False) -> Content:
+    if diff_nums:
+        lines = _numbered_diff_highlight(code, lang)
+    else:
+        lines = _highlight_lines(code, lang)
     parts: list = []
     width = len(str(max(1, len(lines))))
     last = len(lines) - 1
@@ -383,7 +418,9 @@ def render_markdown(source: str, *, numbered: bool = False) -> Content:
             continue
         m = _FENCE_RE.match(line)
         if m is not None:
-            lang = m.group(1) or None
+            info = m.group(1)
+            lang, _, flags = info.partition("@")
+            diff_nums = flags == "n"
             body: list[str] = []
             i += 1
             closed = False
@@ -396,7 +433,7 @@ def render_markdown(source: str, *, numbered: bool = False) -> Content:
                 i += 1
             code = "\n".join(body).rstrip("\n")
             if closed:
-                parts.append(_fence_body(code, lang, numbered=numbered))
+                parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums))
             else:
                 parts.append(_open_fence(code))
             parts.append("\n")

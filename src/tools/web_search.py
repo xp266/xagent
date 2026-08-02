@@ -44,7 +44,7 @@ def to_model_output(data: dict) -> str:
 
 tool = Tool(
     name="web_search",
-    description=f"""Search the web using the session's web search provider.
+    description=f"""Search the web using keywords.
 
 The current year is {_year}. You MUST use this year when searching for recent information or current events
 - Example: If the current year is {_year} and the user asks for "latest AI news", search for "AI news {_year}", NOT "AI news {_year - 1}\"""",

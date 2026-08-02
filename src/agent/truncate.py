@@ -39,8 +39,8 @@ class TruncateService:
         hint = (
             f"The tool call succeeded but the output was truncated. "
             f"Full output saved to: {file_path}\n"
-            f"Use the explore agent to process this file with Grep and Read "
-            f"(with offset/limit). Do NOT read the full file yourself - delegate to save context."
+            f"Use the Read tool (with offset/limit) or the Grep tool to search "
+            f"the full output. Do NOT use head/tail/sed/awk."
         )
         content = f"{preview}\n\n...{removed_lines} lines truncated...\n\n{hint}"
         return TruncateResult(content=content, truncated=True, output_path=file_path)

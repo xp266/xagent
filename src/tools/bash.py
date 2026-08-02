@@ -1,4 +1,5 @@
 import os
+import platform
 import time
 import signal
 import subprocess
@@ -8,6 +9,9 @@ from src.types.tools import Tool
 DEFAULT_TIMEOUT_MS = 120_000
 MAX_TIMEOUT_MS = 600_000
 MAX_OUTPUT_BYTES = 1_048_576
+
+_OS_NAME = platform.system() or "unknown"
+_SHELL = "cmd" if os.name == "nt" else "bash"
 
 
 def _kill_process_group(pid: int, force_kill_after: int = 3):
@@ -113,9 +117,9 @@ def to_model_output(data: dict) -> str:
 
 tool = Tool(
     name="bash",
-    description="""Executes a bash command with optional timeout and working directory.
+    description=f"""Executes a bash command with optional timeout and working directory.
 
-OS: linux, Shell: bash.
+OS: {_OS_NAME}, Shell: {_SHELL}.
 
 DO NOT use for file operations (read/write/edit/search) — use dedicated tools instead.
 

@@ -124,8 +124,7 @@ tool = Tool(
 - Supports full regex syntax (e.g. "log.*Error", "function\\s+\\w+")
 - Returns file paths and line numbers with matching lines
 - Use this tool to find files containing specific patterns
-- To count matches, use Bash with `rg` (ripgrep) directly
-- For open-ended multi-round searches, use Task tool""",
+- To count matches, use Bash with `rg` (ripgrep) directly""",
     parameters={
         "type": "object",
         "properties": {
@@ -139,7 +138,7 @@ tool = Tool(
             },
             "include": {
                 "type": "string",
-                "description": 'File pattern to include in the search (e.g. "*.py", "*.{ts,tsx}")',
+                "description": 'Comma-separated file patterns to include in the search (e.g. "*.py,*.md")',
             },
         },
         "required": ["pattern"],
