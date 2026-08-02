@@ -15,6 +15,23 @@ class PickerMixin:
     def on_session_picker_selected(self, message: SessionPicker.Selected) -> None:
         self._switch_session(message.session.id)
 
+    def on_session_picker_deleted(self, message: SessionPicker.Deleted) -> None:
+        target = message.session
+        was_current = self._sm.current.id == target.id
+        self._sm.delete(target.id)
+        remaining = self._sm.list()
+        if not remaining:
+            self._picker().hide()
+            self._new_chat()
+            return
+        if was_current:
+            self._new_chat()
+            try:
+                self.query_one("#picker-search").focus()
+            except Exception:
+                pass
+        self._picker().update_items(remaining)
+
     def on_session_picker_dismissed(self, message: SessionPicker.Dismissed) -> None:
         self.query_one("#input", ChatInput).focus()
 

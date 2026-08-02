@@ -2,6 +2,7 @@ from textual import events
 from textual.containers import Vertical, VerticalScroll, Horizontal
 from textual.message import Message
 from textual.widgets import Static, TextArea, Input, Collapsible
+import time
 
 
 class ChatInput(TextArea):
@@ -21,12 +22,37 @@ class ChatInput(TextArea):
     class TextEdited(Message):
         pass
 
+    class InterruptConfirmed(Message):
+        pass
+
+    _ARM_PLACEHOLDER = "Press ctrl+c again to interrupt"
+    _ARM_SECONDS = 3.0
+
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self.palette_open = False
+        self.busy = False
+        self._armed_at = 0.0
+        self._arm_timer = None
 
     def on_text_area_changed(self, event) -> None:
         self.post_message(self.TextEdited())
+
+    def _arm(self) -> None:
+        self._armed_at = time.monotonic()
+        if not self.text:
+            self.placeholder = self._ARM_PLACEHOLDER
+        if self._arm_timer is not None:
+            self._arm_timer.stop()
+        self._arm_timer = self.set_timer(self._ARM_SECONDS, self._disarm)
+
+    def _disarm(self) -> None:
+        self._armed_at = 0.0
+        if self._arm_timer is not None:
+            self._arm_timer.stop()
+            self._arm_timer = None
+        if self.placeholder == self._ARM_PLACEHOLDER:
+            self.placeholder = ""
 
     async def _on_key(self, event: events.Key) -> None:
         if event.key in ("enter", "ctrl+m"):
@@ -52,6 +78,18 @@ class ChatInput(TextArea):
             event.prevent_default()
             self.post_message(self.Navigate(1))
             return
+        if event.key == "ctrl+c":
+            if self.busy:
+                event.stop()
+                event.prevent_default()
+                now = time.monotonic()
+                if self._armed_at and now - self._armed_at <= self._ARM_SECONDS:
+                    self._disarm()
+                    self.post_message(self.InterruptConfirmed())
+                else:
+                    self._arm()
+                return
+            self._disarm()
         await super()._on_key(event)
 
 
@@ -249,6 +287,10 @@ class _ListPicker(Vertical):
         row = rows[self._selected]
         self.query_one("#picker-list", VerticalScroll).scroll_to_widget(row, animate=False)
 
+    def update_items(self, items) -> None:
+        self._items = items
+        self._rebuild()
+
     def _on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "picker-search":
             self._rebuild()
@@ -287,8 +329,14 @@ class _ListPicker(Vertical):
 
 class SessionPicker(_ListPicker):
     placeholder = "Search sessions..."
+    footer_text = "Press ESC to exit   |   Ctrl+D to delete"
 
     class Selected(Message):
+        def __init__(self, session) -> None:
+            super().__init__()
+            self.session = session
+
+    class Deleted(Message):
         def __init__(self, session) -> None:
             super().__init__()
             self.session = session
@@ -308,6 +356,18 @@ class SessionPicker(_ListPicker):
             or query in item.name.lower()
             or query in _format_session_time(item.updated_at or item.created_at).lower()
         )
+
+    async def _on_key(self, event: events.Key) -> None:
+        if not self.is_visible:
+            return
+        if event.key == "ctrl+d":
+            event.stop()
+            event.prevent_default()
+            if self._filtered and 0 <= self._selected < len(self._filtered):
+                item = self._filtered[self._selected]
+                self.post_message(self.Deleted(item))
+            return
+        await super()._on_key(event)
 
     def _rebuild(self) -> None:
         try:

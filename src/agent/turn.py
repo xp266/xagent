@@ -2,10 +2,13 @@ import json
 import time
 from collections.abc import Iterator
 
+from src.agent.cancel import TurnCancelled
 from src.agent.loop import agent_stream
 from src.agent.session import Session, get_session_manager
 from src.types.events import LLMResponse, StreamEvent, TokenUsage
 from src.types.messages import AssistantMessage
+
+INTERRUPTED_TOOL_RESULT = "Tool call interrupted by user."
 
 
 def _attach_turn_meta(session: Session, model: str, usage: TokenUsage, prompt_tokens: int, elapsed: float) -> None:
@@ -21,16 +24,42 @@ def _attach_turn_meta(session: Session, model: str, usage: TokenUsage, prompt_to
             return
 
 
+def _fill_tool_calls(response: LLMResponse, tool_calls_pending: list) -> None:
+    for tc in tool_calls_pending:
+        response.tool_calls.append({
+            "id": tc["id"],
+            "type": "function",
+            "function": {
+                "name": tc["name"],
+                "arguments": json.dumps(tc["input"]) if isinstance(tc["input"], dict) else str(tc["input"]),
+            },
+        })
+
+
+def _commit_response(session: Session, response: LLMResponse, tool_results: list, cancelled: bool) -> None:
+    if response.reasoning and not response.signature:
+        response.reasoning = ""
+    session.msgs.add_assistant(response)
+    if cancelled:
+        executed = {tr["id"] for tr in tool_results}
+        for tc in response.tool_calls:
+            if tc["id"] not in executed:
+                session.msgs.add_tool(tc["id"], INTERRUPTED_TOOL_RESULT)
+
+
 def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]:
     session.msgs.add_user(user_input)
     start = time.monotonic()
 
-    while True:
+    cancelled = False
+
+    while not cancelled:
         response = LLMResponse()
         tool_calls_pending = []
         tool_results = []
         turn_usage = TokenUsage()
         last_prompt_tokens = 0
+        committed = False
 
         try:
             stream = agent_stream(
@@ -73,24 +102,32 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
 
                 yield event
 
+        except TurnCancelled:
+            cancelled = True
         except Exception as e:
             yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
             session.sync_messages()
             get_session_manager().save(session)
             return
 
-        for tc in tool_calls_pending:
-            response.tool_calls.append({
-                "id": tc["id"],
-                "type": "function",
-                "function": {
-                    "name": tc["name"],
-                    "arguments": json.dumps(tc["input"]) if isinstance(tc["input"], dict) else str(tc["input"]),
-                },
-            })
+        if not cancelled:
+            _fill_tool_calls(response, tool_calls_pending)
+            _commit_response(session, response, tool_results, cancelled=False)
+            committed = True
+            for tr in tool_results:
+                session.msgs.add_tool(
+                    tr["id"],
+                    tr.get("result", tr.get("error", "")),
+                    tr.get("attachments"),
+                    is_error=bool(tr.get("error")),
+                )
 
-        session.msgs.add_assistant(response)
+            if response.finish_reason != "tool_calls":
+                break
 
+    if cancelled and not committed:
+        _fill_tool_calls(response, tool_calls_pending)
+        _commit_response(session, response, tool_results, cancelled=True)
         for tr in tool_results:
             session.msgs.add_tool(
                 tr["id"],
@@ -99,8 +136,8 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                 is_error=bool(tr.get("error")),
             )
 
-        if response.finish_reason != "tool_calls":
-            break
+    if cancelled:
+        yield StreamEvent(type="turn-cancelled", data={})
 
     _attach_turn_meta(session, session.provider.model, turn_usage, last_prompt_tokens, time.monotonic() - start)
     session.sync_messages()

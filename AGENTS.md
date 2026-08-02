@@ -37,5 +37,6 @@ No tests, lint, or CI configured (`tests/` is empty, no pytest/lint/typecheck co
 ## State
 
 - Sessions persist as JSON under `~/.local/share/xagent/sessions/` (override with `XAGENT_DATA_DIR`); index at `sessions_index.json`.
+- Interrupting a running turn: press Ctrl+C twice within 3s while the agent is busy. Bash processes are killed (`src/tools/bash.py`), the LLM stream stops, and the partial turn is committed to history with interrupted tool results filled in (`src/agent/cancel.py` + `turn.py`).
 - Tool output >2000 lines or >50KB is truncated to a file under `/tmp/xagent/truncation/tool_*` (7-day cleanup on session release).
 - Keep output verbosity rules in `src/tools/bash.py`'s `Tool.description` and `src/prompts/default.md` consistent — the model's tool policy is defined there, not in code.

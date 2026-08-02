@@ -4,6 +4,7 @@ import time
 import signal
 import subprocess
 
+from src.agent.cancel import is_cancelled
 from src.types.tools import Tool
 
 DEFAULT_TIMEOUT_MS = 120_000
@@ -76,13 +77,32 @@ def execute(command: str, workdir: str = "", timeout: int = 0, **kwargs) -> dict
         }
 
     try:
-        stdout_bytes, _ = proc.communicate(timeout=timeout_ms / 1000)
-    except subprocess.TimeoutExpired:
-        _kill_process_group(proc.pid, force_kill_after=3)
+        stdout_bytes = None
+        remaining = timeout_ms / 1000
+        while stdout_bytes is None:
+            try:
+                stdout_bytes, _ = proc.communicate(timeout=0.5)
+            except subprocess.TimeoutExpired:
+                if is_cancelled():
+                    _kill_process_group(proc.pid, force_kill_after=3)
+                    return {
+                        "title": command,
+                        "output": "Command interrupted by user.",
+                        "metadata": {"error": True, "exit": None, "truncated": False, "interrupted": True},
+                    }
+                remaining -= 0.5
+                if remaining <= 0:
+                    _kill_process_group(proc.pid, force_kill_after=3)
+                    return {
+                        "title": command,
+                        "output": f"Command exceeded timeout of {timeout_ms} ms. Retry with a larger timeout if the command is expected to take longer.",
+                        "metadata": {"exit": None, "truncated": False, "timeout": True},
+                    }
+    except OSError:
         return {
             "title": command,
-            "output": f"Command exceeded timeout of {timeout_ms} ms. Retry with a larger timeout if the command is expected to take longer.",
-            "metadata": {"exit": None, "truncated": False, "timeout": True},
+            "output": f"Command interrupted by user.",
+            "metadata": {"error": True, "exit": None, "truncated": False, "interrupted": True},
         }
 
     truncated = False

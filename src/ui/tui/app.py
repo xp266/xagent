@@ -525,6 +525,10 @@ class XAgentTUI(PickerMixin, App):
             self._update_status()
         elif t == "provider-error":
             self._append_error(event.data.get("error", "Unknown error"))
+        elif t == "turn-cancelled":
+            cur["interrupted"] = True
+            self._chat().mount(Vertical(Static("Turn interrupted by user"), classes="summary-bubble"))
+            self._scroll_end()
 
     def _turn_worker(self, text: str) -> None:
         start = time.monotonic()
@@ -539,12 +543,13 @@ class XAgentTUI(PickerMixin, App):
     def _finalize_turn(self, elapsed: float) -> None:
         self._flush_streaming_content(force=True)
         cur = self._current
-        if cur and cur["steps"] > 0:
+        if cur and cur["steps"] > 0 and not cur.get("interrupted"):
             self._add_summary(elapsed)
         self._remove_empty_thinking()
         self._stop_all_spinners()
         self._waves.clear()
         self._busy = False
+        self.query_one("#input", ChatInput).busy = False
         self._current = None
         self._update_status()
         self._scroll_end()
@@ -755,6 +760,9 @@ class XAgentTUI(PickerMixin, App):
         if not cfg.model:
             self._append_error("No model selected. Type /model to select one.")
             return
+        from src.agent.cancel import reset
+        reset()
+        self.query_one("#input", ChatInput).busy = True
         self._busy = True
         self._waves.clear()
         self._current = {
@@ -781,6 +789,13 @@ class XAgentTUI(PickerMixin, App):
         self._palette().hide()
         self._set_palette_open(False)
         self._handle_input(message.text)
+
+    def on_chat_input_interrupt_confirmed(self, message: ChatInput.InterruptConfirmed) -> None:
+        if not self._busy:
+            return
+        from src.agent.cancel import cancel
+        cancel()
+        self._update_status("Interrupting...")
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-box"):

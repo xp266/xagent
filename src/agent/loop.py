@@ -3,6 +3,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 from src.types.events import StreamEvent
 from src.ai.base import Provider
+from src.agent.cancel import TurnCancelled, is_cancelled
 
 if TYPE_CHECKING:
     from src.tools.registry import ToolRegistry
@@ -16,6 +17,8 @@ def agent_stream(
 ) -> Iterator[StreamEvent]:
     for event in provider.stream(messages, tools):
         yield event
+        if is_cancelled():
+            raise TurnCancelled
         if event.type == "tool-call":
             call = event.data
             try:

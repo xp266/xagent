@@ -129,6 +129,9 @@ CSS = """
     TextArea .text-area--cursor-line {
         background: transparent;
     }
+    TextArea .text-area--placeholder {
+        color: #FF5555;
+    }
     #status-box {
         height: 1;
         border: none;
