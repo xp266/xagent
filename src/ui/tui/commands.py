@@ -35,12 +35,17 @@ def _cmd_model(app, args: str) -> None:
     app._open_model_picker()
 
 
+def _cmd_exa(app, args: str) -> None:
+    app._open_exa_key_dialog()
+
+
 def get_commands() -> list[Command]:
     return [
         Command("new", "Start a new chat", _cmd_new),
         Command("session", "Switch to a session: /session <id>", _cmd_session),
         Command("provider", "Switch API provider", _cmd_provider),
         Command("model", "Switch model", _cmd_model),
+        Command("exa", "Set Exa API key (web search/fetch)", _cmd_exa),
         Command("exit", "Exit xagent", _cmd_exit),
     ]
 

@@ -22,7 +22,13 @@ class LazyText(Static):
     def _rebuild(self, width: int) -> None:
         visual = self.visual
         if isinstance(visual, Content):
-            self._lines = visual.split("\n", allow_blank=True)
+            lines = visual.split("\n", allow_blank=True)
+            self._lines = []
+            for line in lines:
+                if width > 0 and line.cell_length > width:
+                    self._lines.extend(line.wrap(width))
+                else:
+                    self._lines.append(line)
         else:
             self._lines = []
         while self._lines and self._lines[-1].plain == "":

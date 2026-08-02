@@ -19,7 +19,7 @@ Interactive AI coding agent with a Textual TUI. Streams from an OpenAI-compatibl
 ## Config.json keys
 
 - `active_provider` / `active_model` / `providers` (per-provider `api_key`, custom providers also `name`/`base_url`/`models`).
-- `exa_api_key` — used by the `web_search` / `web_fetch` tools (`src/tools/*` read it via `get_exa_api_key()`).
+- `exa_api_key` — used by the `web` tool (`src/tools/web.py` reads it via `get_exa_api_key()`).
 - `pillow` is an optional extra (image resize in `src/utils/media.py`); install with `uv pip install pillow` if image support is needed.
 
 ## Verify

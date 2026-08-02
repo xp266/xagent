@@ -1,5 +1,5 @@
 from src.utils.providers import get_store, list_providers
-from src.ui.tui.widgets import ChatInput, ModelPicker, ProviderKeyDialog, ProviderPicker, SessionPicker
+from src.ui.tui.widgets import ChatInput, ExaKeyDialog, ModelPicker, ProviderKeyDialog, ProviderPicker, SessionPicker
 
 
 class PickerMixin:
@@ -26,6 +26,23 @@ class PickerMixin:
 
     def _model_picker(self) -> ModelPicker:
         return self.query_one("#model-picker", ModelPicker)
+
+    def _exa_key_dialog(self) -> ExaKeyDialog:
+        return self.query_one("#exa-key-dialog", ExaKeyDialog)
+
+    def _open_exa_key_dialog(self) -> None:
+        self._palette().hide()
+        self._set_palette_open(False)
+        self._exa_key_dialog().show()
+
+    def on_exa_key_dialog_saved(self, message: ExaKeyDialog.Saved) -> None:
+        store = get_store()
+        store.set_exa_api_key(message.api_key)
+        store.save()
+        self.query_one("#input", ChatInput).focus()
+
+    def on_exa_key_dialog_canceled(self, message: ExaKeyDialog.Canceled) -> None:
+        self.query_one("#input", ChatInput).focus()
 
     def _open_provider_picker(self) -> None:
         self._palette().hide()
@@ -194,6 +211,7 @@ class PickerMixin:
             ("#provider-picker", self._provider_picker),
             ("#model-picker", self._model_picker),
             ("#provider-key-dialog", self._key_dialog),
+            ("#exa-key-dialog", self._exa_key_dialog),
         ]
         active = None
         for selector, getter in modals:

@@ -72,7 +72,8 @@ CSS = """
     ModelPicker .picker-row.selected {
         background: #334466;
     }
-    ProviderKeyDialog {
+    ProviderKeyDialog,
+    ExaKeyDialog {
         display: none;
         layer: overlay;
         width: 45%;
@@ -81,15 +82,18 @@ CSS = """
         border: none;
         padding: 1;
     }
-    ProviderKeyDialog.visible {
+    ProviderKeyDialog.visible,
+    ExaKeyDialog.visible {
         display: block;
     }
-    ProviderKeyDialog #dialog-title {
+    ProviderKeyDialog #dialog-title,
+    ExaKeyDialog #dialog-title {
         height: 1;
         margin-bottom: 1;
         color: #888888;
     }
-    ProviderKeyDialog Input {
+    ProviderKeyDialog Input,
+    ExaKeyDialog Input {
         height: 1;
         border: none;
         background: #222222;
@@ -99,12 +103,14 @@ CSS = """
     ProviderKeyDialog #custom-url {
         display: none;
     }
-    ProviderKeyDialog #dialog-error {
+    ProviderKeyDialog #dialog-error,
+    ExaKeyDialog #dialog-error {
         height: 1;
         margin-bottom: 1;
         color: #FF5555;
     }
-    ProviderKeyDialog #dialog-footer {
+    ProviderKeyDialog #dialog-footer,
+    ExaKeyDialog #dialog-footer {
         height: 1;
         padding: 0;
         color: #888888;

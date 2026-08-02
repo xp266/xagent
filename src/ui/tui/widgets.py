@@ -619,3 +619,93 @@ class ProviderKeyDialog(Vertical):
             self._focus_field(-1 if key == "up" else 1)
             return
         await super()._on_key(event)
+
+
+class ExaKeyDialog(Vertical):
+    class Saved(Message):
+        def __init__(self, api_key: str) -> None:
+            super().__init__()
+            self.api_key = api_key
+
+    class Canceled(Message):
+        pass
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._error = ""
+
+    def compose(self) -> ComposeResult:
+        yield Static("Exa API Key", id="dialog-title")
+        yield Input(placeholder="API Key", id="api-key", password=True)
+        yield Static(self._error, id="dialog-error")
+        yield Static("Enter to save, ESC to cancel", id="dialog-footer")
+
+    def show(self) -> None:
+        self._error = ""
+        self.query_one("#dialog-error", Static).update("")
+        self.query_one("#api-key", Input).value = ""
+        self._center_presets()
+        self.add_class("visible")
+        self.call_after_refresh(self._center)
+        self.call_after_refresh(lambda: self.query_one("#api-key", Input).focus())
+
+    def hide(self) -> None:
+        self.remove_class("visible")
+
+    @property
+    def is_visible(self) -> bool:
+        return "visible" in self.classes
+
+    def set_error(self, message: str) -> None:
+        self._error = message
+        try:
+            self.query_one("#dialog-error", Static).update(message)
+        except Exception:
+            pass
+
+    def _center_presets(self) -> None:
+        try:
+            parent_w = self.screen.size.width
+            parent_h = self.screen.size.height
+            w = int(parent_w * 0.45)
+            h = 9
+            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
+        except Exception:
+            pass
+
+    def _center(self) -> None:
+        try:
+            parent_w = self.screen.size.width
+            parent_h = self.screen.size.height
+            w = self.region.width or int(parent_w * 0.45)
+            h = self.region.height or int(parent_h * 0.35)
+            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
+        except Exception:
+            pass
+
+    def _submit(self) -> None:
+        try:
+            key = self.query_one("#api-key", Input).value.strip()
+        except Exception:
+            key = ""
+        if not key:
+            self.set_error("API Key is required")
+            return
+        self.hide()
+        self.post_message(self.Saved(key))
+
+    async def _on_key(self, event: events.Key) -> None:
+        if not self.is_visible:
+            return
+        key = event.key
+        if key == "escape":
+            event.stop()
+            self.hide()
+            self.post_message(self.Canceled())
+            return
+        if key == "enter":
+            event.stop()
+            event.prevent_default()
+            self._submit()
+            return
+        await super()._on_key(event)
