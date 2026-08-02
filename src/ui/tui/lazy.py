@@ -38,12 +38,12 @@ def _pad_line(line: Content, width: int) -> tuple[Content, int | None]:
     return line, fill_at
 
 
-def _line_no_end(line: Content) -> int:
+def _line_no_end(line: Content, offset: int = 0) -> int:
     spans = list(line.spans)
     if not spans:
         return 0
     first = spans[0]
-    if first.start != 0:
+    if first.start != offset:
         return 0
     style = _parse_rich_style(first.style)
     if style is None or style.color is None or style.bgcolor is not None:
@@ -54,7 +54,7 @@ def _line_no_end(line: Content) -> int:
         return 0
     if rgb is None or tuple(rgb) != _LINE_NO_RGB:
         return 0
-    return min(first.end, len(line.plain))
+    return min(first.end - offset, len(line.plain) - offset)
 
 
 def _apply_highlight(line: Content, style, start: int, end: int) -> Content:
@@ -229,4 +229,58 @@ def _build_strip(line: Content, offset_y: int) -> Strip:
         else:
             seg = Style(meta={"offset": (x, offset_y)})
         segments.append(Segment(plain[pos:], seg))
+    return Strip(segments)
+
+
+def _apply_selection(strip: Strip, start: int, end: int, style) -> Strip:
+    """Derive a copy of `strip` with `style` applied to cells [start, end).
+
+    The original strip is left untouched; segments are split and restyled only
+    where they intersect the range. The offset meta used for selection tracking
+    is rewritten for split segments so the original column mapping is kept.
+    """
+    from textual.style import Style as TextualStyle
+
+    if isinstance(style, TextualStyle):
+        rich_style = style.rich_style
+    elif hasattr(style, "text_style"):
+        rich_style = TextualStyle.from_styles(style).rich_style
+    else:
+        rich_style = style
+
+    def _meta_x(seg_style, base_x: int) -> Style | None:
+        if seg_style is None or seg_style.meta is None:
+            return None
+        meta = seg_style.meta
+        if "offset" not in meta:
+            return None
+        _ox, oy = meta["offset"]
+        return Style(meta={"offset": (base_x, oy)})
+
+    segments: list[Segment] = []
+    x = 0
+    for seg in strip:
+        cell_length = seg.cell_length
+        seg_end = x + cell_length
+        text, seg_style, _ = seg
+        if seg_end <= start or x >= end or cell_length == 0:
+            segments.append(seg)
+            x = seg_end
+            continue
+        base = seg_style if seg_style is not None else Style()
+        cut_a = max(start - x, 0)
+        cut_b = min(end - x, cell_length)
+        before = text[:cut_a]
+        mid = text[cut_a:cut_b]
+        after = text[cut_b:]
+        if before:
+            mx = _meta_x(seg_style, x)
+            segments.append(Segment(before, mx if mx is not None else seg_style))
+        if mid:
+            mx = _meta_x(seg_style, x + cut_a)
+            segments.append(Segment(mid, base + rich_style + (mx if mx is not None else Style())))
+        if after:
+            mx = _meta_x(seg_style, x + cut_b)
+            segments.append(Segment(after, mx if mx is not None else seg_style))
+        x = seg_end
     return Strip(segments)

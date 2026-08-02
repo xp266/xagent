@@ -7,7 +7,7 @@ Interactive AI coding agent with a Textual TUI. Streams from an OpenAI-compatibl
 - Python >=3.11, managed with `uv`. Dependencies already installed in `.venv` at repo root.
 - No `.env` file is used. All config lives in `<data_dir>/config.json` (see below).
 - Run from the repo **root**: `.venv/bin/python src/main.py`. Imports are absolute (`from src.*`), so the root must be the working directory. `main.py` adds the repo root to `sys.path`.
-- `src/main.py` is the console-script target (`xagent = main:main`); `dist/` is stale build output, ignore it.
+- `src/main.py` is the console-script target (`xagent = main:main`); `dist/` is stale build output, ignore it. `.opencode/` is an ignored node_modules dump, not app code.
 
 ## Provider / model config
 
@@ -31,7 +31,7 @@ No tests, lint, or CI configured (`tests/` is empty, no pytest/lint/typecheck co
 - `src/agent/` — session persistence (`session.py`), message assembly (`manager.py`), stream/tool loop (`loop.py`), tool-output truncation (`truncate.py`), auto-naming (`naming.py`).
 - `src/ai/` — `Provider` ABC, `OpenAIProvider`, `AnthropicProvider`; yields `StreamEvent`s (types in `src/types/events.py`).
 - `src/tools/` — tool modules. Each file is auto-registered at runtime if it defines a module-level `tool` (a `Tool` from `src/types/tools.py`). Signature must be `execute(**args)` returning a `ToolResult` or dict; a `to_model_output` function can reformat results.
-- `src/ui/tui/` — Textual TUI. Slash commands live in `commands.py` (`/new`, `/session`, `/exit`).
+- `src/ui/tui/` — Textual TUI. Slash commands live in `commands.py`: `/new`, `/session`, `/provider`, `/model`, `/exa`, `/exit`.
 - `src/prompts/*.md` — system prompts loaded by name (`load_prompt`), `default.md` is the main one.
 
 ## State
