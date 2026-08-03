@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import bisect
 
-from rich.segment import Segment
 from rich.style import Style as RichStyle
 from rich.text import Text as RichText
 
 from textual.content import Content, Span
-from textual.selection import Selection
 from textual.strip import Strip
 from textual.widgets import Static
 
@@ -18,7 +16,6 @@ _TOOL_BG = "#1A1A1A"
 _THINKING_TITLE = "#5B9BD5"
 _TOOL_TITLE = "#808080"
 _TOOL_ERROR = "#A75252"
-_TOOL_BASH_TITLE = "#888888"
 _TOOL_HEADER = "#808080"
 _THINKING_BODY = "#9B9B9B"
 
@@ -122,9 +119,6 @@ class CanvasBlock:
             owner = self.owner
             if owner is not None and owner.is_mounted:
                 owner.refresh()
-
-    def set_label(self, label: str) -> None:
-        self.label = label
 
     def update(self, content: Content | str | RichText) -> None:
         if isinstance(content, str):
@@ -253,9 +247,6 @@ class ChatCanvas(Static):
         super().__init__(*children, **kwargs)
         self._blocks: list[CanvasBlock] = []
         self._offsets: list[int] = []
-
-    def text_select_all(self) -> None:
-        """Double-click select-all is disabled; drag-select still works."""
 
     def get_selection(self, selection) -> tuple[str, str] | None:
         if not self._blocks:

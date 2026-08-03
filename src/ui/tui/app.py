@@ -5,7 +5,6 @@ from functools import partial
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, VerticalScroll
-from textual.content import Content
 from textual.widgets import Static
 from rich.text import Text
 

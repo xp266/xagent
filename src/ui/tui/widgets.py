@@ -1,7 +1,7 @@
 from textual import events
-from textual.containers import Vertical, VerticalScroll, Horizontal
+from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
-from textual.widgets import Static, TextArea, Input, Collapsible
+from textual.widgets import Static, TextArea, Input
 import time
 
 
@@ -141,10 +141,6 @@ class CommandPalette(Vertical):
     def hide(self) -> None:
         self.remove_class("visible")
         self._commands = []
-
-    @property
-    def visible_cmds(self) -> bool:
-        return bool(self._commands and "visible" in self.classes)
 
     def _update_selection(self) -> None:
         rows = self.query(".cmd-row")
