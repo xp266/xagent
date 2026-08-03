@@ -135,7 +135,7 @@ class XAgentTUI(PickerMixin, App):
         self._canvas().clear()
         logo = self._logo()
         if logo is not None:
-            logo.remove()
+            logo.display = False
 
     def _scroll_end(self):
         chat = self._chat()

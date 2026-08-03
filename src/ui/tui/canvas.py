@@ -23,6 +23,32 @@ _TOOL_HEADER = "#808080"
 _THINKING_BODY = "#9B9B9B"
 
 
+def _bg_span_end(line: Content) -> int:
+    """Rightmost extent of background spans in `line`.
+
+    Used as the fallback-background boundary: the block background must
+    not cover regions that already carry their own background (e.g. code
+    fences), so the block bg span starts right after the last existing
+    background span.
+    """
+    end = 0
+    for s in line.spans:
+        style = s.style
+        if style is None:
+            continue
+        if isinstance(style, str):
+            if not style:
+                continue
+            from rich.style import Style
+
+            rich = Style.parse(style)
+        else:
+            rich = getattr(style, "rich_style", style)
+        if rich is not None and rich.bgcolor is not None and s.end > end:
+            end = s.end
+    return end
+
+
 class CanvasBlock:
     """A single message block rendered into the chat canvas.
 
@@ -151,10 +177,12 @@ class CanvasBlock:
                         new_lines = [line]
                     for nline in new_lines:
                         if self.bg:
-                            nline = Content(
-                                nline.plain,
-                                [*nline.spans, Span(0, len(nline.plain), bg)],
-                            )
+                            bg_end = _bg_span_end(nline)
+                            if bg_end < len(nline.plain):
+                                nline = Content(
+                                    nline.plain,
+                                    [*nline.spans, Span(bg_end, len(nline.plain), bg)],
+                                )
                         lines.append(left_pad + nline)
         if self.pad_bottom > 0:
             lines.extend(
@@ -277,7 +305,7 @@ class ChatCanvas(Static):
     def clear(self) -> None:
         self._blocks = []
         self._offsets = []
-        self.refresh()
+        self.refresh(layout=True)
 
     def append(self, block: CanvasBlock) -> CanvasBlock:
         block.owner = self
