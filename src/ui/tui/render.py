@@ -39,6 +39,18 @@ def is_error_result(name, result):
         )
         low = result.lower()
         return any(low.startswith(p) for p in error_prefixes)
+    # Tools whose result is arbitrary text (web pages, file listings, match
+    # lines): only trust the tool's own deterministic error prefixes instead
+    # of substring matching, which would flag e.g. "error" in page content.
+    _PREFIX_ONLY = {
+        "web": ("search failed:", "failed to fetch url:", "error fetching url:", "error:"),
+        "glob": ("path is not a directory:",),
+        "grep": ("path does not exist:", "invalid regex pattern:"),
+    }
+    prefixes = _PREFIX_ONLY.get(name)
+    if prefixes is not None:
+        low = result.lower()
+        return any(low.startswith(p) for p in prefixes)
     success_markers = {
         "write": ("Wrote file successfully", "Created file successfully", "Updated file successfully"),
         "edit": ("Edited file successfully",),
@@ -75,6 +87,38 @@ def read_result_to_lines(result: str) -> str:
     return "\n".join(lines).rstrip("\n")
 
 
+def read_line_start(result: str, args: dict) -> int:
+    """First real line number of a read tool result.
+
+    Prefers the "N:content" prefixes in the output; falls back to the
+    offset argument so the gutter starts at the true line number.
+    """
+    for line in (result or "").split("\n"):
+        m = _READ_LINE_RE.match(line)
+        if m:
+            return int(m.group(1))
+    offset = args.get("offset")
+    try:
+        return int(offset) if offset else 1
+    except (TypeError, ValueError):
+        return 1
+
+
+def _params_suffix(args: dict, keys: tuple | None = None) -> str:
+    parts = []
+    for key, val in args.items():
+        if keys is not None and key not in keys:
+            continue
+        if val is None or (isinstance(val, str) and not val):
+            continue
+        parts.append(f"{key}={val}")
+    return f" [{','.join(parts)}]" if parts else ""
+
+
+def _read_title(path: str, args: dict) -> str:
+    return f"read {path}{_params_suffix(args, ('offset', 'limit'))}"
+
+
 def tool_render(name, args, result, is_error, preview=False):
     result = result or ""
     if name == "bash":
@@ -84,6 +128,12 @@ def tool_render(name, args, result, is_error, preview=False):
         if result:
             t.append("\n" + result, style="#9B9B9B")
         return "bash", t
+    if name == "read":
+        path = args.get("path", "") or args.get("filePath", "")
+        if path:
+            return _read_title(path, args), Text(result)
+    if name == "web":
+        return f"web{_params_suffix(args)}", Text(result)
     if name == "write":
         path = args.get("path", "")
         write_content = args.get("content", "")
@@ -119,8 +169,7 @@ def tool_render(name, args, result, is_error, preview=False):
             t.append(f"\n\n{result}")
         return f"edit {file_path}", t
     if args:
-        arg_str = " ".join(f"{k}={v}" for k, v in args.items())
-        title = f"{name}  {{{arg_str}}}"
+        title = f"{name}{_params_suffix(args)}"
     else:
         title = name
     return title, Text(result)
@@ -242,7 +291,7 @@ def tool_markdown(name, args, result, is_error, preview=False):
         body = result
         if not is_error:
             body = read_result_to_lines(result)
-        return f"read {path}", _code_block(_lang_for(path), body)
+        return _read_title(path, args), _code_block(_lang_for(path), body)
     if name == "edit":
         file_path = args.get("filePath", "") or args.get("path", "")
         old_str = args.get("oldString", "") or ""

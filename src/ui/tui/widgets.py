@@ -29,6 +29,7 @@ class ChatInput(TextArea):
     _ARM_SECONDS = 3.0
 
     def __init__(self, *args, **kwargs) -> None:
+        kwargs.setdefault("tab_behavior", "indent")
         super().__init__(*args, **kwargs)
         self.palette_open = False
         self.busy = False

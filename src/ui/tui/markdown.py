@@ -390,7 +390,7 @@ def _line_bg(c: Content) -> str | None:
     return None
 
 
-def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool = False) -> Content:
+def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool = False, line_number_start: int = 1) -> Content:
     if diff_nums:
         lines = _numbered_diff_highlight(code, lang)
     else:
@@ -401,7 +401,7 @@ def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool 
     last = len(lines) - 1
     for i, line in enumerate(lines):
         if numbered:
-            parts.append((f"{i + 1:>{width}} ", _LINE_NO_FG))
+            parts.append((f"{i + line_number_start:>{width}} ", _LINE_NO_FG))
         bg = _line_bg(line)
         if bg is None:
             line = line.stylize(f"on {_FENCE_BG}")
@@ -447,7 +447,7 @@ def _inline(text: str) -> Content:
     return Content.assemble(*parts)
 
 
-def render_markdown(source: str, *, numbered: bool = False) -> Content:
+def render_markdown(source: str, *, numbered: bool = False, line_number_start: int = 1) -> Content:
     parts: list = []
     lines = source.split("\n")
     i = 0
@@ -474,7 +474,7 @@ def render_markdown(source: str, *, numbered: bool = False) -> Content:
                 i += 1
             code = "\n".join(body).rstrip("\n")
             if closed:
-                parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums))
+                parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start))
             else:
                 parts.append(_open_fence(code))
             parts.append("\n")

@@ -368,6 +368,11 @@ class ChatCanvas(Static):
     def on_click(self, event) -> None:
         if not self._blocks:
             return
+        if self.text_selection is not None:
+            # A drag-select that ends on this block releases with a Click
+            # event; a real click clears the selection first. Skip the
+            # toggle so selecting text doesn't fold/unfold the block.
+            return
         try:
             widget, offset = self.screen.get_widget_and_offset_at(
                 event.screen_x, event.screen_y

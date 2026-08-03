@@ -14,8 +14,7 @@ def _match_include(filename: str, include: str) -> bool:
 
 
 def execute(pattern: str, path: str = "", include: str = "", **kwargs) -> dict:
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    search_dir = path or project_root
+    search_dir = path or os.getcwd()
     search_dir = os.path.abspath(os.path.expanduser(search_dir))
 
     if not os.path.exists(search_dir):

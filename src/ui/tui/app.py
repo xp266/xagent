@@ -23,7 +23,7 @@ from src.ui.tui.lazy import LazyText
 from src.ui.tui.markdown import render_markdown
 from src.ui.tui.render import (
     block_tool, clean_result, code_tool, fmt_duration, fmt_pct, is_error_result,
-    tool_block, tool_markdown, tool_render,
+    read_line_start, tool_block, tool_markdown, tool_render,
 )
 from src.ui.tui.streaming import stream_args
 from src.ui.tui.widgets import ChatInput, CommandPalette, ExaKeyDialog, ModelPicker, ProviderKeyDialog, ProviderPicker, SessionPicker
@@ -574,7 +574,7 @@ class XAgentTUI(PickerMixin, App):
                 tool["title"] = m_title
                 if tool["block"] is not None and tool["block"].title != m_title:
                     tool["block"].set_title(m_title)
-                self._set_tool_content(tool["col"], LazyText(render_markdown(m, numbered=(name == "read"))))
+                self._set_tool_content(tool["col"], LazyText(render_markdown(m, numbered=(name == "read"), line_number_start=read_line_start(result, tool["input"]))))
                 if is_error:
                     tool["col"].title_style = _TOOL_ERROR
                     tool["col"]._strips = []
@@ -835,7 +835,7 @@ class XAgentTUI(PickerMixin, App):
                     md = tool_markdown(name, args, result, is_error)
                     if md is not None:
                         title, m = md
-                        content_widget = render_markdown(m, numbered=(name == "read"))
+                        content_widget = render_markdown(m, numbered=(name == "read"), line_number_start=read_line_start(result, args))
                     else:
                         title, t = tool_render(name, args, result, is_error)
                         content_widget = t
