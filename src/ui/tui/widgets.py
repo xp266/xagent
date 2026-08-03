@@ -509,9 +509,10 @@ class ModelPicker(_ListPicker):
     ADD_MODEL = object()
 
     class Selected(Message):
-        def __init__(self, model: str) -> None:
+        def __init__(self, model: str, provider_id: str | None = None) -> None:
             super().__init__()
             self.model = model
+            self.provider_id = provider_id
 
     class AddModel(Message):
         pass
@@ -526,16 +527,21 @@ class ModelPicker(_ListPicker):
     def item_label(self, item) -> str:
         if item is self.ADD_MODEL:
             return "+ Add model"
+        if isinstance(item, tuple):
+            return f"{item[0]}  [{item[2]}]"
         return item
 
     def item_matches(self, item, query: str) -> bool:
         if item is self.ADD_MODEL:
             return "add" in query or "model" in query
-        return query in item.lower()
+        model = item[0] if isinstance(item, tuple) else item
+        return query in model.lower()
 
     def _select_item(self, item) -> None:
         if item is self.ADD_MODEL:
             self.post_message(self.AddModel())
+        elif isinstance(item, tuple):
+            self.post_message(self.Selected(item[0], item[1]))
         else:
             self.post_message(self.Selected(item))
 
@@ -590,6 +596,12 @@ class ProviderKeyDialog(Vertical):
         self._provider = provider
         self._is_custom = is_custom
         self._error = ""
+        self.query_one("#dialog-error", Static).update("")
+        for field in ("custom-name", "custom-url", "api-key"):
+            try:
+                self.query_one(f"#{field}", Input).value = ""
+            except Exception:
+                pass
         if provider is not None and not is_custom:
             self.query_one("#dialog-title", Static).update(f"API Key for {provider.name}")
         else:

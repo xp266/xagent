@@ -77,9 +77,18 @@ class PickerMixin:
             return
         self._palette().hide()
         self._set_palette_open(False)
+        entries = []
+        seen = set()
+        for p in store.list_providers():
+            if not p.api_key:
+                continue
+            for m in p.selected_models:
+                if m not in seen:
+                    seen.add(m)
+                    entries.append((m, p.id, p.name))
         picker = self._model_picker()
         picker._add_enabled = True
-        picker.show(store.get_selected_models(provider.id))
+        picker.show(entries)
 
     def _open_model_picker_all(self, provider) -> None:
         store = get_store()
@@ -195,7 +204,11 @@ class PickerMixin:
 
     def on_model_picker_selected(self, message: ModelPicker.Selected) -> None:
         store = get_store()
-        provider = getattr(self, "_pending_model_provider", None) or store.get_active()
+        provider = getattr(self, "_pending_model_provider", None)
+        if provider is None and message.provider_id:
+            provider = store.get_provider(message.provider_id)
+        if provider is None:
+            provider = store.get_active()
         self._pending_model_provider = None
         if provider is not None:
             store.set_active_provider(provider.id)
