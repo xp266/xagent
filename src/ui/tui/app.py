@@ -91,7 +91,7 @@ class XAgentTUI(PickerMixin, App):
         bg: str | None = None,
         pad_top: int = 1,
         pad_bottom: int = 1,
-        pad_left: int = 1,
+        pad_left: int = 3,
         pad_right: int = 1,
         expandable: bool = False,
         collapsed: bool = False,
@@ -258,6 +258,7 @@ class XAgentTUI(PickerMixin, App):
             return
         frame = _SPINNER_FRAMES[self._spinner_idx % len(_SPINNER_FRAMES)]
         label = getattr(title, "label", title.title)
+        title.arrow_hidden = True
         title.set_title(f"{frame} {label}")
 
     def _stop_spinner(self, title) -> None:
@@ -265,6 +266,7 @@ class XAgentTUI(PickerMixin, App):
             return
         if self._spinners.pop(id(title), None) is not None:
             label = getattr(title, "label", title.title)
+            title.arrow_hidden = False
             title.set_title(label)
 
     def _stop_all_spinners(self) -> None:
@@ -301,6 +303,7 @@ class XAgentTUI(PickerMixin, App):
         label = f"{frame} {tool['title']}"
         block = tool.get("block")
         if block is not None:
+            block.arrow_hidden = True
             block.set_title(label)
 
     def _stop_tool_spinner(self, tool) -> None:
@@ -309,6 +312,7 @@ class XAgentTUI(PickerMixin, App):
         tool["spinning"] = False
         block = tool.get("block")
         if block is not None:
+            block.arrow_hidden = False
             block.set_title(tool["title"])
 
     def _tick_animations(self) -> None:
@@ -346,6 +350,7 @@ class XAgentTUI(PickerMixin, App):
                 body_style=_THINKING_BODY,
                 expandable=True,
                 collapsed=True,
+                pad_bottom=0,
             )
             cur["thinking"] = block
             cur["thinking_title"] = block
@@ -373,8 +378,8 @@ class XAgentTUI(PickerMixin, App):
             block = self._append_block(
                 kind="reply",
                 pad_top=1,
-                pad_bottom=1,
-                pad_left=1,
+                pad_bottom=0,
+                pad_left=3,
                 pad_right=1,
             )
             cur["reply"] = block
@@ -401,7 +406,7 @@ class XAgentTUI(PickerMixin, App):
                 bg=_TOOL_BG,
                 pad_top=1,
                 pad_bottom=1,
-                pad_left=1,
+                pad_left=3,
                 pad_right=1,
             )
             tool["block"] = block
@@ -416,6 +421,7 @@ class XAgentTUI(PickerMixin, App):
                 title_style=_TOOL_TITLE,
                 expandable=True,
                 collapsed=True,
+                pad_bottom=0,
             )
             tool["title"] = title
             tool["block"] = block
@@ -434,7 +440,6 @@ class XAgentTUI(PickerMixin, App):
             if isinstance(widget, LazyText):
                 content = widget.visual
                 col.update(content)
-                col.collapsed = False
                 col._strips = []
                 col._key = ()
         else:
@@ -495,7 +500,7 @@ class XAgentTUI(PickerMixin, App):
                 tool["title"] = m_title
                 if tool["block"] is not None and tool["block"].title != m_title:
                     tool["block"].set_title(m_title)
-                self._set_tool_content(tool["col"], LazyText(render_markdown(m)))
+                self._set_tool_content(tool["col"], LazyText(render_markdown(m, numbered=(name == "read"))))
                 if is_error:
                     tool["col"].title_style = _TOOL_ERROR
                     tool["col"]._strips = []
@@ -519,7 +524,7 @@ class XAgentTUI(PickerMixin, App):
         cfg = get_config()
         model = cfg.model or "?"
         summary = f"{model} - {fmt_duration(elapsed)}"
-        block = self._append_block(kind="summary", pad_top=1, pad_left=1, pad_right=1)
+        block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
         block.update(summary)
         self._scroll_end()
 
@@ -600,7 +605,7 @@ class XAgentTUI(PickerMixin, App):
             self._append_error(event.data.get("error", "Unknown error"))
         elif t == "turn-cancelled":
             cur["interrupted"] = True
-            block = self._append_block(kind="summary", pad_top=1, pad_left=1, pad_right=1)
+            block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
             block.update("Turn interrupted by user")
             self._scroll_end()
 
@@ -700,6 +705,7 @@ class XAgentTUI(PickerMixin, App):
                         body_style=_THINKING_BODY,
                         expandable=True,
                         collapsed=True,
+                        pad_bottom=0,
                     )
                     block.update(reasoning)
 
@@ -707,8 +713,8 @@ class XAgentTUI(PickerMixin, App):
                     block = self._append_block(
                         kind="reply",
                         pad_top=1,
-                        pad_bottom=1,
-                        pad_left=1,
+                        pad_bottom=0,
+                        pad_left=3,
                         pad_right=1,
                     )
                     block.update(render_markdown(content))
@@ -731,7 +737,7 @@ class XAgentTUI(PickerMixin, App):
                             bg=_TOOL_BG,
                             pad_top=1,
                             pad_bottom=1,
-                            pad_left=1,
+                            pad_left=3,
                             pad_right=1,
                         )
                         block.update(render_markdown(body, numbered=(name == "write")))
@@ -739,7 +745,7 @@ class XAgentTUI(PickerMixin, App):
                     md = tool_markdown(name, args, result, is_error)
                     if md is not None:
                         title, m = md
-                        content_widget = render_markdown(m)
+                        content_widget = render_markdown(m, numbered=(name == "read"))
                     else:
                         title, t = tool_render(name, args, result, is_error)
                         content_widget = t
@@ -749,6 +755,7 @@ class XAgentTUI(PickerMixin, App):
                         title_style=_TOOL_ERROR if is_error else _TOOL_TITLE,
                         expandable=True,
                         collapsed=True,
+                        pad_bottom=0,
                     )
                     block.update(content_widget)
 
@@ -763,7 +770,7 @@ class XAgentTUI(PickerMixin, App):
                         block = self._append_block(
                             kind="summary",
                             pad_top=1,
-                            pad_left=1,
+                            pad_left=3,
                             pad_right=1,
                         )
                         block.update(summary)

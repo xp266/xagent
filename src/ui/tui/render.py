@@ -5,6 +5,7 @@ from rich.text import Text
 from textual.highlight import guess_language
 
 _READ_HEADER_RE = re.compile(r"^\([^,]+(?:, \d+ lines|, lines [\d-]+/\d+)\)$")
+_READ_LINE_RE = re.compile(r"^(\d+):(.*)$")
 
 _CODE_TOOLS = {"write", "edit", "read"}
 _BLOCK_TOOLS = {"write", "edit"}
@@ -53,6 +54,18 @@ def clean_result(name, result):
         if _READ_HEADER_RE.match(lines[0]):
             return "\n".join(lines[1:])
     return result
+
+
+def read_result_to_lines(result: str) -> str:
+    """Strip the "N:content" line numbers the read tool emits for the model.
+
+    The renderer regenerates them (grey gutter) via render_markdown(numbered=True).
+    """
+    lines = []
+    for line in (result or "").split("\n"):
+        m = _READ_LINE_RE.match(line)
+        lines.append(m.group(2) if m else line)
+    return "\n".join(lines).rstrip("\n")
 
 
 def tool_render(name, args, result, is_error, preview=False):
@@ -220,8 +233,8 @@ def tool_markdown(name, args, result, is_error, preview=False):
     if name == "read":
         path = args.get("path", "") or args.get("filePath", "")
         body = result
-        if is_error and not result:
-            body = result
+        if not is_error:
+            body = read_result_to_lines(result)
         return f"read {path}", _code_block(_lang_for(path), body)
     if name == "edit":
         file_path = args.get("filePath", "") or args.get("path", "")

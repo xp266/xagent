@@ -2,6 +2,7 @@ import json
 import re
 from collections.abc import Iterator
 
+from httpx import Timeout
 from openai import OpenAI
 
 from src.types.events import StreamEvent, TokenUsage
@@ -211,7 +212,7 @@ class OpenAIProvider(Provider):
         model: str,
         base_url: str,
         api_key: str,
-        timeout: int = 60,
+        timeout: Timeout = Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0),
         max_retries: int = 3,
     ):
         self.model: str = model

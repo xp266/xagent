@@ -4,6 +4,7 @@ import json
 from collections.abc import Iterator
 
 import httpx
+from httpx import Timeout
 
 from src.ai.base import Provider
 from src.ai.capabilities import detect_capabilities, get_model_output_limit
@@ -303,12 +304,12 @@ class AnthropicProvider(Provider):
         model: str,
         base_url: str,
         api_key: str,
-        timeout: int = 60,
+        timeout: Timeout = Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0),
     ):
         self.model: str = model
         self.base_url: str = base_url.rstrip("/")
         self.api_key: str = api_key
-        self.timeout: int = timeout
+        self.timeout: Timeout = timeout
         self.capabilities: Capabilities = detect_capabilities(model)
         self.max_tokens: int = get_model_output_limit(model) or _DEFAULT_MAX_TOKENS
 

@@ -37,8 +37,6 @@ def _fill_tool_calls(response: LLMResponse, tool_calls_pending: list) -> None:
 
 
 def _commit_response(session: Session, response: LLMResponse, tool_results: list, cancelled: bool) -> None:
-    if response.reasoning and not response.signature:
-        response.reasoning = ""
     session.msgs.add_assistant(response)
     if cancelled:
         executed = {tr["id"] for tr in tool_results}

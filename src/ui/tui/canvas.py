@@ -84,6 +84,7 @@ class CanvasBlock:
         self.pad_bottom = pad_bottom
         self.pad_left = pad_left
         self.pad_right = pad_right
+        self.arrow_hidden: bool = False
         self.content: Content | None = None
         self._lines: list[Content] = []
         self._strips: list[Strip | None] = []
@@ -155,14 +156,24 @@ class CanvasBlock:
         title_line = self.title_line
         if title_line is not None:
             if self.expandable:
-                arrow = "▾" if not self.collapsed else "▸"
-                title_line = Content.assemble(arrow, " ", title_line)
+                if self.arrow_hidden:
+                    title_line = Content.assemble(" " * max(0, self.pad_left - 2), title_line)
+                else:
+                    arrow = "▾" if not self.collapsed else "▸"
+                    arrow_c = Content(arrow, spans=[Span(0, 1, self.title_style)])
+                    title_line = Content.assemble(
+                        " " * max(0, self.pad_left - 2), arrow_c, " ", title_line
+                    )
+            else:
+                title_line = Content.assemble(" " * self.pad_left, title_line)
             if self.bg:
                 title_line = Content(
                     title_line.plain,
                     [*title_line.spans, Span(0, len(title_line.plain), bg)],
                 )
             lines.append(title_line)
+            if not self.collapsed and self.content is not None:
+                lines.append(Content(f"{' ' * width}", spans=[Span(0, width, bg)]))
         if not self.collapsed and self.content is not None:
             inner_width = max(0, width - self.pad_left - self.pad_right)
             if inner_width > 0:
@@ -170,7 +181,10 @@ class CanvasBlock:
                     left_pad = Content(" " * self.pad_left, spans=[Span(0, self.pad_left, bg)])
                 else:
                     left_pad = Content(" " * self.pad_left)
-                for line in self.content.split("\n", allow_blank=True):
+                content_lines = self.content.split("\n", allow_blank=True)
+                while content_lines and not content_lines[-1].plain:
+                    content_lines.pop()
+                for line in content_lines:
                     if line.cell_length > inner_width:
                         new_lines = line.wrap(inner_width)
                     else:

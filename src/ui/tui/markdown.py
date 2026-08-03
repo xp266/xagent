@@ -10,8 +10,8 @@ from rich.style import Style as RichStyle
 from textual.content import Content, Span
 from textual.highlight import guess_language
 
-_INLINE_CODE_FG = "#D4D4D4"
-_INLINE_CODE_BG = "#3A3D41"
+_INLINE_CODE_FG = "#6A9955"
+_HEADING_FG = "#FFA500"
 _QUOTE_FG = "#9B9B9B"
 _HR_FG = "#555555"
 _LINK_FG = "#0178D4"
@@ -178,7 +178,7 @@ def _table_row(cells: list[Content], widths: list[int], aligns: list[str], heade
     parts.append(("│", _TABLE_BORDER))
     row = Content.assemble(*parts)
     if header:
-        row = row.stylize("bold")
+        row = row.stylize(f"{_HEADING_FG}")
     return row
 
 
@@ -430,10 +430,10 @@ def _inline(text: str) -> Content:
             parts.append(text[pos:m.start()])
         token = m.group(0)
         if token[0] == "`":
-            parts.append((token[1:-1], f"{_INLINE_CODE_FG} on {_INLINE_CODE_BG}"))
+            parts.append((token[1:-1], _INLINE_CODE_FG))
         elif token[0] == "*":
             if token.startswith("**"):
-                parts.append((token[2:-2], "bold"))
+                parts.append((token[2:-2], f"{_HEADING_FG}"))
             else:
                 parts.append((token[1:-1], "italic"))
         elif token[0] == "~":
@@ -486,7 +486,7 @@ def render_markdown(source: str, *, numbered: bool = False) -> Content:
             continue
         m = _HEADING_RE.match(line)
         if m is not None:
-            parts.append(Content.assemble((m.group(2), "bold")))
+            parts.append(Content.assemble((m.group(2), f"{_HEADING_FG}")))
             parts.append("\n")
             i += 1
             continue
