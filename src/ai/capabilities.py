@@ -3,12 +3,11 @@ import json
 
 from src.types.config import Capabilities
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _MODELS_DB: dict | None = None
 
 
 def _load_models_db() -> dict:
-    path = os.path.join(_PROJECT_ROOT, "data", "models.json")
+    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models.json")
     if not os.path.isfile(path):
         return {}
     try:

@@ -1,6 +1,8 @@
 import os
 import tempfile
 
+from platformdirs import user_data_dir
+
 _DATA_DIR_ENV = "XAGENT_DATA_DIR"
 
 
@@ -8,7 +10,7 @@ def data_dir() -> str:
     d = os.environ.get(_DATA_DIR_ENV)
     if d:
         return d
-    return os.path.join(os.path.expanduser("~"), ".local", "share", "xagent")
+    return user_data_dir("xagent", appauthor=False)
 
 
 def truncation_dir() -> str:

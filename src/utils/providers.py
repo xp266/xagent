@@ -7,8 +7,7 @@ from typing import Any
 
 from src.utils.paths import data_dir
 
-_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_MODELS_PATH = os.path.join(_PROJECT_ROOT, "data", "models.json")
+_MODELS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models.json")
 _CONFIG_PATH = os.path.join(data_dir(), "config.json")
 
 
