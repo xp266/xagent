@@ -43,6 +43,13 @@ def _line_no_end(line: Content, offset: int = 0) -> int:
     if not spans:
         return 0
     first = spans[0]
+    if first.start < offset:
+        for s in spans:
+            if s.start >= offset:
+                first = s
+                break
+        else:
+            return 0
     if first.start != offset:
         return 0
     style = _parse_rich_style(first.style)
@@ -55,6 +62,25 @@ def _line_no_end(line: Content, offset: int = 0) -> int:
     if rgb is None or tuple(rgb) != _LINE_NO_RGB:
         return 0
     return min(first.end - offset, len(line.plain) - offset)
+
+
+def _diff_marker_end(line: Content, offset: int = 0) -> int:
+    """Width of a `- ` / `+ ` diff marker after the line-number column."""
+    no_w = _line_no_end(line, offset)
+    if no_w <= 0:
+        return 0
+    start = offset + no_w
+    for s in line.spans:
+        if s.start < start:
+            continue
+        if s.start > start:
+            break
+        style = _parse_rich_style(s.style)
+        if style is None or style.bgcolor is None:
+            continue
+        if line.plain[s.start:s.end] in ("- ", "+ "):
+            return s.end - s.start
+    return 0
 
 
 def _apply_highlight(line: Content, style, start: int, end: int) -> Content:
@@ -164,7 +190,7 @@ class LazyText(Static):
             plain = line.plain
             s = x0 if y == y0 else 0
             e = x1 if y == y1 and x1 >= 0 else -1
-            no_w = _line_no_end(line)
+            no_w = _line_no_end(line) + _diff_marker_end(line)
             if s < no_w:
                 s = no_w
             fill_at = self._fill_at[y] if y < len(self._fill_at) else None

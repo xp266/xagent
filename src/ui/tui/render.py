@@ -129,15 +129,14 @@ def _edit_hunk(file_path: str, old_str: str, new_str: str, ctx: int = 3):
     new_lines = new_str.rstrip("\n").split("\n")
     delta = len(new_lines) - len(old_lines)
 
-    idx = content.find(old_str)
-    if idx >= 0:
-        start = content[:idx].count("\n") + 1
-        in_block = len(old_lines)
-        after_offset = delta
-    elif new_str and (idx := content.find(new_str)) >= 0:
+    if new_str and (idx := content.find(new_str)) >= 0:
         start = content[:idx].count("\n") + 1
         in_block = len(new_lines)
         after_offset = 0
+    elif (idx := content.find(old_str)) >= 0:
+        start = content[:idx].count("\n") + 1
+        in_block = len(old_lines)
+        after_offset = delta
     else:
         return None
 

@@ -11,7 +11,7 @@ from textual.selection import Selection
 from textual.strip import Strip
 from textual.widgets import Static
 
-from src.ui.tui.lazy import _apply_selection, _build_strip, _line_no_end, _pad_line
+from src.ui.tui.lazy import _apply_selection, _build_strip, _diff_marker_end, _line_no_end, _pad_line
 
 _USER_BG = "#1A1A1A"
 _TOOL_BG = "#1A1A1A"
@@ -274,7 +274,7 @@ class ChatCanvas(Static):
             pl = 0 if block.title_line is not None and by == block.pad_top else block.pad_left
             s = x0 if y == y0 else 0
             e = x1 if y == y1 else -1
-            no_w = _line_no_end(line, pl)
+            no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
             if s < pl + no_w:
                 s = pl + no_w
             fill_at = block._fill_at[by] if by < len(block._fill_at) else None
