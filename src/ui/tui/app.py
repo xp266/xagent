@@ -10,6 +10,7 @@ from textual.widgets import Static
 from rich.text import Text
 
 from src.agent import get_session_manager, run_session_turn, name_session_from_first_message
+from src.agent.turn import RETRY_LIMIT
 from src.ai.capabilities import get_model_context_limit
 from src.utils.config import get_config
 from src.types.events import StreamEvent
@@ -247,6 +248,79 @@ class XAgentTUI(PickerMixin, App):
         block.update(text)
         self._scroll_end()
 
+    def _show_retry(self, error: str, delay: float, attempt: int) -> None:
+        cur = self._current
+        if cur is None:
+            return
+        self._reset_turn_render()
+        deadline = time.monotonic() + delay
+        retry = cur.get("retry")
+        if retry is None:
+            block = self._append_block(kind="error", body_style="bold #FF5555")
+            retry = {"block": block}
+            cur["retry"] = retry
+        retry["deadline"] = deadline
+        retry["error"] = error
+        retry["attempt"] = attempt
+        retry.pop("last_text", None)
+        self._render_retry(retry)
+        self._scroll_end()
+
+    def _tick_retry(self) -> None:
+        cur = self._current
+        if cur is None:
+            return
+        retry = cur.get("retry")
+        if retry is not None:
+            self._render_retry(retry)
+
+    def _render_retry(self, retry) -> None:
+        remaining = retry["deadline"] - time.monotonic()
+        if remaining <= 0:
+            text = f"Request failed: {retry['error']}\nRetrying... (attempt {retry['attempt']}/{RETRY_LIMIT})"
+        else:
+            text = f"Request failed: {retry['error']}\nRetrying in {int(remaining) + 1}s (attempt {retry['attempt']}/{RETRY_LIMIT})"
+        if retry.get("last_text") != text:
+            retry["last_text"] = text
+            retry["block"].update(text)
+
+    def _clear_retry(self) -> None:
+        cur = self._current
+        if cur is None:
+            return
+        retry = cur.get("retry")
+        if retry is not None:
+            cur["retry"] = None
+            try:
+                self._canvas().remove(retry["block"])
+            except Exception:
+                pass
+
+    def _reset_turn_render(self) -> None:
+        cur = self._current
+        if cur is None:
+            return
+        canvas = self._canvas()
+        for key in ("thinking", "thinking_title", "thinking_col"):
+            col = cur.get(key)
+            if col is not None:
+                try:
+                    canvas.remove(col)
+                except Exception:
+                    pass
+                cur[key] = None
+        cur["reasoning_text"] = ""
+        reply = cur.get("reply")
+        if reply is not None:
+            try:
+                canvas.remove(reply)
+            except Exception:
+                pass
+            cur["reply"] = None
+            cur["reply_text"] = ""
+            cur["reply_appended"] = 0
+        self._stop_all_spinners()
+
     def _start_spinner(self, title) -> None:
         if title is None:
             return
@@ -321,6 +395,7 @@ class XAgentTUI(PickerMixin, App):
             self._tick_status_wave()
         if self._current is not None:
             self._flush_streaming_content()
+            self._tick_retry()
 
     def _tick_status_wave(self) -> None:
         if not self._busy:
@@ -533,6 +608,8 @@ class XAgentTUI(PickerMixin, App):
         if cur is None:
             return
         t = event.type
+        if t in ("reasoning-start", "step-start", "text-start", "tool-input-start"):
+            self._clear_retry()
         if t == "reasoning-start":
             cur["reasoning_text"] = ""
             if cur["thinking"] is None:
@@ -602,8 +679,22 @@ class XAgentTUI(PickerMixin, App):
             self._ctx_usage_tokens = usage.get("prompt_tokens", 0)
             self._update_status()
         elif t == "provider-error":
-            self._append_error(event.data.get("error", "Unknown error"))
+            error = event.data.get("error", "Unknown error")
+            retry = cur.get("retry")
+            if retry is not None:
+                cur["retry"] = None
+                retry["block"].update(f"Request failed after {RETRY_LIMIT} retries: {error}")
+            else:
+                self._append_error(error)
+        elif t == "retry-schedule":
+            data = event.data or {}
+            self._show_retry(
+                data.get("error", "Unknown error"),
+                float(data.get("delay", 5)),
+                int(data.get("attempt", 1)),
+            )
         elif t == "turn-cancelled":
+            self._clear_retry()
             cur["interrupted"] = True
             block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
             block.update("Turn interrupted by user")

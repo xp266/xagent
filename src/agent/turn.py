@@ -2,13 +2,83 @@ import json
 import time
 from collections.abc import Iterator
 
-from src.agent.cancel import TurnCancelled
+import httpx
+
+from src.agent.cancel import TurnCancelled, is_cancelled
 from src.agent.loop import agent_stream
 from src.agent.session import Session, get_session_manager
 from src.types.events import LLMResponse, StreamEvent, TokenUsage
 from src.types.messages import AssistantMessage
 
 INTERRUPTED_TOOL_RESULT = "Tool call interrupted by user."
+
+RETRY_LIMIT = 3
+RETRY_BASE_DELAY = 5.0
+
+_NON_RETRYABLE_HINTS = (
+    "invalid api key",
+    "authentication",
+    "unauthorized",
+    "forbidden",
+    "insufficient_quota",
+    "insufficient quota",
+    "billing",
+    "out of credits",
+    "permission",
+    "access denied",
+    "balance",
+    "wrong api key",
+)
+
+_RETRYABLE_HINTS = (
+    "rate limit",
+    "too many requests",
+    "request queue is full",
+    "temporarily unavailable",
+    "server overload",
+    "overloaded",
+    "try again",
+    "temporary failure",
+    "connection",
+    "timed out",
+    "timeout",
+    "busy",
+    "retry",
+)
+
+
+def _is_retryable(e: Exception) -> bool:
+    status = getattr(e, "status_code", None)
+    if not isinstance(status, int):
+        response = getattr(e, "response", None)
+        if response is not None:
+            status = getattr(response, "status_code", None)
+    if isinstance(status, int):
+        if status in (400, 401, 402, 403, 404, 422):
+            return False
+        return status in (408, 409, 429) or status >= 500
+    if isinstance(e, (httpx.TimeoutException, httpx.TransportError)):
+        return True
+    if isinstance(e, (ConnectionError, TimeoutError)):
+        return True
+    msg = str(e).lower()
+    if any(k in msg for k in _NON_RETRYABLE_HINTS):
+        return False
+    if any(k in msg for k in ("[429]", "[500]", "[502]", "[503]", "[504]", "429 ", " 500 ", " 502 ", " 503 ", " 504 ")):
+        return True
+    return any(k in msg for k in _RETRYABLE_HINTS)
+
+
+def _retry_delay(attempt: int) -> float:
+    return RETRY_BASE_DELAY * (2 ** (attempt - 1))
+
+
+def _sleep_interruptible(seconds: float) -> None:
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if is_cancelled():
+            raise TurnCancelled
+        time.sleep(0.25)
 
 
 def _attach_turn_meta(session: Session, model: str, usage: TokenUsage, prompt_tokens: int, elapsed: float) -> None:
@@ -50,6 +120,7 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
     start = time.monotonic()
 
     cancelled = False
+    retry_count = 0
 
     while not cancelled:
         response = LLMResponse()
@@ -103,6 +174,29 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
         except TurnCancelled:
             cancelled = True
         except Exception as e:
+            if retry_count < RETRY_LIMIT and _is_retryable(e):
+                retry_count += 1
+                if tool_calls_pending or tool_results:
+                    _fill_tool_calls(response, tool_calls_pending)
+                    _commit_response(session, response, tool_results, cancelled=False)
+                    for tr in tool_results:
+                        session.msgs.add_tool(
+                            tr["id"],
+                            tr.get("result", tr.get("error", "")),
+                            tr.get("attachments"),
+                            is_error=bool(tr.get("error")),
+                        )
+                delay = _retry_delay(retry_count)
+                yield StreamEvent(type="retry-schedule", data={
+                    "error": str(e),
+                    "delay": delay,
+                    "attempt": retry_count,
+                })
+                try:
+                    _sleep_interruptible(delay)
+                except TurnCancelled:
+                    cancelled = True
+                continue
             yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
             session.sync_messages()
             get_session_manager().save(session)
