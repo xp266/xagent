@@ -37,7 +37,9 @@ def _fill_tool_calls(response: LLMResponse, tool_calls_pending: list) -> None:
 
 
 def _commit_response(session: Session, response: LLMResponse, tool_results: list, cancelled: bool) -> None:
-    if response.reasoning and not response.signature:
+    from src.utils.providers import get_store, is_anthropic_provider
+
+    if response.reasoning and not response.signature and is_anthropic_provider(get_store().get_active()):
         response.reasoning = ""
     session.msgs.add_assistant(response)
     if cancelled:
