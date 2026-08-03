@@ -1,8 +1,10 @@
-from typing import Any, Callable, Optional
-from pydantic import BaseModel
+from typing import Callable, Optional
+from pydantic import BaseModel, ConfigDict
 
 
 class Tool(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     name: str
     description: str
     parameters: dict
@@ -10,9 +12,6 @@ class Tool(BaseModel):
     label: str = ""
     to_model_output: Optional[Callable[[dict], str]] = None
     execution_mode: str = "sequential"
-
-    class Config:
-        arbitrary_types_allowed = True
 
 
 class ToolResult(BaseModel):
