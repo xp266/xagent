@@ -44,6 +44,10 @@ _RETRYABLE_HINTS = (
     "timeout",
     "busy",
     "retry",
+    "速率限制",
+    "频率",
+    "请稍后",
+    "服务器繁忙",
 )
 
 
@@ -53,7 +57,7 @@ def _is_retryable(e: Exception) -> bool:
         response = getattr(e, "response", None)
         if response is not None:
             status = getattr(response, "status_code", None)
-    if isinstance(status, int):
+    if isinstance(status, int) and status > 0:
         if status in (400, 401, 402, 403, 404, 422):
             return False
         return status in (408, 409, 429) or status >= 500
@@ -79,6 +83,12 @@ def _sleep_interruptible(seconds: float) -> None:
         if is_cancelled():
             raise TurnCancelled
         time.sleep(0.25)
+
+
+class _ProviderError(Exception):
+    def __init__(self, message: str, code: int = 0) -> None:
+        super().__init__(message)
+        self.status_code = code
 
 
 def _attach_turn_meta(session: Session, model: str, usage: TokenUsage, prompt_tokens: int, elapsed: float) -> None:
@@ -168,6 +178,11 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                             completion_tokens=session.token_usage.completion_tokens + usage.get("completion_tokens", 0),
                             total_tokens=session.token_usage.total_tokens + usage.get("total_tokens", 0),
                         )
+                elif event.type == "provider-error":
+                    raise _ProviderError(
+                        event.data.get("error", "provider error"),
+                        int(event.data.get("code") or 0),
+                    )
 
                 yield event
 

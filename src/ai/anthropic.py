@@ -343,4 +343,4 @@ class AnthropicProvider(Provider):
                         return
                     yield from _stream_anthropic_events(resp)
         except Exception as e:
-            yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
+            yield StreamEvent(type="provider-error", data={"error": str(e), "code": getattr(e, "status_code", None) or 0})

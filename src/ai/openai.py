@@ -237,7 +237,7 @@ class OpenAIProvider(Provider):
                 tools=tools or None,
             )
         except Exception as e:
-            yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
+            yield StreamEvent(type="provider-error", data={"error": str(e), "code": getattr(e, "status_code", None) or 0})
             return
 
         yield from _stream_openai_events(stream, self.capabilities)
