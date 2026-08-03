@@ -127,11 +127,23 @@ def _read_file(path: str, offset: int = 0, limit: int = 0) -> dict:
     start = offset - 1
     end = min(start + limit, total)
 
-    if start >= total:
+    if start >= total and not (total == 0 and offset == 1):
         return {"title": path, "output": f"Start line {offset} exceeds total lines {total}", "metadata": {"error": True}}
 
     shown = lines[start:end]
     truncated_text = end < total
+
+    bytes_used = 0
+    cut_by_bytes = False
+    capped = []
+    for line in shown:
+        size = len(line.encode("utf-8"))
+        if bytes_used + size > MAX_READ_BYTES:
+            cut_by_bytes = True
+            break
+        bytes_used += size
+        capped.append(line)
+    shown = capped
 
     content_lines = []
     for line in shown:
@@ -149,7 +161,8 @@ def _read_file(path: str, offset: int = 0, limit: int = 0) -> dict:
             "name": os.path.basename(path),
             "total_lines": total,
             "offset": offset,
-            "truncated": truncated_text,
+            "truncated": truncated_text or cut_by_bytes,
+            "byte_cut": cut_by_bytes,
             "paged": paged,
         },
     }
@@ -179,25 +192,22 @@ def to_model_output(data: dict) -> str:
     total = meta.get("total_lines", "?")
     name = meta.get("name", os.path.basename(data.get("title", "")))
     offset = meta.get("offset", 0)
-    paged = meta.get("paged", False)
+    truncated = meta.get("truncated", False)
 
-    if paged:
-        result_lines = []
-        for i, line in enumerate(content.split("\n"), start=offset):
-            result_lines.append(f"{i}:{line}")
-        end = offset + len(result_lines) - 1
-        header = f"({name}, lines {offset}-{end}/{total})"
-        if not result_lines:
-            return header
-        return header + "\n" + "\n".join(result_lines)
+    if not content:
+        if truncated:
+            return f"({name}, lines {offset}-{offset + 0}/{total})"
+        return f"({name}, {total} lines)"
 
-    lines = content.split("\n")
     result_lines = []
-    for i, line in enumerate(lines, start=1):
+    for i, line in enumerate(content.split("\n"), start=offset):
         result_lines.append(f"{i}:{line}")
-    header = f"({name}, {total} lines)"
-    if not result_lines:
-        return header
+    end = offset + len(result_lines) - 1
+
+    if truncated:
+        header = f"({name}, lines {offset}-{end}/{total})"
+    else:
+        header = f"({name}, {total} lines)"
     return header + "\n" + "\n".join(result_lines)
 
 
@@ -209,6 +219,7 @@ Usage:
 - Use absolute paths when possible
 - Use offset to start from a specific line; limit to control how many lines
 - Output: each line prefixed as `<line>: <content>` (e.g., file with "foo\n" returns "1: foo\n")
+- Output is capped at 50KB; when truncated, the header shows the line range so you can continue with offset
 - Directories: one entry per line, no line numbers, trailing `/` for subdirectories
 - Lines over 2000 characters are truncated
 - Use grep for content search in large files; use glob to find files by name

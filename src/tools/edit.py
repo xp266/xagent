@@ -381,6 +381,9 @@ def execute(filePath: str, oldString: str, newString: str = "", replaceAll: bool
     if not os.path.exists(path):
         return {"title": path, "output": f"File not found: {path}", "metadata": {"error": True}}
 
+    if os.path.isdir(path):
+        return {"title": path, "output": f"Path is a directory, not a file: {path}", "metadata": {"error": True}}
+
     try:
         with open(path, "rb") as f:
             original_bytes = f.read()
@@ -394,6 +397,8 @@ def execute(filePath: str, oldString: str, newString: str = "", replaceAll: bool
 
     _BOM_UTF8 = b"\xef\xbb\xbf"
     bom = original_bytes[:3] if original_bytes[:3] == _BOM_UTF8 else b""
+    if bom and text.startswith("\ufeff"):
+        text = text[1:]
 
     ending = _detect_line_ending(text)
     search_old = _convert_line_ending(_normalize_line_endings(oldString), ending)
