@@ -31,10 +31,17 @@ def is_error_result(name, result):
         return False
     if name == "bash":
         return not result.startswith("Command exited with code 0.")
+    if name == "read":
+        error_prefixes = (
+            "failed to", "cannot read", "cannot list", "path does not exist",
+            "start line", "image exceeds", "file is not valid", "is not a directory",
+            "not a directory", "unable to", "permission denied",
+        )
+        low = result.lower()
+        return any(low.startswith(p) for p in error_prefixes)
     success_markers = {
         "write": ("Wrote file successfully", "Created file successfully", "Updated file successfully"),
         "edit": ("Edited file successfully",),
-        "read": ("read successfully",),
     }
     markers = success_markers.get(name, ())
     if any(result.startswith(m) for m in markers):

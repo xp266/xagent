@@ -206,6 +206,7 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
             _fill_tool_calls(response, tool_calls_pending)
             _commit_response(session, response, tool_results, cancelled=False)
             committed = True
+            retry_count = 0
             for tr in tool_results:
                 session.msgs.add_tool(
                     tr["id"],

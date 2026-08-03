@@ -397,7 +397,7 @@ def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool 
         lines = _highlight_lines(code, lang)
     max_cells = max((l.cell_length for l in lines), default=0)
     parts: list = []
-    width = len(str(max(1, len(lines))))
+    width = 4
     last = len(lines) - 1
     for i, line in enumerate(lines):
         if numbered:
