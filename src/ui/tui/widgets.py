@@ -27,6 +27,7 @@ class ChatInput(TextArea):
 
     _ARM_PLACEHOLDER = "Press ctrl+c again to interrupt"
     _ARM_SECONDS = 3.0
+    _HISTORY_MAX = 100
 
     def __init__(self, *args, **kwargs) -> None:
         kwargs.setdefault("tab_behavior", "indent")
@@ -35,9 +36,59 @@ class ChatInput(TextArea):
         self.busy = False
         self._armed_at = 0.0
         self._arm_timer = None
+        self._history: list[str] = []
+        self._hist_idx: int | None = None
+        self._hist_draft: str = ""
+        self._restoring_history = False
 
     def on_text_area_changed(self, event) -> None:
+        if self._restoring_history:
+            self._restoring_history = False
+            return
         self.post_message(self.TextEdited())
+
+    def _push_history(self, text: str) -> None:
+        if not self._history or self._history[-1] != text:
+            self._history.append(text)
+            if len(self._history) > self._HISTORY_MAX:
+                self._history.pop(0)
+        self._hist_idx = None
+        self._hist_draft = ""
+
+    def _set_text_quiet(self, text: str) -> None:
+        self._restoring_history = True
+        try:
+            self.text = text
+            doc = self.document
+            if doc.line_count:
+                last = doc.lines[-1]
+                self.move_cursor((doc.line_count - 1, len(last)))
+        except Exception:
+            self._restoring_history = False
+            raise
+
+    def _recall_history(self, delta: int) -> bool:
+        if not self._history:
+            return False
+        if delta < 0:
+            if self._hist_idx is None:
+                self._hist_draft = self.text
+                self._hist_idx = len(self._history) - 1
+            else:
+                if self._hist_idx <= 0:
+                    return False
+                self._hist_idx -= 1
+            self._set_text_quiet(self._history[self._hist_idx])
+            return True
+        if self._hist_idx is None:
+            return False
+        if self._hist_idx < len(self._history) - 1:
+            self._hist_idx += 1
+            self._set_text_quiet(self._history[self._hist_idx])
+        else:
+            self._hist_idx = None
+            self._set_text_quiet(self._hist_draft)
+        return True
 
     def _arm(self) -> None:
         self._armed_at = time.monotonic()
@@ -66,18 +117,19 @@ class ChatInput(TextArea):
             event.prevent_default()
             text = self.text
             if text:
+                self._push_history(text)
                 self.clear()
                 self.post_message(self.Submitted(text))
             return
-        if self.palette_open and event.key == "up":
-            event.stop()
-            event.prevent_default()
-            self.post_message(self.Navigate(-1))
-            return
-        if self.palette_open and event.key == "down":
-            event.stop()
-            event.prevent_default()
-            self.post_message(self.Navigate(1))
+        if event.key in ("up", "down"):
+            if self.palette_open:
+                event.stop()
+                event.prevent_default()
+                self.post_message(self.Navigate(-1 if event.key == "up" else 1))
+                return
+            if self._recall_history(-1 if event.key == "up" else 1):
+                event.stop()
+                event.prevent_default()
             return
         if event.key == "ctrl+c":
             if self.busy:

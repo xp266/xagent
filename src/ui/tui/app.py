@@ -63,7 +63,8 @@ class XAgentTUI(PickerMixin, App):
     def __init__(self):
         super().__init__()
         self._sm = get_session_manager()
-        self._project = os.getcwd()
+        self._launch_dir = os.getcwd()
+        self._project = self._launch_dir
         self._session = self._sm.create(path=self._project, persist=False)
         self._ctx_usage_tokens = 0
         self._busy = False
@@ -740,6 +741,9 @@ class XAgentTUI(PickerMixin, App):
             self.call_from_thread(self._apply_name, name)
 
     def _new_chat(self) -> None:
+        if os.path.isdir(self._launch_dir):
+            os.chdir(self._launch_dir)
+        self._project = self._launch_dir
         self._session = self._sm.create(path=self._project, persist=False)
         self._ctx_usage_tokens = 0
         self._clear_chat_messages()
@@ -755,6 +759,10 @@ class XAgentTUI(PickerMixin, App):
             return
         self._sm.current = s.id
         self._session = s
+        target = (s.path or "").strip()
+        if os.path.isdir(target):
+            os.chdir(target)
+            self._project = os.getcwd()
         self._ctx_usage_tokens = 0
         for msg in reversed(s.messages):
             meta = msg.get("_meta")
