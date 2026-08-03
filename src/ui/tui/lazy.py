@@ -158,6 +158,9 @@ class LazyText(Static):
                     start, end = span
                     if end == -1:
                         end = len(line.plain)
+                    no_w = _line_no_end(line) + _diff_marker_end(line)
+                    if start < no_w:
+                        start = no_w
                     if start < end:
                         selection_style = TextualStyle.from_styles(
                             self.screen.get_component_styles("screen--selection")

@@ -349,8 +349,15 @@ class ChatCanvas(Static):
                 if end == -1:
                     end = strip.cell_length
                 if start < end:
-                    style = self.screen.get_component_styles("screen--selection")
-                    strip = _apply_selection(strip, start, end, style)
+                    if block is not None and by < len(block._lines):
+                        line = block._lines[by]
+                        pl = 0 if block.title_line is not None and by == block.pad_top else block.pad_left
+                        no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
+                        if start < pl + no_w:
+                            start = pl + no_w
+                    if start < end:
+                        style = self.screen.get_component_styles("screen--selection")
+                        strip = _apply_selection(strip, start, end, style)
         return strip
 
     def on_click(self, event) -> None:
