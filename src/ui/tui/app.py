@@ -89,8 +89,8 @@ class XAgentTUI(PickerMixin, App):
         title_style: str = "",
         body_style: str = "",
         bg: str | None = None,
-        pad_top: int = 0,
-        pad_bottom: int = 0,
+        pad_top: int = 1,
+        pad_bottom: int = 1,
         pad_left: int = 1,
         pad_right: int = 1,
         expandable: bool = False,
@@ -373,7 +373,7 @@ class XAgentTUI(PickerMixin, App):
             block = self._append_block(
                 kind="reply",
                 pad_top=1,
-                pad_bottom=0,
+                pad_bottom=1,
                 pad_left=1,
                 pad_right=1,
             )
@@ -707,7 +707,7 @@ class XAgentTUI(PickerMixin, App):
                     block = self._append_block(
                         kind="reply",
                         pad_top=1,
-                        pad_bottom=0,
+                        pad_bottom=1,
                         pad_left=1,
                         pad_right=1,
                     )
