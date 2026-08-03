@@ -11,7 +11,7 @@ def _load_models_db() -> dict:
     if not os.path.isfile(path):
         return {}
     try:
-        with open(path) as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
