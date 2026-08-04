@@ -4,7 +4,7 @@ from collections.abc import Iterator
 
 import httpx
 
-from src.agent.cancel import TurnCancelled, is_cancelled
+from src.agent.cancel import TurnCancelled, is_cancelled, register_abort, unregister_abort
 from src.agent.loop import agent_stream
 from src.agent.session import Session, get_session_manager
 from src.types.events import LLMResponse, StreamEvent, TokenUsage
@@ -125,6 +125,11 @@ def _commit_response(session: Session, response: LLMResponse, tool_results: list
                 session.msgs.add_tool(tc["id"], INTERRUPTED_TOOL_RESULT)
 
 
+def _persist(session: Session) -> None:
+    session.sync_messages()
+    get_session_manager().save(session)
+
+
 def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]:
     session.msgs.add_user(user_input)
     start = time.monotonic()
@@ -132,96 +137,119 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
     cancelled = False
     retry_count = 0
 
-    while not cancelled:
-        response = LLMResponse()
-        tool_calls_pending = []
-        tool_results = []
-        turn_usage = TokenUsage()
-        last_prompt_tokens = 0
-        committed = False
+    provider = session.provider
+    register_abort(provider.abort)
+    try:
+        while not cancelled:
+            response = LLMResponse()
+            tool_calls_pending = []
+            tool_results = []
+            turn_usage = TokenUsage()
+            last_prompt_tokens = 0
+            committed = False
 
-        try:
-            stream = agent_stream(
-                session.provider,
-                session.msgs.get_api_messages(),
-                session.registry.schemas() or None,
-                session.registry,
-            )
+            try:
+                stream = agent_stream(
+                    provider,
+                    session.msgs.get_api_messages(),
+                    session.registry.schemas() or None,
+                    session.registry,
+                )
 
-            for event in stream:
-                if event.type == "step-start":
-                    response = LLMResponse()
-                    tool_calls_pending = []
-                    tool_results = []
-                elif event.type == "reasoning-delta":
-                    response.reasoning += event.data
-                elif event.type == "signature":
-                    response.signature = event.data
-                elif event.type == "text-delta":
-                    response.content += event.data
-                elif event.type == "tool-call":
-                    tool_calls_pending.append(event.data)
-                elif event.type in ("tool-result", "tool-error"):
-                    tool_results.append(event.data)
-                elif event.type == "step-finish":
-                    response.finish_reason = event.data.get("finish_reason", "")
-                    usage = event.data.get("usage", {})
-                    if usage:
-                        last_prompt_tokens = usage.get("prompt_tokens", 0)
-                        turn_usage = TokenUsage(
-                            prompt_tokens=turn_usage.prompt_tokens + usage.get("prompt_tokens", 0),
-                            completion_tokens=turn_usage.completion_tokens + usage.get("completion_tokens", 0),
-                            total_tokens=turn_usage.total_tokens + usage.get("total_tokens", 0),
+                for event in stream:
+                    if event.type == "step-start":
+                        response = LLMResponse()
+                        tool_calls_pending = []
+                        tool_results = []
+                    elif event.type == "reasoning-delta":
+                        response.reasoning += event.data
+                    elif event.type == "signature":
+                        response.signature = event.data
+                    elif event.type == "text-delta":
+                        response.content += event.data
+                    elif event.type == "tool-call":
+                        tool_calls_pending.append(event.data)
+                    elif event.type in ("tool-result", "tool-error"):
+                        tool_results.append(event.data)
+                    elif event.type == "step-finish":
+                        response.finish_reason = event.data.get("finish_reason", "")
+                        usage = event.data.get("usage", {})
+                        if usage:
+                            last_prompt_tokens = usage.get("prompt_tokens", 0)
+                            turn_usage = TokenUsage(
+                                prompt_tokens=turn_usage.prompt_tokens + usage.get("prompt_tokens", 0),
+                                completion_tokens=turn_usage.completion_tokens + usage.get("completion_tokens", 0),
+                                total_tokens=turn_usage.total_tokens + usage.get("total_tokens", 0),
+                            )
+                            session.token_usage = TokenUsage(
+                                prompt_tokens=session.token_usage.prompt_tokens + usage.get("prompt_tokens", 0),
+                                completion_tokens=session.token_usage.completion_tokens + usage.get("completion_tokens", 0),
+                                total_tokens=session.token_usage.total_tokens + usage.get("total_tokens", 0),
+                            )
+                    elif event.type == "provider-error":
+                        if is_cancelled():
+                            raise TurnCancelled
+                        raise _ProviderError(
+                            event.data.get("error", "provider error"),
+                            int(event.data.get("code") or 0),
                         )
-                        session.token_usage = TokenUsage(
-                            prompt_tokens=session.token_usage.prompt_tokens + usage.get("prompt_tokens", 0),
-                            completion_tokens=session.token_usage.completion_tokens + usage.get("completion_tokens", 0),
-                            total_tokens=session.token_usage.total_tokens + usage.get("total_tokens", 0),
-                        )
-                elif event.type == "provider-error":
-                    raise _ProviderError(
-                        event.data.get("error", "provider error"),
-                        int(event.data.get("code") or 0),
-                    )
 
-                yield event
+                    yield event
 
-        except TurnCancelled:
-            cancelled = True
-        except Exception as e:
-            if retry_count < RETRY_LIMIT and _is_retryable(e):
-                retry_count += 1
-                if tool_calls_pending or tool_results:
-                    _fill_tool_calls(response, tool_calls_pending)
-                    _commit_response(session, response, tool_results, cancelled=False)
-                    for tr in tool_results:
-                        session.msgs.add_tool(
-                            tr["id"],
-                            tr.get("result", tr.get("error", "")),
-                            tr.get("attachments"),
-                            is_error=bool(tr.get("error")),
-                        )
-                delay = _retry_delay(retry_count)
-                yield StreamEvent(type="retry-schedule", data={
-                    "error": str(e),
-                    "delay": delay,
-                    "attempt": retry_count,
-                })
-                try:
-                    _sleep_interruptible(delay)
-                except TurnCancelled:
+            except TurnCancelled:
+                cancelled = True
+            except Exception as e:
+                if is_cancelled():
                     cancelled = True
-                continue
-            yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
-            session.sync_messages()
-            get_session_manager().save(session)
-            return
+                elif retry_count < RETRY_LIMIT and _is_retryable(e):
+                    retry_count += 1
+                    if tool_calls_pending or tool_results:
+                        _fill_tool_calls(response, tool_calls_pending)
+                        _commit_response(session, response, tool_results, cancelled=False)
+                        for tr in tool_results:
+                            session.msgs.add_tool(
+                                tr["id"],
+                                tr.get("result", tr.get("error", "")),
+                                tr.get("attachments"),
+                                is_error=bool(tr.get("error")),
+                            )
+                        _persist(session)
+                    delay = _retry_delay(retry_count)
+                    yield StreamEvent(type="retry-schedule", data={
+                        "error": str(e),
+                        "delay": delay,
+                        "attempt": retry_count,
+                    })
+                    try:
+                        _sleep_interruptible(delay)
+                    except TurnCancelled:
+                        cancelled = True
+                    continue
+                else:
+                    yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
+                    _persist(session)
+                    return
 
-        if not cancelled:
+            if not cancelled:
+                _fill_tool_calls(response, tool_calls_pending)
+                _commit_response(session, response, tool_results, cancelled=False)
+                committed = True
+                retry_count = 0
+                for tr in tool_results:
+                    session.msgs.add_tool(
+                        tr["id"],
+                        tr.get("result", tr.get("error", "")),
+                        tr.get("attachments"),
+                        is_error=bool(tr.get("error")),
+                    )
+                _persist(session)
+
+                if response.finish_reason != "tool_calls":
+                    break
+
+        if cancelled and not committed:
             _fill_tool_calls(response, tool_calls_pending)
-            _commit_response(session, response, tool_results, cancelled=False)
-            committed = True
-            retry_count = 0
+            _commit_response(session, response, tool_results, cancelled=True)
             for tr in tool_results:
                 session.msgs.add_tool(
                     tr["id"],
@@ -229,24 +257,13 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                     tr.get("attachments"),
                     is_error=bool(tr.get("error")),
                 )
+            _persist(session)
 
-            if response.finish_reason != "tool_calls":
-                break
+        if cancelled:
+            yield StreamEvent(type="turn-cancelled", data={})
+            session.reset_provider()
 
-    if cancelled and not committed:
-        _fill_tool_calls(response, tool_calls_pending)
-        _commit_response(session, response, tool_results, cancelled=True)
-        for tr in tool_results:
-            session.msgs.add_tool(
-                tr["id"],
-                tr.get("result", tr.get("error", "")),
-                tr.get("attachments"),
-                is_error=bool(tr.get("error")),
-            )
-
-    if cancelled:
-        yield StreamEvent(type="turn-cancelled", data={})
-
-    _attach_turn_meta(session, session.provider.model, turn_usage, last_prompt_tokens, time.monotonic() - start)
-    session.sync_messages()
-    get_session_manager().save(session)
+        _attach_turn_meta(session, provider.model, turn_usage, last_prompt_tokens, time.monotonic() - start)
+        _persist(session)
+    finally:
+        unregister_abort(provider.abort)

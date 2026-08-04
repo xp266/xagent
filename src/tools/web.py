@@ -1,12 +1,38 @@
 import json
+import threading
 
 import httpx
 from datetime import date
 
 from src.types.tools import Tool
 from src.utils.config import get_exa_api_key
+from src.agent.cancel import is_cancelled, register_abort
 
 _year = date.today().year
+
+_active_client = None
+_client_lock = threading.Lock()
+
+
+def _set_active_client(client) -> None:
+    global _active_client
+    with _client_lock:
+        _active_client = client
+
+
+def _abort_web() -> None:
+    global _active_client
+    with _client_lock:
+        client = _active_client
+        _active_client = None
+    if client is not None:
+        try:
+            client.close()
+        except Exception:
+            pass
+
+
+register_abort(_abort_web)
 
 
 def _endpoint_url(api_key: str) -> str:
@@ -37,6 +63,9 @@ def _extract_result(text: str) -> tuple[str | None, bool]:
 
 
 def _search(query: str, num_results: int, type: str, livecrawl: str, context_max: int) -> dict:
+    if is_cancelled():
+        return {"title": query, "output": "Web search interrupted by user.", "metadata": {"error": True}}
+
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -54,19 +83,27 @@ def _search(query: str, num_results: int, type: str, livecrawl: str, context_max
     }
 
     try:
-        with httpx.Client(timeout=30) as client:
+        client = httpx.Client(timeout=30)
+        _set_active_client(client)
+        try:
             resp = client.post(_endpoint_url(get_exa_api_key()), json=payload, headers={"Accept": "application/json, text/event-stream"})
             resp.raise_for_status()
             result, is_error = _extract_result(resp.text)
-            if is_error:
-                return {"title": query, "output": f"Search failed: {result}", "metadata": {"error": True}}
-            output = result if result else resp.text[:2000]
-            return {"title": query, "output": output, "metadata": {}}
+        finally:
+            _set_active_client(None)
+            client.close()
+        if is_error:
+            return {"title": query, "output": f"Search failed: {result}", "metadata": {"error": True}}
+        output = result if result else resp.text[:2000]
+        return {"title": query, "output": output, "metadata": {}}
     except httpx.HTTPError as e:
         return {"title": query, "output": f"Search failed: {e}", "metadata": {"error": True}}
 
 
 def _fetch(url: str, timeout: int) -> dict:
+    if is_cancelled():
+        return {"title": url, "output": "URL fetch interrupted by user.", "metadata": {"error": True}}
+
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -80,7 +117,9 @@ def _fetch(url: str, timeout: int) -> dict:
     }
 
     try:
-        with httpx.Client(timeout=min(timeout, 120)) as client:
+        client = httpx.Client(timeout=min(timeout, 120))
+        _set_active_client(client)
+        try:
             resp = client.post(
                 _endpoint_url(get_exa_api_key()),
                 json=payload,
@@ -88,11 +127,14 @@ def _fetch(url: str, timeout: int) -> dict:
             )
             resp.raise_for_status()
             text, is_error = _extract_result(resp.text)
-            if is_error:
-                return {"title": url, "output": f"Failed to fetch URL: {text}", "metadata": {"error": True}}
-            if text:
-                return {"title": url, "output": text, "metadata": {}}
-            return {"title": url, "output": f"Successfully fetched {url}", "metadata": {}}
+        finally:
+            _set_active_client(None)
+            client.close()
+        if is_error:
+            return {"title": url, "output": f"Failed to fetch URL: {text}", "metadata": {"error": True}}
+        if text:
+            return {"title": url, "output": text, "metadata": {}}
+        return {"title": url, "output": f"Successfully fetched {url}", "metadata": {}}
     except httpx.HTTPError as e:
         return {"title": url, "output": f"Failed to fetch URL: {e}", "metadata": {"error": True}}
     except Exception as e:

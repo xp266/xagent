@@ -10,6 +10,7 @@ from src.ai.base import Provider
 from src.ai.capabilities import detect_capabilities, get_model_output_limit
 from src.types.config import Capabilities
 from src.types.events import StreamEvent, TokenUsage
+from src.agent.cancel import TurnCancelled, is_cancelled
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _DEFAULT_MAX_TOKENS = 8192
@@ -173,6 +174,8 @@ def _iter_sse_events(resp: httpx.Response) -> Iterator[tuple[str, str]]:
     event_name = ""
     data_lines: list[str] = []
     for line in resp.iter_lines():
+        if is_cancelled():
+            raise TurnCancelled
         if line == "":
             if data_lines:
                 yield event_name, "\n".join(data_lines)
@@ -312,6 +315,7 @@ class AnthropicProvider(Provider):
         self.timeout: Timeout = timeout
         self.capabilities: Capabilities = detect_capabilities(model)
         self.max_tokens: int = get_model_output_limit(model) or _DEFAULT_MAX_TOKENS
+        self._client: httpx.Client = httpx.Client(timeout=self.timeout)
 
     def stream(self, messages: list[dict], tools: list | None = None) -> Iterator[StreamEvent]:
         system, anthropic_messages = _messages_to_anthropic(messages, self.capabilities)
@@ -335,12 +339,21 @@ class AnthropicProvider(Provider):
         }
 
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                with client.stream("POST", f"{self.base_url}/messages", json=payload, headers=headers) as resp:
-                    if resp.status_code != 200:
-                        body = resp.read().decode("utf-8", "replace")
-                        yield StreamEvent(type="provider-error", data={"error": _extract_api_error(body), "code": resp.status_code})
-                        return
-                    yield from _stream_anthropic_events(resp)
+            with self._client.stream("POST", f"{self.base_url}/messages", json=payload, headers=headers) as resp:
+                if resp.status_code != 200:
+                    body = resp.read().decode("utf-8", "replace")
+                    yield StreamEvent(type="provider-error", data={"error": _extract_api_error(body), "code": resp.status_code})
+                    return
+                yield from _stream_anthropic_events(resp)
+        except TurnCancelled:
+            raise
         except Exception as e:
+            if is_cancelled():
+                raise TurnCancelled
             yield StreamEvent(type="provider-error", data={"error": str(e), "code": getattr(e, "status_code", None) or 0})
+
+    def abort(self) -> None:
+        try:
+            self._client.close()
+        except Exception:
+            pass

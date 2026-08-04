@@ -3,8 +3,9 @@ import platform
 import time
 import signal
 import subprocess
+import threading
 
-from src.agent.cancel import is_cancelled
+from src.agent.cancel import is_cancelled, register_abort
 from src.types.tools import Tool
 
 DEFAULT_TIMEOUT_MS = 120_000
@@ -13,6 +14,29 @@ MAX_OUTPUT_BYTES = 1_048_576
 
 _OS_NAME = platform.system() or "unknown"
 _SHELL = "cmd" if os.name == "nt" else "bash"
+
+_active_pids: set = set()
+_pid_lock = threading.Lock()
+
+
+def _track(pid: int) -> None:
+    with _pid_lock:
+        _active_pids.add(pid)
+
+
+def _untrack(pid: int) -> None:
+    with _pid_lock:
+        _active_pids.discard(pid)
+
+
+def kill_all() -> None:
+    with _pid_lock:
+        pids = list(_active_pids)
+    for pid in pids:
+        _kill_process_group(pid, force_kill_after=1)
+
+
+register_abort(kill_all)
 
 
 def _kill_process_group(pid: int, force_kill_after: int = 3):
@@ -76,34 +100,38 @@ def execute(command: str, workdir: str = "", timeout: int = 0, **kwargs) -> dict
             "metadata": {"error": True},
         }
 
+    _track(proc.pid)
     try:
-        stdout_bytes = None
-        remaining = timeout_ms / 1000
-        while stdout_bytes is None:
-            try:
-                stdout_bytes, _ = proc.communicate(timeout=0.5)
-            except subprocess.TimeoutExpired:
-                if is_cancelled():
-                    _kill_process_group(proc.pid, force_kill_after=3)
-                    return {
-                        "title": command,
-                        "output": "Command interrupted by user.",
-                        "metadata": {"error": True, "exit": None, "truncated": False, "interrupted": True},
-                    }
-                remaining -= 0.5
-                if remaining <= 0:
-                    _kill_process_group(proc.pid, force_kill_after=3)
-                    return {
-                        "title": command,
-                        "output": f"Command exceeded timeout of {timeout_ms} ms. Retry with a larger timeout if the command is expected to take longer.",
-                        "metadata": {"exit": None, "truncated": False, "timeout": True},
-                    }
-    except OSError:
-        return {
-            "title": command,
-            "output": f"Command interrupted by user.",
-            "metadata": {"error": True, "exit": None, "truncated": False, "interrupted": True},
-        }
+        try:
+            stdout_bytes = None
+            remaining = timeout_ms / 1000
+            while stdout_bytes is None:
+                try:
+                    stdout_bytes, _ = proc.communicate(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    if is_cancelled():
+                        _kill_process_group(proc.pid, force_kill_after=3)
+                        return {
+                            "title": command,
+                            "output": "Command interrupted by user.",
+                            "metadata": {"error": True, "exit": None, "truncated": False, "interrupted": True},
+                        }
+                    remaining -= 0.5
+                    if remaining <= 0:
+                        _kill_process_group(proc.pid, force_kill_after=3)
+                        return {
+                            "title": command,
+                            "output": f"Command exceeded timeout of {timeout_ms} ms. Retry with a larger timeout if the command is expected to take longer.",
+                            "metadata": {"exit": None, "truncated": False, "timeout": True},
+                        }
+        except OSError:
+            return {
+                "title": command,
+                "output": f"Command interrupted by user.",
+                "metadata": {"error": True, "exit": None, "truncated": False, "interrupted": True},
+            }
+    finally:
+        _untrack(proc.pid)
 
     truncated = False
     if len(stdout_bytes) > MAX_OUTPUT_BYTES:

@@ -1,7 +1,7 @@
 import json
 import os
+import threading
 import time
-from functools import partial
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, VerticalScroll
@@ -75,6 +75,13 @@ class XAgentTUI(PickerMixin, App):
         self._waves = []
         self._add_model_provider_flow = False
         self._pending_model_provider = None
+        self._deferred = None
+
+    def _post(self, fn, *args) -> None:
+        try:
+            self.call_from_thread(fn, *args)
+        except Exception:
+            pass
 
     def _chat(self):
         return self.query_one("#chat-box")
@@ -701,14 +708,16 @@ class XAgentTUI(PickerMixin, App):
             self._scroll_end()
 
     def _turn_worker(self, text: str) -> None:
+        from src.agent.cancel import turn_done
         start = time.monotonic()
         try:
             for event in run_session_turn(self._session, text):
-                self.call_from_thread(self._handle_event, event)
+                self._post(self._handle_event, event)
         except Exception as e:
-            self.call_from_thread(self._append_error, f"{type(e).__name__}: {e}")
+            self._post(self._append_error, f"{type(e).__name__}: {e}")
         elapsed = time.monotonic() - start
-        self.call_from_thread(self._finalize_turn, elapsed)
+        self._post(self._finalize_turn, elapsed)
+        turn_done()
 
     def _finalize_turn(self, elapsed: float) -> None:
         self._flush_streaming_content(force=True)
@@ -723,22 +732,29 @@ class XAgentTUI(PickerMixin, App):
         self._current = None
         self._update_status()
         self._scroll_end()
+        deferred = self._deferred
+        self._deferred = None
+        if deferred is not None:
+            cmd, args = deferred
+            cmd.handler(self, args)
+            return
         self.query_one("#input", ChatInput).focus()
 
-    def _apply_name(self, name: str) -> None:
+    def _apply_name(self, s: object, name: str) -> None:
         if not name or name == "New Session":
             return
-        self._session.name = name
-        self._sm.rename(self._session.id, name)
-        self._update_status()
+        s.name = name
+        self._sm.rename(s.id, name)
+        if s is self._session:
+            self._update_status()
 
-    def _name_worker(self, first_message: str) -> None:
+    def _name_worker(self, s: object, first_message: str) -> None:
         try:
-            name = name_session_from_first_message(self._session, first_message)
+            name = name_session_from_first_message(s, first_message)
         except Exception:
             name = None
         if name:
-            self.call_from_thread(self._apply_name, name)
+            self._post(self._apply_name, s, name)
 
     def _new_chat(self) -> None:
         if os.path.isdir(self._launch_dir):
@@ -934,6 +950,17 @@ class XAgentTUI(PickerMixin, App):
         if not text:
             return
         if self._busy:
+            parts = text.split(None, 1)
+            name = parts[0][1:]
+            args = parts[1] if len(parts) > 1 else ""
+            for cmd in get_commands():
+                if cmd.name == name or name in cmd.aliases:
+                    if cmd.name in ("new", "session", "exit"):
+                        self._deferred = (cmd, args)
+                        from src.agent.cancel import cancel
+                        cancel()
+                        self._update_status("Interrupting...")
+                        return
             self._append_error("Agent is busy, please wait.")
             return
         if text.startswith("/"):
@@ -978,8 +1005,9 @@ class XAgentTUI(PickerMixin, App):
         self._ensure_thinking()
         self._scroll_end()
         if self._session.name == "New Session":
-            self.run_worker(partial(self._name_worker, text), name="naming", group="naming", thread=True)
-        self.run_worker(partial(self._turn_worker, text), name="turn", group="turn", thread=True, exclusive=True)
+            s = self._session
+            threading.Thread(target=self._name_worker, args=(s, text), name="xagent-naming", daemon=True).start()
+        threading.Thread(target=self._turn_worker, args=(text,), name="xagent-turn", daemon=True).start()
 
     def on_chat_input_submitted(self, message: ChatInput.Submitted) -> None:
         self._palette().hide()
@@ -1018,6 +1046,11 @@ class XAgentTUI(PickerMixin, App):
         self._scroll_end()
         self.set_interval(0.033, self._tick_animations, pause=False)
         self.query_one("#input", ChatInput).focus()
+
+    def on_unmount(self) -> None:
+        from src.agent.cancel import abort, turn_done
+        turn_done()
+        abort()
 
 
 def run_tui() -> None:

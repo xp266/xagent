@@ -8,6 +8,7 @@ from openai import OpenAI
 from src.types.events import StreamEvent, TokenUsage
 from src.ai.base import Provider
 from src.ai.capabilities import detect_capabilities
+from src.agent.cancel import TurnCancelled, is_cancelled
 
 _SURROGATE_RE = re.compile(r'[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]')
 
@@ -98,6 +99,8 @@ def _stream_openai_events(stream, capabilities) -> Iterator[StreamEvent]:
     text_active = False
 
     for chunk in stream:
+        if is_cancelled():
+            raise TurnCancelled
         if hasattr(chunk, "usage") and chunk.usage:
             raw = chunk.usage
             usage = TokenUsage(
@@ -241,3 +244,9 @@ class OpenAIProvider(Provider):
             return
 
         yield from _stream_openai_events(stream, self.capabilities)
+
+    def abort(self) -> None:
+        try:
+            self.client.close()
+        except Exception:
+            pass

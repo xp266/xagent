@@ -14,6 +14,9 @@ class Provider(ABC):
     def stream(self, messages: list[dict], tools: list[dict] | None = None) -> Iterator[StreamEvent]:
         ...
 
+    def abort(self) -> None:
+        pass
+
     def respond(self, messages: list[dict], tools: list[dict] | None = None) -> LLMResponse:
         response = LLMResponse()
         for event in self.stream(messages, tools):
