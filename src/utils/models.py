@@ -60,6 +60,59 @@ def _raw_entry(model_name: str, provider_meta: dict | None) -> dict | None:
     return None
 
 
+_GENERIC_EFFORT_LEVELS = ["none", "low", "medium", "high", "max"]
+
+
+def _reasoning_options(model_name: str, provider_meta: dict | None) -> list[dict]:
+    raw = _raw_entry(model_name, provider_meta)
+    if raw is not None:
+        opts = raw.get("reasoning_options")
+        if isinstance(opts, list):
+            return [o for o in opts if isinstance(o, dict)]
+    for pid, p in load_models_catalog().items():
+        m = p.get("models", {}).get(model_name) if isinstance(p, dict) else None
+        if isinstance(m, dict):
+            opts = m.get("reasoning_options")
+            if isinstance(opts, list):
+                return [o for o in opts if isinstance(o, dict)]
+    return []
+
+
+def _reasoning_enabled(model_name: str, provider_meta: dict | None) -> bool:
+    raw = _raw_entry(model_name, provider_meta)
+    if raw is not None and "reasoning" in raw:
+        return bool(raw.get("reasoning"))
+    for pid, p in load_models_catalog().items():
+        m = p.get("models", {}).get(model_name) if isinstance(p, dict) else None
+        if isinstance(m, dict) and "reasoning" in m:
+            return bool(m.get("reasoning"))
+    return False
+
+
+def reasoning_effort_options(model_name: str, provider_meta: dict | None = None) -> list[str]:
+    options = _reasoning_options(model_name, provider_meta)
+    for opt in options:
+        if opt.get("type") == "effort":
+            values = opt.get("values")
+            if isinstance(values, list):
+                return [str(v) for v in values]
+    if options or _reasoning_enabled(model_name, provider_meta):
+        return list(_GENERIC_EFFORT_LEVELS)
+    return []
+
+
+def get_reasoning_budget_bounds(model_name: str, provider_meta: dict | None = None) -> tuple[int, int]:
+    for opt in _reasoning_options(model_name, provider_meta):
+        if opt.get("type") != "budget_tokens":
+            continue
+        lo = opt.get("min", 0)
+        hi = opt.get("max", 0)
+        lo = int(lo) if isinstance(lo, (int, float)) else 0
+        hi = int(hi) if isinstance(hi, (int, float)) else 0
+        return lo, hi
+    return 0, 0
+
+
 def _caps_from_raw(entry: dict) -> Capabilities:
     mods = entry.get("modalities", {}).get("input", [])
     inter = entry.get("interleaved")

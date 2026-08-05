@@ -8,7 +8,12 @@ import httpx
 from httpx import Timeout
 
 from src.ai.base import Provider
-from src.utils.models import Capabilities, detect_capabilities, get_model_output_limit
+from src.utils.models import (
+    Capabilities,
+    detect_capabilities,
+    get_model_output_limit,
+    get_reasoning_budget_bounds,
+)
 from src.types.events import StreamEvent, TokenUsage
 from src.agent.cancel import TurnCancelled, is_cancelled
 
@@ -17,6 +22,14 @@ _DEFAULT_MAX_TOKENS = 8192
 _THINKING_MODEL = re.compile(r"(?i)claude-(opus|sonnet|haiku)-(4|5)|claude-fable|claude-3-7")
 _THINKING_BUDGET_MAX = 32000
 _THINKING_BUDGET_MIN = 1024
+_EFFORT_BUDGET_FRACTIONS = {
+    "minimal": 0.1,
+    "low": 0.25,
+    "medium": 0.5,
+    "high": 0.75,
+    "xhigh": 0.9,
+    "max": 1.0,
+}
 
 
 _ANTHROPIC_STOP_REASONS = {
@@ -312,11 +325,14 @@ class AnthropicProvider(Provider):
         api_key: str,
         timeout: Timeout = Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0),
         model_meta: dict | None = None,
+        reasoning_effort: str = "",
     ):
         self.model: str = model
         self.base_url: str = base_url.rstrip("/")
         self.api_key: str = api_key
         self.timeout: Timeout = timeout
+        self.reasoning_effort: str = (reasoning_effort or "").strip()
+        self.model_meta: dict | None = model_meta
         self.capabilities: Capabilities = detect_capabilities(model, model_meta)
         self.max_tokens: int = get_model_output_limit(model, model_meta) or _DEFAULT_MAX_TOKENS
         self._client: httpx.Client = httpx.Client(timeout=self.timeout)
@@ -331,8 +347,16 @@ class AnthropicProvider(Provider):
             "stream": True,
             "messages": anthropic_messages,
         }
-        if _THINKING_MODEL.search(self.model):
-            budget = max(_THINKING_BUDGET_MIN, min(int(self.max_tokens * 0.8), _THINKING_BUDGET_MAX))
+        if _THINKING_MODEL.search(self.model) and self.reasoning_effort not in ("none", "off"):
+            lo, hi = get_reasoning_budget_bounds(self.model, self.model_meta)
+            budget_min = lo if lo > 0 else _THINKING_BUDGET_MIN
+            budget_max = hi if hi > 0 else _THINKING_BUDGET_MAX
+            frac = _EFFORT_BUDGET_FRACTIONS.get(self.reasoning_effort)
+            if frac is None:
+                budget = int(self.max_tokens * 0.8)
+            else:
+                budget = budget_min + int((budget_max - budget_min) * frac)
+            budget = max(budget_min, min(budget, budget_max))
             payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
         if system:
             payload["system"] = system

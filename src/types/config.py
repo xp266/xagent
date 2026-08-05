@@ -16,6 +16,7 @@ class AppConfig(BaseModel):
     active_provider: str = ""
     active_model: str = ""
     exa_api_key: str = ""
+    reasoning_effort: str = ""
     providers: dict[str, dict] = Field(default_factory=dict)
 
 
@@ -23,3 +24,4 @@ class Config(BaseModel):
     base_url: str = ""
     model: str = ""
     api_key: str = ""
+    reasoning_effort: str = ""

@@ -1,5 +1,14 @@
+from src.utils.models import reasoning_effort_options
 from src.utils.providers import get_store, list_providers
-from src.ui.tui.widgets import ChatInput, ExaKeyDialog, ModelPicker, ProviderKeyDialog, ProviderPicker, SessionPicker
+from src.ui.tui.widgets import (
+    ChatInput,
+    ExaKeyDialog,
+    ModelPicker,
+    ProviderKeyDialog,
+    ProviderPicker,
+    SessionPicker,
+    StrengthPicker,
+)
 
 
 class PickerMixin:
@@ -43,6 +52,9 @@ class PickerMixin:
 
     def _model_picker(self) -> ModelPicker:
         return self.query_one("#model-picker", ModelPicker)
+
+    def _strength_picker(self) -> StrengthPicker:
+        return self.query_one("#strength-picker", StrengthPicker)
 
     def _exa_key_dialog(self) -> ExaKeyDialog:
         return self.query_one("#exa-key-dialog", ExaKeyDialog)
@@ -89,6 +101,33 @@ class PickerMixin:
         picker = self._model_picker()
         picker._add_enabled = True
         picker.show(entries)
+
+    def _open_strength_picker(self) -> None:
+        store = get_store()
+        active = store.get_active()
+        if active is None or not store.active_model:
+            self._append_error("No model selected. Use /model to pick one first.")
+            self.query_one("#input", ChatInput).focus()
+            return
+        options = reasoning_effort_options(store.active_model, active.model_meta)
+        if not options:
+            self._append_error(f"{store.active_model} does not support reasoning strength.")
+            self.query_one("#input", ChatInput).focus()
+            return
+        self._palette().hide()
+        self._set_palette_open(False)
+        picker = self._strength_picker()
+        picker.show(options)
+
+    def on_strength_picker_selected(self, message: StrengthPicker.Selected) -> None:
+        store = get_store()
+        store.set_reasoning_effort(message.effort)
+        self._session.reset_provider()
+        self._update_status()
+        self.query_one("#input", ChatInput).focus()
+
+    def on_strength_picker_dismissed(self, message: StrengthPicker.Dismissed) -> None:
+        self.query_one("#input", ChatInput).focus()
 
     def _open_model_picker_all(self, provider) -> None:
         store = get_store()
@@ -240,6 +279,7 @@ class PickerMixin:
             ("#session-picker", self._picker),
             ("#provider-picker", self._provider_picker),
             ("#model-picker", self._model_picker),
+            ("#strength-picker", self._strength_picker),
             ("#provider-key-dialog", self._key_dialog),
             ("#exa-key-dialog", self._exa_key_dialog),
         ]
@@ -261,6 +301,8 @@ class PickerMixin:
                 active.post_message(ProviderPicker.Dismissed())
             elif active is self._model_picker():
                 active.post_message(ModelPicker.Dismissed())
+            elif active is self._strength_picker():
+                active.post_message(StrengthPicker.Dismissed())
             elif active is self._key_dialog():
                 active.post_message(ProviderKeyDialog.Canceled())
             return

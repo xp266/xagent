@@ -110,6 +110,7 @@ class Session:
                     base_url=resolved["base_url"],
                     api_key=resolved["api_key"],
                     model_meta=model_meta,
+                    reasoning_effort=resolved.get("reasoning_effort", ""),
                 )
             else:
                 from src.ai.openai import OpenAIProvider
@@ -119,6 +120,7 @@ class Session:
                     base_url=resolved["base_url"],
                     api_key=resolved["api_key"],
                     model_meta=model_meta,
+                    reasoning_effort=resolved.get("reasoning_effort", ""),
                 )
         return self._provider
 

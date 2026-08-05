@@ -26,7 +26,16 @@ from src.ui.tui.render import (
     read_line_start, tool_block, tool_markdown, tool_num_width, tool_render,
 )
 from src.ui.tui.streaming import stream_args
-from src.ui.tui.widgets import ChatInput, CommandPalette, ExaKeyDialog, ModelPicker, ProviderKeyDialog, ProviderPicker, SessionPicker
+from src.ui.tui.widgets import (
+    ChatInput,
+    CommandPalette,
+    ExaKeyDialog,
+    ModelPicker,
+    ProviderKeyDialog,
+    ProviderPicker,
+    SessionPicker,
+    StrengthPicker,
+)
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
@@ -224,8 +233,10 @@ class XAgentTUI(PickerMixin, App):
             model = "Type /model to select a model"
         else:
             model = cfg.model
+            if cfg.reasoning_effort:
+                model = f"{model} · {cfg.reasoning_effort}"
         total = self._session.token_usage.total_tokens
-        limit = get_model_context_limit(model) if cfg.model else 0
+        limit = get_model_context_limit(cfg.model) if cfg.model else 0
         pct = self._context_pct(limit)
         return f"{model}  {total:,} tokens  {fmt_pct(pct)}  |  xAgent - {self._project} - {self._session.name}"
 
@@ -1116,6 +1127,7 @@ class XAgentTUI(PickerMixin, App):
         yield SessionPicker(id="session-picker")
         yield ProviderPicker(id="provider-picker")
         yield ModelPicker(id="model-picker")
+        yield StrengthPicker(id="strength-picker")
         yield ProviderKeyDialog(id="provider-key-dialog")
         yield ExaKeyDialog(id="exa-key-dialog")
 

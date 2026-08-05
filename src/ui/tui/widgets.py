@@ -627,6 +627,22 @@ class ModelPicker(_ListPicker):
         return Static(self.item_label(item), classes="picker-row")
 
 
+class StrengthPicker(_ListPicker):
+    placeholder = "Search strengths..."
+    footer_text = "Press ESC to exit"
+
+    class Selected(Message):
+        def __init__(self, effort: str) -> None:
+            super().__init__()
+            self.effort = effort
+
+    def item_label(self, item) -> str:
+        return str(item)
+
+    def _select_item(self, item) -> None:
+        self.post_message(self.Selected(item))
+
+
 class ProviderKeyDialog(Vertical):
     class Saved(Message):
         def __init__(self, values: dict, provider=None) -> None:

@@ -8,6 +8,7 @@ def get_config() -> Config:
         base_url=resolved["base_url"],
         model=resolved["model"],
         api_key=resolved["api_key"],
+        reasoning_effort=resolved.get("reasoning_effort", ""),
     )
 
 

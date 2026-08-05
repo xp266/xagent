@@ -24,7 +24,8 @@ CSS = """
     }
     SessionPicker,
     ProviderPicker,
-    ModelPicker {
+    ModelPicker,
+    StrengthPicker {
         display: none;
         layer: overlay;
         width: 45%;
@@ -35,12 +36,14 @@ CSS = """
     }
     SessionPicker.visible,
     ProviderPicker.visible,
-    ModelPicker.visible {
+    ModelPicker.visible,
+    StrengthPicker.visible {
         display: block;
     }
     SessionPicker #picker-search,
     ProviderPicker #picker-search,
-    ModelPicker #picker-search {
+    ModelPicker #picker-search,
+    StrengthPicker #picker-search {
         height: 1;
         border: none;
         background: #222222;
@@ -48,7 +51,8 @@ CSS = """
     }
     SessionPicker #picker-list,
     ProviderPicker #picker-list,
-    ModelPicker #picker-list {
+    ModelPicker #picker-list,
+    StrengthPicker #picker-list {
         height: 1fr;
         border: none;
         padding: 0;
@@ -56,7 +60,8 @@ CSS = """
     }
     SessionPicker #picker-footer,
     ProviderPicker #picker-footer,
-    ModelPicker #picker-footer {
+    ModelPicker #picker-footer,
+    StrengthPicker #picker-footer {
         height: 1;
         padding: 0;
         content-align: left bottom;
@@ -64,7 +69,8 @@ CSS = """
     }
     SessionPicker .picker-row,
     ProviderPicker .picker-row,
-    ModelPicker .picker-row {
+    ModelPicker .picker-row,
+    StrengthPicker .picker-row {
         height: 1;
         padding: 0 1;
     }
@@ -85,7 +91,8 @@ CSS = """
     }
     SessionPicker .picker-row.selected,
     ProviderPicker .picker-row.selected,
-    ModelPicker .picker-row.selected {
+    ModelPicker .picker-row.selected,
+    StrengthPicker .picker-row.selected {
         background: #334466;
     }
     ProviderKeyDialog,

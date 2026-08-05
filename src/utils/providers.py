@@ -47,6 +47,7 @@ class ProviderStore:
             active_provider=str(raw.get("active_provider", "")),
             active_model=str(raw.get("active_model", "")),
             exa_api_key=str(raw.get("exa_api_key", "")),
+            reasoning_effort=str(raw.get("reasoning_effort", "")),
             providers={k: v for k, v in providers.items() if isinstance(v, dict)},
         )
 
@@ -68,6 +69,7 @@ class ProviderStore:
             "active_provider": self._config.active_provider,
             "active_model": self._config.active_model,
             "exa_api_key": self._config.exa_api_key,
+            "reasoning_effort": self._config.reasoning_effort,
             "providers": self._config.providers,
         }
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
@@ -179,6 +181,14 @@ class ProviderStore:
         self._config.exa_api_key = key.strip()
         self.save()
 
+    @property
+    def reasoning_effort(self) -> str:
+        return self._config.reasoning_effort
+
+    def set_reasoning_effort(self, value: str) -> None:
+        self._config.reasoning_effort = (value or "").strip()
+        self.save()
+
     def get_active(self) -> ProviderInfo | None:
         return self.get_provider(self._config.active_provider)
 
@@ -186,11 +196,12 @@ class ProviderStore:
         model = self._config.active_model
         p = self.get_active()
         if p is None:
-            return {"base_url": "", "api_key": "", "model": model or ""}
+            return {"base_url": "", "api_key": "", "model": model or "", "reasoning_effort": self._config.reasoning_effort}
         return {
             "base_url": p.base_url,
             "api_key": p.api_key,
             "model": model,
+            "reasoning_effort": self._config.reasoning_effort,
         }
 
 

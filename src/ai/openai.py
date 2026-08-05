@@ -7,7 +7,7 @@ from openai import OpenAI
 
 from src.types.events import StreamEvent, TokenUsage
 from src.ai.base import Provider
-from src.utils.models import detect_capabilities, get_model_output_limit
+from src.utils.models import detect_capabilities, get_model_output_limit, reasoning_effort_options
 from src.agent.cancel import TurnCancelled, is_cancelled
 
 _SURROGATE_RE = re.compile(r'[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]')
@@ -201,10 +201,12 @@ class OpenAIProvider(Provider):
         timeout: Timeout = Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0),
         max_retries: int = 3,
         model_meta: dict | None = None,
+        reasoning_effort: str = "",
     ):
         self.model: str = model
         self.base_url: str = base_url
         self.model_meta: dict | None = model_meta
+        self.reasoning_effort: str = (reasoning_effort or "").strip()
         self.capabilities = detect_capabilities(model, model_meta)
         self.max_tokens = get_model_output_limit(model, model_meta)
 
@@ -230,6 +232,9 @@ class OpenAIProvider(Provider):
                 kwargs["max_completion_tokens"] = self.max_tokens
             else:
                 kwargs["max_tokens"] = self.max_tokens
+
+        if self.reasoning_effort and self.reasoning_effort in reasoning_effort_options(self.model, self.model_meta):
+            kwargs["reasoning_effort"] = self.reasoning_effort
 
         try:
             stream = self.client.chat.completions.create(**kwargs)

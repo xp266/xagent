@@ -35,6 +35,10 @@ def _cmd_model(app, args: str) -> None:
     app._open_model_picker()
 
 
+def _cmd_effort(app, args: str) -> None:
+    app._open_strength_picker()
+
+
 def _cmd_exa(app, args: str) -> None:
     app._open_exa_key_dialog()
 
@@ -45,6 +49,7 @@ def get_commands() -> list[Command]:
         Command("session", "Switch to a session: /session <id>", _cmd_session),
         Command("provider", "Switch API provider", _cmd_provider),
         Command("model", "Switch model", _cmd_model),
+        Command("effort", "Set model reasoning strength", _cmd_effort),
         Command("exa", "Set Exa API key (web search/fetch)", _cmd_exa),
         Command("exit", "Exit xagent", _cmd_exit),
     ]
