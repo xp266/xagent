@@ -55,10 +55,12 @@ class CanvasBlock:
         pad_left: int = 1,
         pad_right: int = 1,
         expandable: bool = False,
+        hide_arrow: bool = False,
     ) -> None:
         self.kind = kind
         self.collapsed = collapsed
         self.expandable = expandable
+        self.hide_arrow = hide_arrow
         self.title = title
         self.label = title
         self.title_style = title_style
@@ -179,15 +181,14 @@ class CanvasBlock:
             )
         title_line = self.title_line
         if title_line is not None:
-            if self.expandable:
-                if self.arrow_hidden:
-                    title_line = Content.assemble(" " * max(0, self.pad_left - 2), title_line)
-                else:
-                    arrow = "▾" if not self.collapsed else "▸"
-                    arrow_c = Content(arrow, spans=[Span(0, 1, self.title_style)])
-                    title_line = Content.assemble(
-                        " " * max(0, self.pad_left - 2), arrow_c, " ", title_line
-                    )
+            if self.expandable and not self.arrow_hidden and not self.hide_arrow:
+                arrow = "▾" if not self.collapsed else "▸"
+                arrow_c = Content(arrow, spans=[Span(0, 1, self.title_style)])
+                title_line = Content.assemble(
+                    " " * max(0, self.pad_left - 2), arrow_c, " ", title_line
+                )
+            elif self.expandable:
+                title_line = Content.assemble(" " * max(0, self.pad_left - 2), title_line)
             else:
                 title_line = Content.assemble(" " * self.pad_left, title_line)
             if self.bg:

@@ -103,6 +103,7 @@ class XAgentTUI(PickerMixin, App):
         pad_right: int = 1,
         expandable: bool = False,
         collapsed: bool = False,
+        hide_arrow: bool = False,
     ) -> CanvasBlock:
         self._hide_logo()
         return self._canvas().append(
@@ -118,6 +119,7 @@ class XAgentTUI(PickerMixin, App):
                 pad_right=pad_right,
                 expandable=expandable,
                 collapsed=collapsed,
+                hide_arrow=hide_arrow,
             )
         )
 
@@ -356,7 +358,7 @@ class XAgentTUI(PickerMixin, App):
             return
         if self._spinners.pop(id(title), None) is not None:
             label = getattr(title, "label", title.title)
-            if restore_arrow:
+            if restore_arrow and not getattr(title, "hide_arrow", False):
                 title.arrow_hidden = False
             title.set_title(label)
 
@@ -447,6 +449,7 @@ class XAgentTUI(PickerMixin, App):
             cur["thinking"] = block
             cur["thinking_title"] = block
             cur["thinking_col"] = block
+            block.arrow_hidden = True
         self._start_spinner(cur["thinking_title"])
         return cur["thinking"]
 
@@ -460,6 +463,7 @@ class XAgentTUI(PickerMixin, App):
             title_style="bold white",
             expandable=True,
             collapsed=True,
+            hide_arrow=True,
             pad_bottom=0,
         )
         cur["waiting"] = block
