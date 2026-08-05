@@ -101,6 +101,7 @@ class Session:
         if self._provider is None:
             resolved = get_store().resolve()
             active = get_store().get_active()
+            model_meta = active.model_meta if active is not None else None
             if is_anthropic_provider(active):
                 from src.ai.anthropic import AnthropicProvider
 
@@ -108,6 +109,7 @@ class Session:
                     model=resolved["model"],
                     base_url=resolved["base_url"],
                     api_key=resolved["api_key"],
+                    model_meta=model_meta,
                 )
             else:
                 from src.ai.openai import OpenAIProvider
@@ -116,6 +118,7 @@ class Session:
                     model=resolved["model"],
                     base_url=resolved["base_url"],
                     api_key=resolved["api_key"],
+                    model_meta=model_meta,
                 )
         return self._provider
 

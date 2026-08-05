@@ -7,10 +7,11 @@ from openai import OpenAI
 
 from src.types.events import StreamEvent, TokenUsage
 from src.ai.base import Provider
-from src.utils.models import detect_capabilities
+from src.utils.models import detect_capabilities, get_model_output_limit
 from src.agent.cancel import TurnCancelled, is_cancelled
 
 _SURROGATE_RE = re.compile(r'[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]')
+_REASONING_MODEL = re.compile(r"(?i)^(gpt-5|o[1-9])")
 
 
 def _replace_surrogates(text: str) -> str:
@@ -27,18 +28,6 @@ def _replace_surrogates_in_value(v):
     if isinstance(v, list):
         return [_replace_surrogates_in_value(item) for item in v]
     return v
-
-
-def _mime_to_modality(mime: str) -> str | None:
-    if mime.startswith("image/"):
-        return "image"
-    if mime.startswith("audio/"):
-        return "audio"
-    if mime.startswith("video/"):
-        return "video"
-    if mime == "application/pdf":
-        return "pdf"
-    return None
 
 
 def _filter_unsupported_media(messages: list, capabilities) -> list:
@@ -62,13 +51,7 @@ def _filter_unsupported_media(messages: list, capabilities) -> list:
                     })
             elif part.get("type") == "media":
                 mime = part.get("mediaType", "")
-                modality = _mime_to_modality(mime)
-                if modality and not getattr(capabilities, modality, False):
-                    filtered.append({
-                        "type": "text",
-                        "text": f"ERROR: Cannot read {part.get('filename', modality)} (this model does not support {modality} input).",
-                    })
-                elif can_image:
+                if mime.startswith("image/") and can_image:
                     data = part.get("data", "")
                     filtered.append({
                         "type": "image_url",
@@ -77,7 +60,7 @@ def _filter_unsupported_media(messages: list, capabilities) -> list:
                 else:
                     filtered.append({
                         "type": "text",
-                        "text": f"ERROR: Cannot read {part.get('filename', modality)} (this model does not support {modality} input).",
+                        "text": f"ERROR: Cannot read {part.get('filename', mime or 'media')} (this model does not support this media type).",
                     })
             else:
                 filtered.append(part)
@@ -217,10 +200,13 @@ class OpenAIProvider(Provider):
         api_key: str,
         timeout: Timeout = Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0),
         max_retries: int = 3,
+        model_meta: dict | None = None,
     ):
         self.model: str = model
         self.base_url: str = base_url
-        self.capabilities = detect_capabilities(model)
+        self.model_meta: dict | None = model_meta
+        self.capabilities = detect_capabilities(model, model_meta)
+        self.max_tokens = get_model_output_limit(model, model_meta)
 
         self.client = OpenAI(
             api_key=api_key,
@@ -232,13 +218,21 @@ class OpenAIProvider(Provider):
     def stream(self, messages: list[dict], tools: list | None = None) -> Iterator[StreamEvent]:
         cleaned = _clean_openai_messages(messages, self.capabilities)
 
+        kwargs: dict = {
+            "model": self.model,
+            "stream": True,
+            "messages": cleaned,
+            "tools": tools or None,
+            "stream_options": {"include_usage": True},
+        }
+        if self.max_tokens:
+            if _REASONING_MODEL.match(self.model):
+                kwargs["max_completion_tokens"] = self.max_tokens
+            else:
+                kwargs["max_tokens"] = self.max_tokens
+
         try:
-            stream = self.client.chat.completions.create(
-                model=self.model,
-                stream=True,
-                messages=cleaned,
-                tools=tools or None,
-            )
+            stream = self.client.chat.completions.create(**kwargs)
         except Exception as e:
             yield StreamEvent(type="provider-error", data={"error": str(e), "code": getattr(e, "status_code", None) or 0})
             return

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 
 import httpx
@@ -13,6 +14,9 @@ from src.agent.cancel import TurnCancelled, is_cancelled
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _DEFAULT_MAX_TOKENS = 8192
+_THINKING_MODEL = re.compile(r"(?i)claude-(opus|sonnet|haiku)-(4|5)|claude-fable|claude-3-7")
+_THINKING_BUDGET_MAX = 32000
+_THINKING_BUDGET_MIN = 1024
 
 
 _ANTHROPIC_STOP_REASONS = {
@@ -307,13 +311,14 @@ class AnthropicProvider(Provider):
         base_url: str,
         api_key: str,
         timeout: Timeout = Timeout(connect=30.0, read=600.0, write=60.0, pool=30.0),
+        model_meta: dict | None = None,
     ):
         self.model: str = model
         self.base_url: str = base_url.rstrip("/")
         self.api_key: str = api_key
         self.timeout: Timeout = timeout
-        self.capabilities: Capabilities = detect_capabilities(model)
-        self.max_tokens: int = get_model_output_limit(model) or _DEFAULT_MAX_TOKENS
+        self.capabilities: Capabilities = detect_capabilities(model, model_meta)
+        self.max_tokens: int = get_model_output_limit(model, model_meta) or _DEFAULT_MAX_TOKENS
         self._client: httpx.Client = httpx.Client(timeout=self.timeout)
 
     def stream(self, messages: list[dict], tools: list | None = None) -> Iterator[StreamEvent]:
@@ -326,6 +331,9 @@ class AnthropicProvider(Provider):
             "stream": True,
             "messages": anthropic_messages,
         }
+        if _THINKING_MODEL.search(self.model):
+            budget = max(_THINKING_BUDGET_MIN, min(int(self.max_tokens * 0.8), _THINKING_BUDGET_MAX))
+            payload["thinking"] = {"type": "enabled", "budget_tokens": budget}
         if system:
             payload["system"] = system
         if anthropic_tools:
