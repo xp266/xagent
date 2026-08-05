@@ -353,15 +353,17 @@ class XAgentTUI(PickerMixin, App):
         frame = _SPINNER_FRAMES[self._spinner_idx % len(_SPINNER_FRAMES)]
         label = getattr(title, "label", title.title)
         title.arrow_hidden = True
-        title.set_title(f"{frame} {label}")
+        title.set_title(label)
+        title.set_marker(frame)
 
     def _stop_spinner(self, title, *, restore_arrow: bool = True) -> None:
         if title is None:
             return
         if self._spinners.pop(id(title), None) is not None:
+            label = getattr(title, "label", title.title)
+            title.set_marker(None)
             if getattr(title, "hide_arrow", False):
                 return
-            label = getattr(title, "label", title.title)
             if restore_arrow:
                 title.arrow_hidden = False
             title.set_title(label)
@@ -397,11 +399,11 @@ class XAgentTUI(PickerMixin, App):
         if not tool["spinning"]:
             return
         frame = _SPINNER_FRAMES[self._spinner_idx % len(_SPINNER_FRAMES)]
-        label = f"{frame} {tool['title']}"
         block = tool.get("block")
         if block is not None:
             block.arrow_hidden = True
-            block.set_title(label)
+            block.set_title(tool["title"])
+            block.set_marker(frame)
 
     def _stop_tool_spinner(self, tool) -> None:
         if not tool["spinning"]:
@@ -410,6 +412,7 @@ class XAgentTUI(PickerMixin, App):
         block = tool.get("block")
         if block is not None:
             block.arrow_hidden = False
+            block.set_marker(None)
             block.set_title(tool["title"])
 
     def _tick_animations(self) -> None:

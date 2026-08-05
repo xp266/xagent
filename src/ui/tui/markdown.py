@@ -296,7 +296,7 @@ def _numbered_diff_highlight(code: str, lang: str | None) -> list[Content]:
             rows.append((0, " ", l))
         else:
             rows.append((int(m.group(1)), m.group(2), m.group(3)))
-    maxw = max(1, max((len(str(r[0])) for r in rows), default=1))
+    maxw = max(2, max((len(str(r[0])) for r in rows), default=1))
     out: list[Content] = []
     i = 0
     n = len(rows)
@@ -407,7 +407,7 @@ def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool 
     parts: list = []
     width = 4
     if numbered:
-        width = len(str(max(1, line_number_start + len(lines) - 1)))
+        width = max(2, len(str(max(1, line_number_start + len(lines) - 1))))
     last = len(lines) - 1
     for i, line in enumerate(lines):
         if numbered:

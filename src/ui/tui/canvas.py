@@ -72,6 +72,7 @@ class CanvasBlock:
         self.pad_right = pad_right
         self.content_pad_left = pad_left if content_pad_left is None else content_pad_left
         self.arrow_hidden: bool = False
+        self.marker: str | None = None
         self.content: Content | None = None
         self._lines: list[Content] = []
         self._strips: list[Strip | None] = []
@@ -95,6 +96,7 @@ class CanvasBlock:
             id(self.content),
             self.title,
             self.title_style,
+            self.marker,
             self.collapsed,
             self.pad_top,
             self.pad_bottom,
@@ -108,6 +110,16 @@ class CanvasBlock:
     def set_title(self, title: str) -> None:
         if title != self.title:
             self.title = title
+            self._strips = []
+            self._fill_at = []
+            self._key = ()
+            owner = self.owner
+            if owner is not None and owner.is_mounted:
+                owner.refresh()
+
+    def set_marker(self, marker: str | None) -> None:
+        if marker != self.marker:
+            self.marker = marker
             self._strips = []
             self._fill_at = []
             self._key = ()
@@ -189,14 +201,15 @@ class CanvasBlock:
             )
         title_line = self.title_line
         if title_line is not None:
-            if self.expandable and not self.arrow_hidden and not self.hide_arrow:
-                arrow = "▾" if not self.collapsed else "▸"
-                arrow_c = Content(arrow, spans=[Span(0, 1, self.title_style)])
-                title_line = Content.assemble(
-                    " " * max(0, self.pad_left - 2), arrow_c, " ", title_line
-                )
-            elif self.expandable:
-                title_line = Content.assemble(" " * max(0, self.pad_left - 2), title_line)
+            if self.expandable:
+                marker = self.marker
+                if marker is None and not self.arrow_hidden and not self.hide_arrow:
+                    marker = "▾" if not self.collapsed else "▸"
+                if marker is None:
+                    title_line = Content.assemble("   ", title_line)
+                else:
+                    marker_c = Content(marker, spans=[Span(0, 1, self.title_style)])
+                    title_line = Content.assemble(marker_c, "  ", title_line)
             else:
                 title_line = Content.assemble(" " * self.pad_left, title_line)
             if self.bg:
