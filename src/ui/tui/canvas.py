@@ -49,6 +49,7 @@ class CanvasBlock:
         title_style: str = "",
         body_style: str = "",
         bg: str | None = None,
+        content_bg: str | None = None,
         pad_top: int = 0,
         pad_bottom: int = 0,
         pad_left: int = 1,
@@ -66,6 +67,7 @@ class CanvasBlock:
         self.title_style = title_style
         self.body_style = body_style
         self.bg = bg
+        self.content_bg = content_bg
         self.pad_top = pad_top
         self.pad_bottom = pad_bottom
         self.pad_left = pad_left
@@ -104,6 +106,7 @@ class CanvasBlock:
             self.content_pad_left,
             self.pad_right,
             self.bg,
+            self.content_bg,
             self.body_style,
         )
 
@@ -149,6 +152,7 @@ class CanvasBlock:
 
     def _build(self, width: int) -> list[Content]:
         bg = f"on {self.bg}" if self.bg else ""
+        cbg = f"on {self.content_bg}" if self.content_bg else bg
         inner_width = max(0, width - self.pad_left - self.pad_right)
         if self._built_width != width:
             self._built_width = width
@@ -180,12 +184,12 @@ class CanvasBlock:
                 wrapped = [line]
             new_spans.append(len(wrapped))
             for nline in wrapped:
-                if self.bg:
+                if cbg:
                     bg_end = _bg_span_end(nline)
                     if bg_end < len(nline.plain):
                         nline = Content(
                             nline.plain,
-                            [*nline.spans, Span(bg_end, len(nline.plain), bg)],
+                            [*nline.spans, Span(bg_end, len(nline.plain), cbg)],
                         )
                 new_content.append(nline)
         reuse = sum(self._built_spans[:keep])
@@ -221,8 +225,8 @@ class CanvasBlock:
             if not self.collapsed and self.content is not None:
                 lines.append(Content(f"{' ' * width}", spans=[Span(0, width, bg)]))
         if inner_width > 0 and rendered_content:
-            if bg:
-                left_pad = Content(" " * self.content_pad_left, spans=[Span(0, self.content_pad_left, bg)])
+            if cbg:
+                left_pad = Content(" " * self.content_pad_left, spans=[Span(0, self.content_pad_left, cbg)])
             else:
                 left_pad = Content(" " * self.content_pad_left)
             for line in rendered_content:
