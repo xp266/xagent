@@ -20,9 +20,9 @@ _FENCE_BG = "#1A1A1A"
 _OPEN_FENCE_FG = "#808080"
 
 _DIFF_DEL_FG = "#FF9E9E"
-_DIFF_DEL_BG = "#4C1616"
+_DIFF_DEL_BG = "#251F1F"
 _DIFF_ADD_FG = "#9FD28A"
-_DIFF_ADD_BG = "#1E3A1E"
+_DIFF_ADD_BG = "#1D271D"
 
 _HIGHLIGHT_CACHE: dict[tuple, list[Content]] = {}
 _HIGHLIGHT_CACHE_MAX = 100
@@ -310,7 +310,7 @@ def _numbered_diff_highlight(code: str, lang: str | None) -> list[Content]:
         hl = _highlight_lines(content, lang)
         for g, hl_line in zip(group, hl):
             if kind == " ":
-                parts = [(f"{g[0]:>{maxw}} ", _LINE_NO_FG)]
+                parts = [(f"{g[0]:>{maxw}}   ", f"{_LINE_NO_FG} on {_FENCE_BG}")]
                 bg = _FENCE_BG
             else:
                 if kind == "-":
@@ -319,7 +319,10 @@ def _numbered_diff_highlight(code: str, lang: str | None) -> list[Content]:
                 else:
                     marker_style = _DIFF_ADD_FG
                     bg = _DIFF_ADD_BG
-                parts = [(f"{g[0]:>{maxw}}", _LINE_NO_FG), (kind, marker_style)]
+                parts = [
+                    (f"{g[0]:>{maxw}} ", f"{_LINE_NO_FG} on {bg}"),
+                    (f"{kind} ", f"{marker_style} on {bg}"),
+                ]
             if hl_line.cell_length == 0:
                 hl_line = Content(" ", spans=[Span(0, 1, f"on {bg}")])
             else:
@@ -411,7 +414,7 @@ def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool 
     last = len(lines) - 1
     for i, line in enumerate(lines):
         if numbered:
-            parts.append((f"{i + line_number_start:>{width}} ", _LINE_NO_FG))
+            parts.append((f"{i + line_number_start:>{width}}   ", f"{_LINE_NO_FG} on {_FENCE_BG}"))
         bg = _line_bg(line)
         if bg is None:
             line = line.stylize(f"on {_FENCE_BG}")

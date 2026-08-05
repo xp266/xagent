@@ -53,7 +53,7 @@ def _line_no_end(line: Content, offset: int = 0) -> int:
     if first.start != offset:
         return 0
     style = _parse_rich_style(first.style)
-    if style is None or style.color is None or style.bgcolor is not None:
+    if style is None or style.color is None:
         return 0
     try:
         rgb = style.color.get_truecolor(None)
