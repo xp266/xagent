@@ -18,7 +18,6 @@ _MODELS_DB: dict | None = None
 
 
 def load_models_catalog() -> dict:
-    """Raw models.dev catalog, provider-id keyed. Shared with utils.providers."""
     global _CATALOG
     if _CATALOG is None:
         if os.path.isfile(_MODELS_PATH):

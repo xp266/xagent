@@ -21,13 +21,6 @@ _THINKING_BODY = "#9B9B9B"
 
 
 def _bg_span_end(line: Content) -> int:
-    """Rightmost extent of background spans in `line`.
-
-    Used as the fallback-background boundary: the block background must
-    not cover regions that already carry their own background (e.g. code
-    fences), so the block bg span starts right after the last existing
-    background span.
-    """
     end = 0
     for s in line.spans:
         style = s.style
@@ -47,12 +40,6 @@ def _bg_span_end(line: Content) -> int:
 
 
 class CanvasBlock:
-    """A single message block rendered into the chat canvas.
-
-    Renders a title line (optional, used when collapsed or for tool headers)
-    plus a body. Line content is cached per width; only the block that
-    changes is rebuilt.
-    """
 
     def __init__(
         self,
@@ -236,12 +223,6 @@ class CanvasBlock:
 
 
 class ChatCanvas(Static):
-    """Single-widget chat area.
-
-    All messages are drawn into one big canvas; scrolling the parent
-    scroll container only shifts cached lines (translate), new lines
-    entering the viewport are rendered on demand.
-    """
 
     def __init__(self, *children, **kwargs) -> None:
         super().__init__(*children, **kwargs)
@@ -369,9 +350,6 @@ class ChatCanvas(Static):
         if not self._blocks:
             return
         if self.text_selection is not None:
-            # A drag-select that ends on this block releases with a Click
-            # event; a real click clears the selection first. Skip the
-            # toggle so selecting text doesn't fold/unfold the block.
             return
         try:
             widget, offset = self.screen.get_widget_and_offset_at(

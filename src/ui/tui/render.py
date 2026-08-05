@@ -39,9 +39,6 @@ def is_error_result(name, result):
         )
         low = result.lower()
         return any(low.startswith(p) for p in error_prefixes)
-    # Tools whose result is arbitrary text (web pages, file listings, match
-    # lines): only trust the tool's own deterministic error prefixes instead
-    # of substring matching, which would flag e.g. "error" in page content.
     _PREFIX_ONLY = {
         "web": ("search failed:", "failed to fetch url:", "error fetching url:", "error:"),
         "glob": ("path is not a directory:",),
@@ -76,10 +73,6 @@ def clean_result(name, result):
 
 
 def read_result_to_lines(result: str) -> str:
-    """Strip the "N:content" line numbers the read tool emits for the model.
-
-    The renderer regenerates them (grey gutter) via render_markdown(numbered=True).
-    """
     lines = []
     for line in (result or "").split("\n"):
         m = _READ_LINE_RE.match(line)
@@ -88,11 +81,6 @@ def read_result_to_lines(result: str) -> str:
 
 
 def read_line_start(result: str, args: dict) -> int:
-    """First real line number of a read tool result.
-
-    Prefers the "N:content" prefixes in the output; falls back to the
-    offset argument so the gutter starts at the true line number.
-    """
     for line in (result or "").split("\n"):
         m = _READ_LINE_RE.match(line)
         if m:
@@ -176,13 +164,6 @@ def tool_render(name, args, result, is_error, preview=False):
 
 
 def _edit_hunk(file_path: str, old_str: str, new_str: str, ctx: int = 3):
-    """Locate the edit in the file and build (num, marker, text) rows.
-
-    Works whether the file still contains oldString (pre-edit) or already
-    contains newString (post-edit). Returns None when the position cannot
-    be determined. Line numbers: context and added lines use new-file
-    positions, deleted lines use old-file positions.
-    """
     if not file_path or not old_str:
         return None
     try:

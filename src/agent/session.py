@@ -22,8 +22,6 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 
 def _data_root() -> str:
-    # Resolve at call time so the data dir follows XAGENT_DATA_DIR
-    # changes (e.g. per-test isolation) instead of import time.
     return os.path.join(data_dir(), "sessions")
 
 

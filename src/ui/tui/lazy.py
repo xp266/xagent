@@ -8,7 +8,7 @@ from textual.strip import Strip
 from textual.style import Style as TextualStyle
 from textual.widgets import Static
 
-_LINE_NO_RGB = (133, 133, 133)  # markdown._LINE_NO_FG (#858585)
+_LINE_NO_RGB = (133, 133, 133)
 
 
 def _parse_rich_style(style):
@@ -65,7 +65,6 @@ def _line_no_end(line: Content, offset: int = 0) -> int:
 
 
 def _diff_marker_end(line: Content, offset: int = 0) -> int:
-    """Width of a `- ` / `+ ` diff marker after the line-number column."""
     no_w = _line_no_end(line, offset)
     if no_w <= 0:
         return 0
@@ -262,12 +261,6 @@ def _build_strip(line: Content, offset_y: int) -> Strip:
 
 
 def _apply_selection(strip: Strip, start: int, end: int, style) -> Strip:
-    """Derive a copy of `strip` with `style` applied to cells [start, end).
-
-    The original strip is left untouched; segments are split and restyled only
-    where they intersect the range. The offset meta used for selection tracking
-    is rewritten for split segments so the original column mapping is kept.
-    """
     from textual.style import Style as TextualStyle
 
     if isinstance(style, TextualStyle):

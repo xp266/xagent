@@ -29,8 +29,6 @@ _CUSTOM_ID_PREFIX = "custom:"
 
 class ProviderStore:
     def __init__(self, path: str | None = None) -> None:
-        # Resolve lazily so a store constructed after XAGENT_DATA_DIR changes
-        # (e.g. in tests) picks up the current data dir.
         self.path = path if path is not None else os.path.join(data_dir(), "config.json")
         self._config = self._load()
         self._builtin = load_models_catalog()

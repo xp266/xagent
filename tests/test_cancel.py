@@ -6,9 +6,7 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def _isolated_data_dir(tmp_path, monkeypatch):
-    """Keep tests away from the real config dir and from each other."""
     monkeypatch.setenv("XAGENT_DATA_DIR", str(tmp_path))
-    # Reset singletons so paths are re-resolved against the new data dir.
     import src.utils.providers as providers_mod
     import src.agent.session as session_mod
 

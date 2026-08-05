@@ -23,7 +23,6 @@ class ToolResult(BaseModel):
 
 
 class ToolOutput(TypedDict, total=False):
-    """Shape of the dict returned by ToolRegistry.execute()."""
     title: str
     output: str
     metadata: dict
