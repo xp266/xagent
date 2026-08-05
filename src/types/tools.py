@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, TypedDict
 from pydantic import BaseModel, ConfigDict
 
 
@@ -20,3 +20,11 @@ class ToolResult(BaseModel):
     metadata: dict = {}
     attachments: list = []
     is_error: bool = False
+
+
+class ToolOutput(TypedDict, total=False):
+    """Shape of the dict returned by ToolRegistry.execute()."""
+    title: str
+    output: str
+    metadata: dict
+    attachments: list

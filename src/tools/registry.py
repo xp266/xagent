@@ -2,7 +2,7 @@ import os
 import sys
 import importlib.util
 
-from src.types.tools import Tool, ToolResult
+from src.types.tools import Tool, ToolResult, ToolOutput
 
 
 class ToolRegistry:
@@ -57,7 +57,7 @@ class ToolRegistry:
             for t in self._tools.values()
         ]
 
-    def execute(self, name: str, args: dict) -> dict:
+    def execute(self, name: str, args: dict) -> ToolOutput:
         tool = self._tools.get(name)
         if not tool:
             raise ValueError(f"Unknown tool: {name}")

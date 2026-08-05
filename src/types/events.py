@@ -1,5 +1,54 @@
-from typing import Any
+from typing import Any, TypedDict
 from pydantic import BaseModel
+
+
+class ToolCallData(TypedDict):
+    id: str
+    name: str
+    input: dict
+
+
+class ToolInputStartData(TypedDict):
+    id: str
+    name: str
+
+
+class ToolInputDeltaData(TypedDict):
+    id: str
+    delta: str
+
+
+class ToolIdData(TypedDict):
+    id: str
+
+
+class ToolResultData(TypedDict, total=False):
+    id: str
+    name: str
+    result: str
+    attachments: list
+
+
+class ToolErrorData(TypedDict):
+    id: str
+    name: str
+    error: str
+
+
+class StepFinishData(TypedDict, total=False):
+    finish_reason: str
+    usage: dict
+
+
+class ProviderErrorData(TypedDict, total=False):
+    error: str
+    code: int
+
+
+class RetryScheduleData(TypedDict, total=False):
+    error: str
+    delay: float
+    attempt: int
 
 
 class StreamEvent(BaseModel):

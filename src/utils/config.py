@@ -1,12 +1,5 @@
-from pydantic import BaseModel
-
+from src.types.config import Config
 from src.utils.providers import get_store
-
-
-class Config(BaseModel):
-    base_url: str = ""
-    model: str = ""
-    api_key: str = ""
 
 
 def get_config() -> Config:

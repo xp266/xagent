@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
 from typing import Any
 
 from src.utils.paths import data_dir
 from src.utils.models import load_models_catalog
+from src.types.config import AppConfig, ProviderInfo
 
 
 FALLBACK_BASE_URL: dict[str, str] = {
@@ -25,26 +25,6 @@ FALLBACK_BASE_URL: dict[str, str] = {
 }
 
 _CUSTOM_ID_PREFIX = "custom:"
-
-
-@dataclass
-class ProviderInfo:
-    id: str
-    name: str
-    base_url: str
-    api_key: str = ""
-    is_custom: bool = False
-    models: list[str] = field(default_factory=list)
-    model_meta: dict[str, dict] = field(default_factory=dict)
-    selected_models: list[str] = field(default_factory=list)
-
-
-@dataclass
-class AppConfig:
-    active_provider: str = ""
-    active_model: str = ""
-    exa_api_key: str = ""
-    providers: dict[str, dict] = field(default_factory=dict)
 
 
 class ProviderStore:

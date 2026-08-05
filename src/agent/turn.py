@@ -7,7 +7,10 @@ import httpx
 from src.agent.cancel import TurnCancelled, is_cancelled, register_abort, unregister_abort
 from src.agent.loop import agent_stream
 from src.agent.session import Session, get_session_manager
-from src.types.events import LLMResponse, StreamEvent, TokenUsage
+from src.types.events import (
+    LLMResponse, StreamEvent, TokenUsage,
+    ToolCallData, ToolResultData, ToolErrorData, ProviderErrorData, RetryScheduleData,
+)
 from src.types.messages import AssistantMessage
 
 INTERRUPTED_TOOL_RESULT = "Tool call interrupted by user."
@@ -104,7 +107,7 @@ def _attach_turn_meta(session: Session, model: str, usage: TokenUsage, prompt_to
             return
 
 
-def _fill_tool_calls(response: LLMResponse, tool_calls_pending: list) -> None:
+def _fill_tool_calls(response: LLMResponse, tool_calls_pending: list[ToolCallData]) -> None:
     for tc in tool_calls_pending:
         response.tool_calls.append({
             "id": tc["id"],
@@ -142,8 +145,8 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
     try:
         while not cancelled:
             response = LLMResponse()
-            tool_calls_pending = []
-            tool_results = []
+            tool_calls_pending: list[ToolCallData] = []
+            tool_results: list[ToolResultData | ToolErrorData] = []
             turn_usage = TokenUsage()
             last_prompt_tokens = 0
             committed = False
@@ -215,18 +218,20 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                             )
                         _persist(session)
                     delay = _retry_delay(retry_count)
-                    yield StreamEvent(type="retry-schedule", data={
+                    retry_data: RetryScheduleData = {
                         "error": str(e),
                         "delay": delay,
                         "attempt": retry_count,
-                    })
+                    }
+                    yield StreamEvent(type="retry-schedule", data=retry_data)
                     try:
                         _sleep_interruptible(delay)
                     except TurnCancelled:
                         cancelled = True
                     continue
                 else:
-                    yield StreamEvent(type="provider-error", data={"error": str(e), "code": 0})
+                    err_data: ProviderErrorData = {"error": str(e), "code": 0}
+                    yield StreamEvent(type="provider-error", data=err_data)
                     _persist(session)
                     return
 
