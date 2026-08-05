@@ -472,7 +472,7 @@ class XAgentTUI(PickerMixin, App):
         waiting = cur.get("waiting")
         if waiting is None:
             return
-        self._stop_spinner(waiting)
+        self._stop_spinner(waiting, restore_arrow=False)
         cur["waiting"] = None
         try:
             self._canvas().remove(waiting)
@@ -668,7 +668,7 @@ class XAgentTUI(PickerMixin, App):
             self._flush_streaming_content()
         elif t == "reasoning-end":
             self._flush_streaming_content(force=True)
-            self._stop_spinner(cur.get("thinking_title"), restore_arrow=False)
+            self._stop_spinner(cur.get("thinking_title"))
             cur["thinking"] = None
             cur["thinking_title"] = None
             cur["thinking_col"] = None
