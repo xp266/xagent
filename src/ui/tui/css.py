@@ -1,5 +1,6 @@
 CSS = """
     Screen {
+        background: #0c0c0c;
         & > .screen--selection {
             background: $primary;
             color: $text;
