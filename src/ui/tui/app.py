@@ -20,7 +20,7 @@ from src.ui.tui.dialogs import PickerMixin
 from src.ui.tui.logo import LogoWidget
 from src.ui.tui.canvas import CanvasBlock, ChatCanvas, _THINKING_BODY, _THINKING_TITLE, _TOOL_BG, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
 from src.ui.tui.lazy import LazyText
-from src.ui.tui.markdown import render_markdown
+from src.ui.tui.markdown import StreamMarkdown, render_markdown
 from src.ui.tui.render import (
     block_tool, clean_result, code_tool, fmt_duration, fmt_pct, is_error_result,
     read_line_start, tool_block, tool_markdown, tool_render,
@@ -163,11 +163,16 @@ class XAgentTUI(PickerMixin, App):
             cur["thinking"].update(cur["reasoning_text"])
 
         if cur["reply"] is not None and cur.get("reply_text"):
-            reply_text = cur["reply_text"]
-            prev_len = cur.get("reply_appended", 0)
-            if len(reply_text) > prev_len:
-                cur["reply"].update(render_markdown(reply_text))
-                cur["reply_appended"] = len(reply_text)
+            md = cur.get("_reply_md")
+            if md is None:
+                md = StreamMarkdown()
+                cur["_reply_md"] = md
+            prev_len = cur.get("_reply_md_len", 0)
+            text = cur["reply_text"]
+            if len(text) > prev_len:
+                md.feed(text[prev_len:])
+                cur["_reply_md_len"] = len(text)
+            cur["reply"].update(md.render())
 
         for tc_id, tool in cur["tools"].items():
             if tool.get("done"):
@@ -285,6 +290,7 @@ class XAgentTUI(PickerMixin, App):
         remaining = retry["deadline"] - time.monotonic()
         if remaining <= 0:
             text = f"Request failed: {retry['error']}\nRetrying... (attempt {retry['attempt']}/{RETRY_LIMIT})"
+            self._ensure_waiting()
         else:
             text = f"Request failed: {retry['error']}\nRetrying in {int(remaining) + 1}s (attempt {retry['attempt']}/{RETRY_LIMIT})"
         if retry.get("last_text") != text:
@@ -327,6 +333,9 @@ class XAgentTUI(PickerMixin, App):
             cur["reply_text"] = ""
             cur["reply_appended"] = 0
         self._stop_all_spinners()
+        self._hide_waiting()
+        cur.pop("_reply_md", None)
+        cur["_reply_md_len"] = 0
 
     def _start_spinner(self, title) -> None:
         if title is None:
@@ -342,12 +351,13 @@ class XAgentTUI(PickerMixin, App):
         title.arrow_hidden = True
         title.set_title(f"{frame} {label}")
 
-    def _stop_spinner(self, title) -> None:
+    def _stop_spinner(self, title, *, restore_arrow: bool = True) -> None:
         if title is None:
             return
         if self._spinners.pop(id(title), None) is not None:
             label = getattr(title, "label", title.title)
-            title.arrow_hidden = False
+            if restore_arrow:
+                title.arrow_hidden = False
             title.set_title(label)
 
     def _stop_all_spinners(self) -> None:
@@ -439,6 +449,35 @@ class XAgentTUI(PickerMixin, App):
             cur["thinking_col"] = block
         self._start_spinner(cur["thinking_title"])
         return cur["thinking"]
+
+    def _ensure_waiting(self) -> None:
+        cur = self._current
+        if cur is None or cur.get("waiting") is not None:
+            return
+        block = self._append_block(
+            kind="waiting",
+            title="Waiting for response...",
+            title_style="bold white",
+            expandable=True,
+            collapsed=True,
+            pad_bottom=0,
+        )
+        cur["waiting"] = block
+        self._start_spinner(block)
+
+    def _hide_waiting(self) -> None:
+        cur = self._current
+        if cur is None:
+            return
+        waiting = cur.get("waiting")
+        if waiting is None:
+            return
+        self._stop_spinner(waiting)
+        cur["waiting"] = None
+        try:
+            self._canvas().remove(waiting)
+        except Exception:
+            pass
 
     def _remove_empty_thinking(self) -> None:
         cur = self._current
@@ -619,27 +658,30 @@ class XAgentTUI(PickerMixin, App):
             self._clear_retry()
         if t == "reasoning-start":
             cur["reasoning_text"] = ""
-            if cur["thinking"] is None:
-                self._ensure_thinking()
-            else:
-                self._start_spinner(cur["thinking_title"])
+            self._hide_waiting()
+            self._ensure_thinking()
         elif t == "reasoning-delta":
             cur["reasoning_text"] += event.data
             if cur["thinking"] is None:
                 self._ensure_thinking()
+                self._hide_waiting()
             self._flush_streaming_content()
         elif t == "reasoning-end":
             self._flush_streaming_content(force=True)
-            self._stop_spinner(cur.get("thinking_title"))
+            self._stop_spinner(cur.get("thinking_title"), restore_arrow=False)
             cur["thinking"] = None
             cur["thinking_title"] = None
             cur["thinking_col"] = None
+            self._ensure_waiting()
         elif t == "text-start":
             self._flush_streaming_content(force=True)
             self._remove_empty_thinking()
+            self._hide_waiting()
             cur["reply"] = None
             cur["reply_text"] = ""
             cur["reply_appended"] = 0
+            cur.pop("_reply_md", None)
+            cur["_reply_md_len"] = 0
             self._ensure_reply()
         elif t == "text-delta":
             cur["reply_text"] += event.data
@@ -647,6 +689,7 @@ class XAgentTUI(PickerMixin, App):
                 self._ensure_reply()
             self._flush_streaming_content()
         elif t == "tool-input-start":
+            self._hide_waiting()
             self._remove_empty_thinking()
             data = event.data
             self._add_tool_streaming(data["id"], data.get("name", ""))
@@ -673,13 +716,16 @@ class XAgentTUI(PickerMixin, App):
                 is_error_result(data["name"], result),
             )
             self._scroll_end()
+            self._ensure_waiting()
         elif t == "tool-error":
             data = event.data
             self._set_tool_result(data["id"], data["name"], data.get("error", ""), True)
             self._scroll_end()
+            self._ensure_waiting()
         elif t == "step-start":
             self._flush_streaming_content(force=True)
             self._stop_all_spinners()
+            self._ensure_waiting()
         elif t == "step-finish":
             usage = event.data.get("usage", {}) or {}
             cur["steps"] += 1
@@ -702,6 +748,7 @@ class XAgentTUI(PickerMixin, App):
             )
         elif t == "turn-cancelled":
             self._clear_retry()
+            self._hide_waiting()
             cur["interrupted"] = True
             block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
             block.update("Turn interrupted by user")
@@ -720,11 +767,16 @@ class XAgentTUI(PickerMixin, App):
         turn_done()
 
     def _finalize_turn(self, elapsed: float) -> None:
-        self._flush_streaming_content(force=True)
         cur = self._current
+        if cur is not None:
+            md = cur.get("_reply_md")
+            if md is not None:
+                md.finish()
+        self._flush_streaming_content(force=True)
         if cur and cur["steps"] > 0 and not cur.get("interrupted"):
             self._add_summary(elapsed)
         self._remove_empty_thinking()
+        self._hide_waiting()
         self._stop_all_spinners()
         self._waves.clear()
         self._busy = False
@@ -999,10 +1051,12 @@ class XAgentTUI(PickerMixin, App):
             "tool_inputs": {},
             "tool_buffers": {},
             "tool_done": set(),
+            "waiting": None,
             "last_stream_render": 0.0,
+            "_reply_md_len": 0,
         }
         self._append_user(text)
-        self._ensure_thinking()
+        self._ensure_waiting()
         self._scroll_end()
         if self._session.name == "New Session":
             s = self._session

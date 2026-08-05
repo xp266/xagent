@@ -76,6 +76,9 @@ class CanvasBlock:
         self._key: tuple = ()
         self.offset = 0
         self.owner: ChatCanvas | None = None
+        self._built_width: int = 0
+        self._built_content_raw: list[Content] = []
+        self._built_content: list[Content] = []
 
     @property
     def title_line(self) -> Content | None:
@@ -128,8 +131,48 @@ class CanvasBlock:
             owner.refresh(layout=True)
 
     def _build(self, width: int) -> list[Content]:
-        lines: list[Content] = []
         bg = f"on {self.bg}" if self.bg else ""
+        inner_width = max(0, width - self.pad_left - self.pad_right)
+        if self._built_width != width:
+            self._built_width = width
+            self._built_content_raw = []
+            self._built_content = []
+
+        content_lines: list[Content] = []
+        if not self.collapsed and self.content is not None:
+            content_lines = self.content.split("\n", allow_blank=True)
+            while content_lines and not content_lines[-1].plain:
+                content_lines.pop()
+
+        keep = 0
+        for a, b in zip(self._built_content_raw, content_lines):
+            if a.plain != b.plain or a.spans != b.spans:
+                break
+            keep += 1
+
+        new_content: list[Content] = []
+        for line in content_lines[keep:]:
+            if inner_width > 0:
+                if line.cell_length > inner_width:
+                    wrapped = line.wrap(inner_width)
+                else:
+                    wrapped = [line]
+            else:
+                wrapped = [line]
+            for nline in wrapped:
+                if self.bg:
+                    bg_end = _bg_span_end(nline)
+                    if bg_end < len(nline.plain):
+                        nline = Content(
+                            nline.plain,
+                            [*nline.spans, Span(bg_end, len(nline.plain), bg)],
+                        )
+                new_content.append(nline)
+        rendered_content = self._built_content[:keep] + new_content
+        self._built_content_raw = content_lines
+        self._built_content = rendered_content
+
+        lines: list[Content] = []
         if self.pad_top > 0:
             lines.extend(
                 Content(f"{' ' * width}", spans=[Span(0, width, bg)]) for _ in range(self.pad_top)
@@ -155,30 +198,13 @@ class CanvasBlock:
             lines.append(title_line)
             if not self.collapsed and self.content is not None:
                 lines.append(Content(f"{' ' * width}", spans=[Span(0, width, bg)]))
-        if not self.collapsed and self.content is not None:
-            inner_width = max(0, width - self.pad_left - self.pad_right)
-            if inner_width > 0:
-                if bg:
-                    left_pad = Content(" " * self.pad_left, spans=[Span(0, self.pad_left, bg)])
-                else:
-                    left_pad = Content(" " * self.pad_left)
-                content_lines = self.content.split("\n", allow_blank=True)
-                while content_lines and not content_lines[-1].plain:
-                    content_lines.pop()
-                for line in content_lines:
-                    if line.cell_length > inner_width:
-                        new_lines = line.wrap(inner_width)
-                    else:
-                        new_lines = [line]
-                    for nline in new_lines:
-                        if self.bg:
-                            bg_end = _bg_span_end(nline)
-                            if bg_end < len(nline.plain):
-                                nline = Content(
-                                    nline.plain,
-                                    [*nline.spans, Span(bg_end, len(nline.plain), bg)],
-                                )
-                        lines.append(left_pad + nline)
+        if inner_width > 0 and rendered_content:
+            if bg:
+                left_pad = Content(" " * self.pad_left, spans=[Span(0, self.pad_left, bg)])
+            else:
+                left_pad = Content(" " * self.pad_left)
+            for line in rendered_content:
+                lines.append(left_pad + line)
         if self.pad_bottom > 0:
             lines.extend(
                 Content(f"{' ' * width}", spans=[Span(0, width, bg)]) for _ in range(self.pad_bottom)

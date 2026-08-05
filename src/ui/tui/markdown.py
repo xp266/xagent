@@ -447,6 +447,30 @@ def _inline(text: str) -> Content:
     return Content.assemble(*parts)
 
 
+def _render_line(line: str) -> Content | None:
+    if not line.strip():
+        return None
+    m = _HEADING_RE.match(line)
+    if m is not None:
+        return Content.assemble((m.group(2), f"{_HEADING_FG}"))
+    if _HR_RE.match(line):
+        return Content.assemble(("─" * 30, _HR_FG))
+    m = _QUOTE_RE.match(line)
+    if m is not None:
+        return Content.assemble(
+            ("│ ", _QUOTE_FG), _inline(m.group(1)).stylize(_QUOTE_FG)
+        )
+    m = _UL_RE.match(line)
+    if m is not None:
+        return Content.assemble((m.group(1) + "• ", _QUOTE_FG), _inline(m.group(2)))
+    m = _OL_RE.match(line)
+    if m is not None:
+        return Content.assemble(
+            (m.group(1) + m.group(2) + ". ", _QUOTE_FG), _inline(m.group(3))
+        )
+    return _inline(line)
+
+
 def render_markdown(source: str, *, numbered: bool = False, line_number_start: int = 1) -> Content:
     parts: list = []
     lines = source.split("\n")
@@ -484,46 +508,116 @@ def render_markdown(source: str, *, numbered: bool = False, line_number_start: i
             parts.append(table)
             parts.append("\n")
             continue
-        m = _HEADING_RE.match(line)
-        if m is not None:
-            parts.append(Content.assemble((m.group(2), f"{_HEADING_FG}")))
+        rendered = _render_line(line)
+        if rendered is not None:
+            parts.append(rendered)
             parts.append("\n")
-            i += 1
-            continue
-        if _HR_RE.match(line):
-            parts.append(Content.assemble(("─" * 30, _HR_FG)))
-            parts.append("\n")
-            i += 1
-            continue
-        m = _QUOTE_RE.match(line)
-        if m is not None:
-            parts.append(
-                Content.assemble(
-                    ("│ ", _QUOTE_FG), _inline(m.group(1)).stylize(_QUOTE_FG)
-                )
-            )
-            parts.append("\n")
-            i += 1
-            continue
-        m = _UL_RE.match(line)
-        if m is not None:
-            parts.append(
-                Content.assemble((m.group(1) + "• ", _QUOTE_FG), _inline(m.group(2)))
-            )
-            parts.append("\n")
-            i += 1
-            continue
-        m = _OL_RE.match(line)
-        if m is not None:
-            parts.append(
-                Content.assemble(
-                    (m.group(1) + m.group(2) + ". ", _QUOTE_FG), _inline(m.group(3))
-                )
-            )
-            parts.append("\n")
-            i += 1
-            continue
-        parts.append(_inline(line))
-        parts.append("\n")
         i += 1
     return Content.assemble(*parts)
+
+
+class StreamMarkdown:
+    def __init__(self, *, numbered: bool = False, line_number_start: int = 1):
+        self._numbered = numbered
+        self._line_number_start = line_number_start
+        self._lines: list[Content] = []
+        self._tail = ""
+        self._prev: Content | None = None
+        self._prev_text = ""
+        self._fence_open = False
+        self._fence_lang: str | None = None
+        self._fence_diff = False
+        self._fence_body: list[str] = []
+        self._fence_start = 0
+        self._table_rows: list[str] | None = None
+
+    def feed(self, text: str) -> None:
+        text = self._tail + text
+        raw = text.split("\n")
+        self._tail = raw.pop()
+        for line in raw:
+            self._line(line)
+
+    def finish(self) -> None:
+        if self._tail:
+            self._line(self._tail)
+            self._tail = ""
+        if self._fence_open:
+            code = "\n".join(self._fence_body).rstrip("\n")
+            block = _open_fence(code)
+            del self._lines[self._fence_start:]
+            self._lines.extend(block.split("\n", allow_blank=True))
+            self._fence_open = False
+            self._fence_body = []
+        self._commit_prev()
+
+    def render(self) -> Content:
+        parts: list = []
+        for line in self._lines:
+            parts.append(line)
+            parts.append("\n")
+        if self._prev is not None:
+            parts.append(self._prev)
+            parts.append("\n")
+        if self._tail:
+            tail_line = _render_line(self._tail)
+            if tail_line is not None:
+                parts.append(tail_line)
+                parts.append("\n")
+        return Content.assemble(*parts)
+
+    def _commit_prev(self) -> None:
+        if self._prev is not None:
+            self._lines.append(self._prev)
+            self._prev = None
+            self._prev_text = ""
+
+    def _line(self, line: str) -> None:
+        if self._fence_open:
+            if _FENCE_RE.match(line) is not None:
+                code = "\n".join(self._fence_body).rstrip("\n")
+                self._close_fence(code)
+            else:
+                self._fence_body.append(line)
+                if line:
+                    self._lines.append(Content(line, spans=[Span(0, len(line), f"{_OPEN_FENCE_FG} on {_FENCE_BG}")]))
+                else:
+                    self._lines.append(Content(""))
+            return
+        if self._table_rows is not None:
+            if _is_table_row(line):
+                self._table_rows.append(line)
+                return
+            rows = self._table_rows
+            self._table_rows = None
+            block, _ = _table_block(rows, 0, len(rows))
+            self._lines.append(block)
+        m = _FENCE_RE.match(line)
+        if m is not None:
+            info = m.group(1)
+            lang, _, flags = info.partition("@")
+            self._fence_open = True
+            self._fence_lang = lang or None
+            self._fence_diff = flags == "n"
+            self._fence_body = []
+            self._commit_prev()
+            self._fence_start = len(self._lines)
+            return
+        if self._prev is not None:
+            if _is_table_row(self._prev_text) and _is_table_sep(line):
+                self._table_rows = [self._prev_text, line]
+                self._prev = None
+                self._prev_text = ""
+                return
+            self._lines.append(self._prev)
+        self._prev = _render_line(line)
+        self._prev_text = line
+
+    def _close_fence(self, code: str) -> None:
+        lang = self._fence_lang
+        block = _fence_body(code, lang, numbered=self._numbered, diff_nums=self._fence_diff, line_number_start=self._line_number_start)
+        del self._lines[self._fence_start:]
+        self._lines.extend(block.split("\n", allow_blank=True))
+        self._fence_open = False
+        self._fence_body = []
+        self._fence_start = 0
