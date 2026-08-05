@@ -250,6 +250,28 @@ def tool_block(name, args, result, is_error, preview=False):
     return None
 
 
+def tool_num_width(name: str, args: dict, result: str = "", is_error: bool = False) -> int:
+    if name == "write":
+        lines = (args.get("content", "") or "").rstrip("\n").split("\n")
+        return len(str(max(1, len(lines))))
+    if name == "read":
+        body = read_result_to_lines(result)
+        n = len(body.split("\n"))
+        start = read_line_start(result, args)
+        return len(str(max(1, start + n - 1)))
+    if name == "edit":
+        if not is_error and not args.get("replaceAll"):
+            rows = _edit_hunk(
+                args.get("filePath", "") or args.get("path", ""),
+                args.get("oldString", "") or "",
+                args.get("newString", "") or "",
+            )
+            if rows is not None:
+                return len(str(max(r[0] for r in rows)))
+        return 1
+    return 0
+
+
 def tool_markdown(name, args, result, is_error, preview=False):
     result = result or ""
     if name == "write":

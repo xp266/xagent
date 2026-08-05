@@ -75,7 +75,7 @@ def _diff_marker_end(line: Content, offset: int = 0) -> int:
         if s.start > start:
             break
         style = _parse_rich_style(s.style)
-        if style is None or style.bgcolor is None:
+        if style is None:
             continue
         if line.plain[s.start:s.end] in ("- ", "+ "):
             return s.end - s.start

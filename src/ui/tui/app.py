@@ -18,12 +18,12 @@ from src.ui.tui.css import CSS
 from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.dialogs import PickerMixin
 from src.ui.tui.logo import LogoWidget
-from src.ui.tui.canvas import CanvasBlock, ChatCanvas, _THINKING_BODY, _THINKING_TITLE, _TOOL_BG, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
+from src.ui.tui.canvas import CanvasBlock, ChatCanvas, _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
 from src.ui.tui.lazy import LazyText
 from src.ui.tui.markdown import StreamMarkdown, render_markdown
 from src.ui.tui.render import (
     block_tool, clean_result, code_tool, fmt_duration, fmt_pct, is_error_result,
-    read_line_start, tool_block, tool_markdown, tool_render,
+    read_line_start, tool_block, tool_markdown, tool_num_width, tool_render,
 )
 from src.ui.tui.streaming import stream_args
 from src.ui.tui.widgets import ChatInput, CommandPalette, ExaKeyDialog, ModelPicker, ProviderKeyDialog, ProviderPicker, SessionPicker
@@ -47,7 +47,7 @@ _BLUE_WAVE = (
 
 _WAVE_SPEED = 10.0
 
-_RENDER_COOLDOWN = 0.04
+_RENDER_COOLDOWN = 0.016
 
 
 def _lerp_hex(c1: str, c2: str, t: float) -> str:
@@ -99,8 +99,9 @@ class XAgentTUI(PickerMixin, App):
         bg: str | None = None,
         pad_top: int = 1,
         pad_bottom: int = 1,
-        pad_left: int = 3,
+        pad_left: int | None = 3,
         pad_right: int = 1,
+        content_pad_left: int | None = None,
         expandable: bool = False,
         collapsed: bool = False,
         hide_arrow: bool = False,
@@ -115,8 +116,9 @@ class XAgentTUI(PickerMixin, App):
                 bg=bg,
                 pad_top=pad_top,
                 pad_bottom=pad_bottom,
-                pad_left=pad_left,
+                pad_left=3 if pad_left is None else pad_left,
                 pad_right=pad_right,
+                content_pad_left=content_pad_left,
                 expandable=expandable,
                 collapsed=collapsed,
                 hide_arrow=hide_arrow,
@@ -530,11 +532,13 @@ class XAgentTUI(PickerMixin, App):
                 kind="tool-block",
                 title=name,
                 title_style=_TOOL_HEADER,
-                bg=_TOOL_BG,
+                expandable=True,
+                collapsed=False,
                 pad_top=1,
-                pad_bottom=1,
-                pad_left=3,
+                pad_bottom=0,
+                pad_left=2,
                 pad_right=1,
+                content_pad_left=0,
             )
             tool["block"] = block
             tool["st"] = block
@@ -549,6 +553,7 @@ class XAgentTUI(PickerMixin, App):
                 expandable=True,
                 collapsed=True,
                 pad_bottom=0,
+                content_pad_left=0 if name == "read" else None,
             )
             tool["title"] = title
             tool["block"] = block
@@ -591,6 +596,7 @@ class XAgentTUI(PickerMixin, App):
             if tool["title"] != title:
                 tool["title"] = title
                 self._render_tool_spinner(tool)
+            tool["block"].pad_left = tool_num_width(name, args) + 1
             tool["st"].update(render_markdown(body, numbered=(name == "write")))
         else:
             title, t = tool_render(name, args, None, False)
@@ -612,6 +618,7 @@ class XAgentTUI(PickerMixin, App):
             title, body = tool_block(name, tool["input"], result, is_error)
             tool["title"] = title
             tool["header"].set_title(title)
+            tool["block"].pad_left = tool_num_width(name, tool["input"], result, is_error) + 1
             tool["st"].update(render_markdown(body, numbered=(name == "write")))
             if is_error:
                 tool["col"].title_style = _TOOL_ERROR
@@ -627,6 +634,8 @@ class XAgentTUI(PickerMixin, App):
                 tool["title"] = m_title
                 if tool["block"] is not None and tool["block"].title != m_title:
                     tool["block"].set_title(m_title)
+                tool["col"].pad_left = tool_num_width(name, tool["input"], result, is_error) + 1
+                tool["col"].content_pad_left = 0
                 self._set_tool_content(tool["col"], LazyText(render_markdown(m, numbered=(name == "read"), line_number_start=read_line_start(result, tool["input"]))))
                 if is_error:
                     tool["col"].title_style = _TOOL_ERROR
@@ -906,11 +915,13 @@ class XAgentTUI(PickerMixin, App):
                             kind="tool-block",
                             title=title,
                             title_style=_TOOL_ERROR if is_error else _TOOL_HEADER,
-                            bg=_TOOL_BG,
+                            expandable=True,
+                            collapsed=False,
                             pad_top=1,
-                            pad_bottom=1,
-                            pad_left=3,
+                            pad_bottom=0,
+                            pad_left=tool_num_width(name, args, result, is_error) + 1,
                             pad_right=1,
+                            content_pad_left=0,
                         )
                         block.update(render_markdown(body, numbered=(name == "write")))
                         continue
@@ -928,6 +939,8 @@ class XAgentTUI(PickerMixin, App):
                         expandable=True,
                         collapsed=True,
                         pad_bottom=0,
+                        pad_left=tool_num_width(name, args, result, is_error) + 1 if name == "read" else None,
+                        content_pad_left=0 if name == "read" else None,
                     )
                     block.update(content_widget)
 

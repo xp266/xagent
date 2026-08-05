@@ -12,7 +12,6 @@ from textual.widgets import Static
 from src.ui.tui.lazy import _apply_selection, _build_strip, _diff_marker_end, _line_no_end, _pad_line
 
 _USER_BG = "#1A1A1A"
-_TOOL_BG = "#1A1A1A"
 _THINKING_TITLE = "#5B9BD5"
 _TOOL_TITLE = "#808080"
 _TOOL_ERROR = "#A75252"
@@ -54,6 +53,7 @@ class CanvasBlock:
         pad_bottom: int = 0,
         pad_left: int = 1,
         pad_right: int = 1,
+        content_pad_left: int | None = None,
         expandable: bool = False,
         hide_arrow: bool = False,
     ) -> None:
@@ -70,6 +70,7 @@ class CanvasBlock:
         self.pad_bottom = pad_bottom
         self.pad_left = pad_left
         self.pad_right = pad_right
+        self.content_pad_left = pad_left if content_pad_left is None else content_pad_left
         self.arrow_hidden: bool = False
         self.content: Content | None = None
         self._lines: list[Content] = []
@@ -80,6 +81,7 @@ class CanvasBlock:
         self.owner: ChatCanvas | None = None
         self._built_width: int = 0
         self._built_content_raw: list[Content] = []
+        self._built_spans: list[int] = []
         self._built_content: list[Content] = []
 
     @property
@@ -97,6 +99,7 @@ class CanvasBlock:
             self.pad_top,
             self.pad_bottom,
             self.pad_left,
+            self.content_pad_left,
             self.pad_right,
             self.bg,
             self.body_style,
@@ -138,6 +141,7 @@ class CanvasBlock:
         if self._built_width != width:
             self._built_width = width
             self._built_content_raw = []
+            self._built_spans = []
             self._built_content = []
 
         content_lines: list[Content] = []
@@ -153,6 +157,7 @@ class CanvasBlock:
             keep += 1
 
         new_content: list[Content] = []
+        new_spans: list[int] = []
         for line in content_lines[keep:]:
             if inner_width > 0:
                 if line.cell_length > inner_width:
@@ -161,6 +166,7 @@ class CanvasBlock:
                     wrapped = [line]
             else:
                 wrapped = [line]
+            new_spans.append(len(wrapped))
             for nline in wrapped:
                 if self.bg:
                     bg_end = _bg_span_end(nline)
@@ -170,8 +176,10 @@ class CanvasBlock:
                             [*nline.spans, Span(bg_end, len(nline.plain), bg)],
                         )
                 new_content.append(nline)
-        rendered_content = self._built_content[:keep] + new_content
+        reuse = sum(self._built_spans[:keep])
+        rendered_content = self._built_content[:reuse] + new_content
         self._built_content_raw = content_lines
+        self._built_spans = self._built_spans[:keep] + new_spans
         self._built_content = rendered_content
 
         lines: list[Content] = []
@@ -201,9 +209,9 @@ class CanvasBlock:
                 lines.append(Content(f"{' ' * width}", spans=[Span(0, width, bg)]))
         if inner_width > 0 and rendered_content:
             if bg:
-                left_pad = Content(" " * self.pad_left, spans=[Span(0, self.pad_left, bg)])
+                left_pad = Content(" " * self.content_pad_left, spans=[Span(0, self.content_pad_left, bg)])
             else:
-                left_pad = Content(" " * self.pad_left)
+                left_pad = Content(" " * self.content_pad_left)
             for line in rendered_content:
                 lines.append(left_pad + line)
         if self.pad_bottom > 0:
@@ -284,7 +292,7 @@ class ChatCanvas(Static):
                 continue
             line = block._lines[by]
             plain = line.plain
-            pl = 0 if block.title_line is not None and by == block.pad_top else block.pad_left
+            pl = 0 if block.title_line is not None and by == block.pad_top else block.content_pad_left
             s = x0 if y == y0 else 0
             e = x1 if y == y1 else -1
             no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
@@ -364,7 +372,7 @@ class ChatCanvas(Static):
                 if start < end:
                     if block is not None and by < len(block._lines):
                         line = block._lines[by]
-                        pl = 0 if block.title_line is not None and by == block.pad_top else block.pad_left
+                        pl = 0 if block.title_line is not None and by == block.pad_top else block.content_pad_left
                         no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
                         if start < pl + no_w:
                             start = pl + no_w
