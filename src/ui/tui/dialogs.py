@@ -121,7 +121,7 @@ class PickerMixin:
 
     def on_strength_picker_selected(self, message: StrengthPicker.Selected) -> None:
         store = get_store()
-        store.set_reasoning_effort(message.effort)
+        store.set_reasoning_effort(store.active_model, message.effort)
         self._session.reset_provider()
         self._update_status()
         self.query_one("#input", ChatInput).focus()

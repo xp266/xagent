@@ -16,7 +16,7 @@ class AppConfig(BaseModel):
     active_provider: str = ""
     active_model: str = ""
     exa_api_key: str = ""
-    reasoning_effort: str = ""
+    reasoning_effort: dict[str, str] = Field(default_factory=dict)
     providers: dict[str, dict] = Field(default_factory=dict)
 
 

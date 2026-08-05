@@ -43,11 +43,18 @@ class ProviderStore:
         except (json.JSONDecodeError, OSError):
             return AppConfig()
         providers = raw.get("providers", {}) or {}
+        raw_effort = raw.get("reasoning_effort", "")
+        if isinstance(raw_effort, dict):
+            efforts = {str(k): str(v) for k, v in raw_effort.items() if v}
+        elif raw_effort:
+            efforts = {str(raw.get("active_model", "")): str(raw_effort)} if raw.get("active_model") else {}
+        else:
+            efforts = {}
         return AppConfig(
             active_provider=str(raw.get("active_provider", "")),
             active_model=str(raw.get("active_model", "")),
             exa_api_key=str(raw.get("exa_api_key", "")),
-            reasoning_effort=str(raw.get("reasoning_effort", "")),
+            reasoning_effort=efforts,
             providers={k: v for k, v in providers.items() if isinstance(v, dict)},
         )
 
@@ -182,11 +189,18 @@ class ProviderStore:
         self.save()
 
     @property
-    def reasoning_effort(self) -> str:
-        return self._config.reasoning_effort
+    def reasoning_effort(self) -> dict[str, str]:
+        return dict(self._config.reasoning_effort)
 
-    def set_reasoning_effort(self, value: str) -> None:
-        self._config.reasoning_effort = (value or "").strip()
+    def get_reasoning_effort(self, model: str) -> str:
+        return self._config.reasoning_effort.get(model, "")
+
+    def set_reasoning_effort(self, model: str, value: str) -> None:
+        value = (value or "").strip()
+        if value:
+            self._config.reasoning_effort[model] = value
+        else:
+            self._config.reasoning_effort.pop(model, None)
         self.save()
 
     def get_active(self) -> ProviderInfo | None:
@@ -196,12 +210,12 @@ class ProviderStore:
         model = self._config.active_model
         p = self.get_active()
         if p is None:
-            return {"base_url": "", "api_key": "", "model": model or "", "reasoning_effort": self._config.reasoning_effort}
+            return {"base_url": "", "api_key": "", "model": model or "", "reasoning_effort": self.get_reasoning_effort(model)}
         return {
             "base_url": p.base_url,
             "api_key": p.api_key,
             "model": model,
-            "reasoning_effort": self._config.reasoning_effort,
+            "reasoning_effort": self.get_reasoning_effort(model),
         }
 
 
