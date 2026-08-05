@@ -3,11 +3,6 @@ from typing import Union
 from pydantic import BaseModel, Field
 
 
-class ImageContent(BaseModel):
-    url: str
-    mime: str
-
-
 class ToolCall(BaseModel):
     id: str
     name: str
@@ -36,20 +31,12 @@ class SystemMessage(BaseModel):
     def to_api(self) -> dict:
         return {"role": "system", "content": self.content}
 
-    @classmethod
-    def from_api(cls, d: dict) -> "SystemMessage":
-        return cls(content=d.get("content", ""))
-
 
 class UserMessage(BaseModel):
     content: str
 
     def to_api(self) -> dict:
         return {"role": "user", "content": self.content}
-
-    @classmethod
-    def from_api(cls, d: dict) -> "UserMessage":
-        return cls(content=d.get("content", ""))
 
 
 class AssistantMessage(BaseModel):
@@ -70,21 +57,6 @@ class AssistantMessage(BaseModel):
             msg["tool_calls"] = [tc.to_api() for tc in self.tool_calls]
         return msg
 
-    @classmethod
-    def from_api(cls, d: dict, reasoning_field: str = "reasoning_content") -> "AssistantMessage":
-        msg = cls(content=d.get("content") or "")
-        rc = d.get(reasoning_field)
-        if rc:
-            msg.reasoning = rc
-        sig = d.get("signature")
-        if sig:
-            msg.signature = sig
-        for tc in d.get("tool_calls", []):
-            msg.tool_calls.append(ToolCall.from_api(tc))
-        if d.get("_meta"):
-            msg.meta = d["_meta"]
-        return msg
-
 
 class ToolMessage(BaseModel):
     tool_call_id: str
@@ -97,14 +69,6 @@ class ToolMessage(BaseModel):
         if self.is_error:
             msg["is_error"] = True
         return msg
-
-    @classmethod
-    def from_api(cls, d: dict) -> "ToolMessage":
-        return cls(
-            tool_call_id=d.get("tool_call_id", ""),
-            content=d.get("content", ""),
-            is_error=bool(d.get("is_error")),
-        )
 
 
 Message = Union[SystemMessage, UserMessage, AssistantMessage, ToolMessage]

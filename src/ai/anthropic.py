@@ -7,8 +7,7 @@ import httpx
 from httpx import Timeout
 
 from src.ai.base import Provider
-from src.ai.capabilities import detect_capabilities, get_model_output_limit
-from src.types.config import Capabilities
+from src.utils.models import Capabilities, detect_capabilities, get_model_output_limit
 from src.types.events import StreamEvent, TokenUsage
 from src.agent.cancel import TurnCancelled, is_cancelled
 

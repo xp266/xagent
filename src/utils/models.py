@@ -1,22 +1,41 @@
 import os
 import json
 
-from src.types.config import Capabilities
+from pydantic import BaseModel
 
+
+class Capabilities(BaseModel):
+    image: bool = False
+    audio: bool = False
+    video: bool = False
+    pdf: bool = False
+    reasoning_field: str = "reasoning_content"
+
+
+_MODELS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models.json")
+_CATALOG: dict | None = None
 _MODELS_DB: dict | None = None
 
 
+def load_models_catalog() -> dict:
+    """Raw models.dev catalog, provider-id keyed. Shared with utils.providers."""
+    global _CATALOG
+    if _CATALOG is None:
+        if os.path.isfile(_MODELS_PATH):
+            try:
+                with open(_MODELS_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                _CATALOG = data if isinstance(data, dict) else {}
+            except (json.JSONDecodeError, OSError):
+                _CATALOG = {}
+        else:
+            _CATALOG = {}
+    return _CATALOG
+
+
 def _load_models_db() -> dict:
-    path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models.json")
-    if not os.path.isfile(path):
-        return {}
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return {}
     index = {}
-    for provider in data.values():
+    for provider in load_models_catalog().values():
         for mname, m in provider.get("models", {}).items():
             mods = m.get("modalities", {}).get("input", [])
             if mname not in index:

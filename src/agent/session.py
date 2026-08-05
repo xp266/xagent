@@ -18,33 +18,41 @@ if TYPE_CHECKING:
     from src.ai.base import Provider
 
 
-_DATA_ROOT = os.path.join(data_dir(), "sessions")
-_INDEX_PATH = os.path.join(data_dir(), "sessions_index.json")
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
+def _data_root() -> str:
+    # Resolve at call time so the data dir follows XAGENT_DATA_DIR
+    # changes (e.g. per-test isolation) instead of import time.
+    return os.path.join(data_dir(), "sessions")
+
+
+def _index_path() -> str:
+    return os.path.join(data_dir(), "sessions_index.json")
+
+
 def _ensure_dirs():
-    os.makedirs(_DATA_ROOT, exist_ok=True)
+    os.makedirs(_data_root(), exist_ok=True)
 
 
 def _file_path(session_id: str) -> str:
     safe = session_id.replace("/", "_").replace("\\", "_")
-    return os.path.join(_DATA_ROOT, f"{safe}.json")
+    return os.path.join(_data_root(), f"{safe}.json")
 
 
 def _read_index() -> list[dict]:
-    if not os.path.isfile(_INDEX_PATH):
+    if not os.path.isfile(_index_path()):
         return []
     try:
-        with open(_INDEX_PATH, "r", encoding="utf-8") as f:
+        with open(_index_path(), "r", encoding="utf-8") as f:
             return json.load(f)
     except (json.JSONDecodeError, OSError):
         return []
 
 
 def _write_index(entries: list[dict]):
-    os.makedirs(os.path.dirname(_INDEX_PATH), exist_ok=True)
-    with open(_INDEX_PATH, "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(_index_path()), exist_ok=True)
+    with open(_index_path(), "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
 
 
@@ -60,7 +68,7 @@ def _read_session(session_id: str) -> dict | None:
 
 
 def _write_session(data: dict):
-    os.makedirs(_DATA_ROOT, exist_ok=True)
+    os.makedirs(_data_root(), exist_ok=True)
     with open(_file_path(data["id"]), "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 

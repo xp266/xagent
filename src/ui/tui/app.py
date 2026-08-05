@@ -10,7 +10,7 @@ from rich.text import Text
 
 from src.agent import get_session_manager, run_session_turn, name_session_from_first_message
 from src.agent.turn import RETRY_LIMIT
-from src.ai.capabilities import get_model_context_limit
+from src.utils.models import get_model_context_limit
 from src.utils.config import get_config
 from src.types.events import StreamEvent
 

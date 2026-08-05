@@ -7,7 +7,7 @@ from openai import OpenAI
 
 from src.types.events import StreamEvent, TokenUsage
 from src.ai.base import Provider
-from src.ai.capabilities import detect_capabilities
+from src.utils.models import detect_capabilities
 from src.agent.cancel import TurnCancelled, is_cancelled
 
 _SURROGATE_RE = re.compile(r'[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]')

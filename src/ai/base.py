@@ -3,7 +3,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from src.types.events import StreamEvent, LLMResponse
-from src.types.config import Capabilities
+from src.utils.models import Capabilities
 
 
 class Provider(ABC):

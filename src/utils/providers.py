@@ -6,8 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.utils.paths import data_dir
-
-_MODELS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models.json")
+from src.utils.models import load_models_catalog
 
 
 FALLBACK_BASE_URL: dict[str, str] = {
@@ -54,7 +53,7 @@ class ProviderStore:
         # (e.g. in tests) picks up the current data dir.
         self.path = path if path is not None else os.path.join(data_dir(), "config.json")
         self._config = self._load()
-        self._builtin = self._load_builtin()
+        self._builtin = load_models_catalog()
 
 
     def _load(self) -> AppConfig:
@@ -111,18 +110,6 @@ class ProviderStore:
         entry = self._builtin.get(pid, {})
         return entry.get("api") or FALLBACK_BASE_URL.get(pid, "")
 
-    def _builtin_models(self, pid: str) -> tuple[list[str], dict[str, dict]]:
-        entry = self._builtin.get(pid, {})
-        models = entry.get("models", {})
-        if not isinstance(models, dict):
-            return [], {}
-        ids = list(models.keys())
-        meta = {}
-        for mid, m in models.items():
-            if isinstance(m, dict):
-                meta[mid] = m
-        return ids, meta
-
 
     def list_providers(self) -> list[ProviderInfo]:
         result = []
@@ -130,7 +117,9 @@ class ProviderStore:
             entry = self._builtin[pid]
             name = entry.get("name") or pid
             base_url = self._builtin_base_url(pid)
-            models, meta = self._builtin_models(pid)
+            raw_models = entry.get("models", {})
+            models = list(raw_models.keys()) if isinstance(raw_models, dict) else []
+            meta = {mid: m for mid, m in raw_models.items() if isinstance(m, dict)}
             stored = self._config.providers.get(pid, {})
             result.append(ProviderInfo(
                 id=pid,
