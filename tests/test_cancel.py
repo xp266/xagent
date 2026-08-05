@@ -1,8 +1,14 @@
-import os
 import threading
 import time
 
-os.environ["XAGENT_DATA_DIR"] = "/tmp/xagent-test-data-cancel"
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path, monkeypatch):
+    """Keep tests away from the real config dir and from each other."""
+    monkeypatch.setenv("XAGENT_DATA_DIR", str(tmp_path))
+
 
 from src.agent.session import Session
 from src.ai.base import Provider

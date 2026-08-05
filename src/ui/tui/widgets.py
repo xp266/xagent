@@ -1,6 +1,6 @@
 from textual import events
 from textual.app import ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Static, TextArea, Input
 import time
@@ -612,10 +612,19 @@ class ModelPicker(_ListPicker):
         for child in list(list_box.children):
             child.remove()
         for i, item in enumerate(self._filtered):
-            row = Static(self.item_label(item), classes="picker-row")
+            row = self._make_row(item)
             if i == 0:
                 row.add_class("selected")
             list_box.mount(row)
+
+    def _make_row(self, item):
+        if isinstance(item, tuple) and len(item) >= 3 and item[2]:
+            return Horizontal(
+                Static(item[0], classes="model-name"),
+                Static(item[2], classes="model-provider"),
+                classes="picker-row",
+            )
+        return Static(self.item_label(item), classes="picker-row")
 
 
 class ProviderKeyDialog(Vertical):

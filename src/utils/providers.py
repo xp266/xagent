@@ -8,7 +8,6 @@ from typing import Any
 from src.utils.paths import data_dir
 
 _MODELS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models.json")
-_CONFIG_PATH = os.path.join(data_dir(), "config.json")
 
 
 FALLBACK_BASE_URL: dict[str, str] = {
@@ -50,8 +49,10 @@ class AppConfig:
 
 
 class ProviderStore:
-    def __init__(self, path: str = _CONFIG_PATH) -> None:
-        self.path = path
+    def __init__(self, path: str | None = None) -> None:
+        # Resolve lazily so a store constructed after XAGENT_DATA_DIR changes
+        # (e.g. in tests) picks up the current data dir.
+        self.path = path if path is not None else os.path.join(data_dir(), "config.json")
         self._config = self._load()
         self._builtin = self._load_builtin()
 

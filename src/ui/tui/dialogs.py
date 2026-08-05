@@ -102,7 +102,7 @@ class PickerMixin:
         self._set_palette_open(False)
         picker = self._model_picker()
         picker._add_enabled = False
-        picker.show(models)
+        picker.show([(m, provider.id, provider.name) for m in models])
 
     def _open_add_model_flow(self) -> None:
         store = get_store()

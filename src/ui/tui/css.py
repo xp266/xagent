@@ -68,6 +68,21 @@ CSS = """
         height: 1;
         padding: 0 1;
     }
+    ModelPicker .picker-row {
+        layout: horizontal;
+        width: 100%;
+    }
+    ModelPicker .model-name {
+        width: 1fr;
+        height: 1;
+        overflow: hidden;
+    }
+    ModelPicker .model-provider {
+        width: auto;
+        height: 1;
+        text-align: right;
+        color: #555555;
+    }
     SessionPicker .picker-row.selected,
     ProviderPicker .picker-row.selected,
     ModelPicker .picker-row.selected {

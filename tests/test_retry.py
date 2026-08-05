@@ -1,6 +1,11 @@
-import os
+import pytest
 
-os.environ["XAGENT_DATA_DIR"] = "/tmp/xagent-test-data"
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(tmp_path, monkeypatch):
+    """Keep tests away from the real config dir and from each other."""
+    monkeypatch.setenv("XAGENT_DATA_DIR", str(tmp_path))
+
 
 from src.agent.turn import _is_retryable, _ProviderError, run_session_turn
 from src.agent.session import Session
