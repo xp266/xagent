@@ -357,8 +357,10 @@ class XAgentTUI(PickerMixin, App):
         if title is None:
             return
         if self._spinners.pop(id(title), None) is not None:
+            if getattr(title, "hide_arrow", False):
+                return
             label = getattr(title, "label", title.title)
-            if restore_arrow and not getattr(title, "hide_arrow", False):
+            if restore_arrow:
                 title.arrow_hidden = False
             title.set_title(label)
 
