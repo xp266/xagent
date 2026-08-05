@@ -554,8 +554,9 @@ class XAgentTUI(PickerMixin, App):
                 title=title,
                 title_style=_TOOL_TITLE,
                 expandable=True,
-                collapsed=True,
+                collapsed=False if name == "bash" else True,
                 pad_bottom=0,
+                bg=_USER_BG if name == "bash" else None,
                 content_pad_left=0 if name == "read" else None,
             )
             tool["title"] = title
@@ -940,8 +941,9 @@ class XAgentTUI(PickerMixin, App):
                         title=title,
                         title_style=_TOOL_ERROR if is_error else _TOOL_TITLE,
                         expandable=True,
-                        collapsed=True,
+                        collapsed=False if name == "bash" else True,
                         pad_bottom=0,
+                        bg=_USER_BG if name == "bash" else None,
                         pad_left=tool_num_width(name, args, result, is_error) + 1 if name == "read" else None,
                         content_pad_left=0 if name == "read" else None,
                     )
