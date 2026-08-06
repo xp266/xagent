@@ -1133,6 +1133,8 @@ class XAgentTUI(PickerMixin, App):
 
     def on_mount(self) -> None:
         self.title = "XAgent"
+        from src.agent.truncate import TruncateService
+        TruncateService().cleanup()
         self._update_status()
         self._show_logo()
         self._scroll_end()

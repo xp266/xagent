@@ -419,10 +419,6 @@ class SessionPicker(_ListPicker):
         self._disarm_delete()
         super().hide()
 
-    def _rebuild(self) -> None:
-        super()._rebuild()
-        self._disarm_delete()
-
     def _arm_delete(self, item) -> None:
         self._delete_armed_at = time.monotonic()
         self._delete_target = item

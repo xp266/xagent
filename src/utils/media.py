@@ -1,7 +1,4 @@
-import base64
 import io
-import os
-import re
 
 SUPPORTED_IMAGE_MIMES = frozenset({
     "image/png", "image/jpeg", "image/gif", "image/webp",
@@ -15,13 +12,9 @@ _IMAGE_MAGIC = [
     ("image/bmp",  [(0, b"BM")]),
 ]
 
-MAX_MEDIA_ENCODED_BYTES = 28 * 1024 * 1024
-MAX_MEDIA_DECODED_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_BASE64_BYTES = 5 * 1024 * 1024
 MAX_IMAGE_WIDTH = 2000
 MAX_IMAGE_HEIGHT = 2000
-
-SAMPLE_BYTES = 4096
 
 
 def sniff_mime(data: bytes) -> str | None:
@@ -38,46 +31,6 @@ def sniff_mime(data: bytes) -> str | None:
 
 def is_supported_image(mime: str) -> bool:
     return mime in SUPPORTED_IMAGE_MIMES
-
-
-def make_data_url(mime: str, data: bytes) -> str:
-    b64 = base64.b64encode(data).decode("ascii")
-    return f"data:{mime};base64,{b64}"
-
-
-def parse_data_url(url: str) -> tuple[str, str]:
-    m = re.match(r"^data:([^;]+);base64,(.*)$", url)
-    if not m:
-        raise ValueError("Invalid data URL")
-    return m.group(1).lower(), m.group(2)
-
-
-def validate_media(route: str, media_type: str, data: str | bytes, supported_mimes: set) -> dict:
-    mime = media_type.lower()
-    if mime not in supported_mimes:
-        raise ValueError(f"{route} does not support media type {media_type}")
-
-    if isinstance(data, bytes):
-        raw_b64 = base64.b64encode(data).decode("ascii")
-        decoded = data
-    elif data.startswith("data:"):
-        parsed_mime, raw_b64 = parse_data_url(data)
-        if parsed_mime and parsed_mime != mime:
-            raise ValueError(f"MIME mismatch: data URL says {parsed_mime}, expected {mime}")
-        decoded = base64.b64decode(raw_b64, validate=True)
-    else:
-        raw_b64 = data
-        try:
-            decoded = base64.b64decode(raw_b64, validate=True)
-        except Exception:
-            raise ValueError(f"{route}: invalid base64 encoding")
-
-    if len(raw_b64) > MAX_MEDIA_ENCODED_BYTES:
-        raise ValueError(f"{route}: media too large ({len(raw_b64)} encoded bytes, max {MAX_MEDIA_ENCODED_BYTES})")
-    if len(decoded) > MAX_MEDIA_DECODED_BYTES:
-        raise ValueError(f"{route}: media too large ({len(decoded)} decoded bytes, max {MAX_MEDIA_DECODED_BYTES})")
-
-    return {"mime": mime, "base64": raw_b64, "data_url": make_data_url(mime, decoded), "bytes": len(decoded)}
 
 
 def normalize_image(image_data: bytes, mime: str) -> bytes:
@@ -118,28 +71,3 @@ def normalize_image(image_data: bytes, mime: str) -> bytes:
     buf = io.BytesIO()
     img.save(buf, format=fmt, quality=40)
     return buf.getvalue()
-
-
-def read_image_file(filepath: str) -> dict | None:
-    with open(filepath, "rb") as f:
-        sample = f.read(SAMPLE_BYTES)
-    mime = sniff_mime(sample)
-    if not mime or not is_supported_image(mime):
-        return None
-
-    file_size = os.path.getsize(filepath)
-    if file_size > MAX_MEDIA_DECODED_BYTES:
-        return None
-
-    with open(filepath, "rb") as f:
-        full_data = f.read()
-
-    full_data = normalize_image(full_data, mime)
-    data_url = make_data_url(mime, full_data)
-
-    return {
-        "type": "file",
-        "mime": mime,
-        "url": data_url,
-        "filename": os.path.basename(filepath),
-    }

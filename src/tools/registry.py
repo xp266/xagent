@@ -2,7 +2,7 @@ import os
 import sys
 import importlib.util
 
-from src.types.tools import Tool, ToolResult, ToolOutput
+from src.types.tools import Tool, ToolOutput
 
 
 class ToolRegistry:
@@ -14,10 +14,6 @@ class ToolRegistry:
 
     def register(self, tool: Tool):
         self._tools[tool.name] = tool
-
-    def register_many(self, tools: list[Tool]):
-        for t in tools:
-            self.register(t)
 
     def load_local(self, tools_dir: str):
         if not os.path.isdir(tools_dir):
@@ -67,9 +63,7 @@ class ToolRegistry:
         except TypeError as e:
             return {"title": name, "output": f"Tool execution error: {e}", "metadata": {"error": True}}
 
-        if isinstance(raw, ToolResult):
-            result_dict = {"title": raw.title, "output": raw.output, "metadata": raw.metadata, "attachments": raw.attachments}
-        elif isinstance(raw, dict):
+        if isinstance(raw, dict):
             result_dict = {
                 "title": raw.get("title", name),
                 "output": raw.get("output", str(raw)),
@@ -89,6 +83,3 @@ class ToolRegistry:
             result_dict["output"] = tool.to_model_output(result_dict)
 
         return result_dict
-
-    def cleanup(self):
-        self._truncate.cleanup()

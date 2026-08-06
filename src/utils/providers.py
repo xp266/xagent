@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
 
 from src.utils.paths import data_dir
 from src.utils.models import load_models_catalog
@@ -57,19 +56,6 @@ class ProviderStore:
             reasoning_effort=efforts,
             providers={k: v for k, v in providers.items() if isinstance(v, dict)},
         )
-
-    def _load_builtin(self) -> dict[str, dict]:
-        if not os.path.isfile(_MODELS_PATH):
-            return {}
-        try:
-            with open(_MODELS_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            return {}
-        if not isinstance(data, dict):
-            return {}
-        return data
-
 
     def save(self) -> None:
         payload = {
@@ -143,12 +129,6 @@ class ProviderStore:
         if p is None:
             return []
         return p.models
-
-    def get_selected_models(self, pid: str) -> list[str]:
-        stored = self._config.providers.get(pid, {})
-        if not isinstance(stored, dict):
-            return []
-        return [m for m in stored.get("selected_models", []) if m]
 
     def add_selected_model(self, pid: str, model: str) -> None:
         stored = self._config.providers.setdefault(pid, {})
@@ -243,14 +223,6 @@ class ProviderStore:
         stored = self._config.providers.get(pid)
         if stored is not None and pid.startswith(_CUSTOM_ID_PREFIX):
             stored["models"] = [m for m in models if m]
-            self.save()
-
-    def remove_custom_provider(self, pid: str) -> None:
-        if pid.startswith(_CUSTOM_ID_PREFIX) and pid in self._config.providers:
-            del self._config.providers[pid]
-            if self._config.active_provider == pid:
-                self._config.active_provider = ""
-                self._config.active_model = ""
             self.save()
 
 

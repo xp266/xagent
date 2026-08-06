@@ -145,7 +145,7 @@ def execute(command: str, workdir: str = "", timeout: int = 0, **kwargs) -> dict
     return {
         "title": command,
         "output": output_text,
-        "metadata": {"exit": proc.returncode, "truncated": truncated, "timeout": False},
+        "metadata": {"exit": proc.returncode, "truncated": truncated},
     }
 
 

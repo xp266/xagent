@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
-from typing import Any
 
 from src.types.events import StreamEvent, LLMResponse
 from src.utils.models import Capabilities

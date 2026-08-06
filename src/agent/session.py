@@ -156,13 +156,6 @@ class Session:
         if self._msgs:
             self._msgs.save()
 
-    def release(self):
-        if self._registry:
-            self._registry.cleanup()
-        self._provider = None
-        self._registry = None
-        self._msgs = None
-
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -283,12 +276,6 @@ class SessionManager:
             }
             self._current_id = session.id
         self._save_index()
-
-    def get_or_create_current(self) -> Session:
-        s = self.current
-        if not s:
-            s = self.create(path=_PROJECT_ROOT)
-        return s
 
 
 _SESSION_MANAGER: SessionManager | None = None

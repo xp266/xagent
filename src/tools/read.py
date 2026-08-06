@@ -1,7 +1,7 @@
 import os
 import base64
 
-from src.utils.media import sniff_mime, is_supported_image, read_image_file, normalize_image, make_data_url
+from src.utils.media import sniff_mime, is_supported_image, normalize_image
 from src.types.tools import Tool
 
 MAX_READ_LINES = 2_000

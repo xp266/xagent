@@ -122,40 +122,6 @@ def tool_render(name, args, result, is_error, preview=False):
             return _read_title(path, args), Text(result)
     if name == "web":
         return f"web{_params_suffix(args)}", Text(result)
-    if name == "write":
-        path = args.get("path", "")
-        write_content = args.get("content", "")
-        lines = write_content.rstrip("\n").split("\n")
-        if preview:
-            max_preview = 100
-            if len(lines) > max_preview:
-                t = Text(f"({len(lines)} lines, streaming)\n")
-                t.append("\n".join(lines[-max_preview:]))
-            else:
-                t = Text("\n".join(lines))
-        else:
-            numbered = "\n".join(f"{i} {line}" for i, line in enumerate(lines, 1))
-            t = Text(numbered)
-        if is_error and result:
-            t.append(f"\n\n{result}")
-        return f"write {path}", t
-    if name == "edit":
-        file_path = args.get("filePath", "")
-        old_str = args.get("oldString", "") or ""
-        new_str = args.get("newString", "") or ""
-        old_lines = old_str.rstrip("\n").split("\n")
-        new_lines = new_str.rstrip("\n").split("\n")
-        t = Text()
-        for line in old_lines:
-            t.append("- ", style="#FF9E9E")
-            t.append(f"{line}\n")
-        for line in new_lines:
-            t.append("+ ", style="#9FD28A")
-            t.append(f"{line}\n")
-        t.rstrip()
-        if is_error and result:
-            t.append(f"\n\n{result}")
-        return f"edit {file_path}", t
     if args:
         title = f"{name}{_params_suffix(args)}"
     else:
@@ -274,40 +240,12 @@ def tool_num_width(name: str, args: dict, result: str = "", is_error: bool = Fal
 
 def tool_markdown(name, args, result, is_error, preview=False):
     result = result or ""
-    if name == "write":
-        path = args.get("path", "")
-        content = args.get("content", "")
-        lines = content.rstrip("\n").split("\n")
-        if preview:
-            max_preview = 100
-            if len(lines) > max_preview:
-                body = f"( {len(lines)} lines, streaming )\n\n" + "\n".join(lines[-max_preview:])
-            else:
-                body = "\n".join(lines)
-        else:
-            body = content
-        if is_error and result:
-            body = body.rstrip("\n") + f"\n\n{result}"
-        return f"write {path}", _code_block(_lang_for(path), body)
     if name == "read":
         path = args.get("path", "") or args.get("filePath", "")
         body = result
         if not is_error:
             body = read_result_to_lines(result)
         return _read_title(path, args), _code_block(_lang_for(path), body)
-    if name == "edit":
-        file_path = args.get("filePath", "") or args.get("path", "")
-        old_str = args.get("oldString", "") or ""
-        new_str = args.get("newString", "") or ""
-        diff = []
-        for line in old_str.rstrip("\n").split("\n"):
-            diff.append(f"- {line}")
-        for line in new_str.rstrip("\n").split("\n"):
-            diff.append(f"+ {line}")
-        body = "\n".join(diff)
-        if is_error and result:
-            body = body + f"\n\n{result}"
-        return f"edit {file_path}", _code_block(_lang_for(file_path), body)
     return None
 
 

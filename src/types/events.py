@@ -8,20 +8,6 @@ class ToolCallData(TypedDict):
     input: dict
 
 
-class ToolInputStartData(TypedDict):
-    id: str
-    name: str
-
-
-class ToolInputDeltaData(TypedDict):
-    id: str
-    delta: str
-
-
-class ToolIdData(TypedDict):
-    id: str
-
-
 class ToolResultData(TypedDict, total=False):
     id: str
     name: str
@@ -33,11 +19,6 @@ class ToolErrorData(TypedDict):
     id: str
     name: str
     error: str
-
-
-class StepFinishData(TypedDict, total=False):
-    finish_reason: str
-    usage: dict
 
 
 class ProviderErrorData(TypedDict, total=False):
