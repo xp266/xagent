@@ -215,6 +215,23 @@ def _table_block(lines: list[str], start: int, n: int) -> tuple[Content, int]:
     return Content.assemble(*items[:-1]), i
 
 
+def _single_row_table(line: str) -> Content:
+    cells = _split_row(line)
+    if not cells:
+        return Content("")
+    rendered = [_inline(c) for c in cells]
+    widths = [max(c.cell_length, 3) for c in rendered]
+    aligns = ["l"] * len(cells)
+    parts = [_table_border(widths, "top")]
+    parts.append(_table_row(rendered, widths, aligns, header=True))
+    parts.append(_table_border(widths, "bot"))
+    items: list = []
+    for part in parts:
+        items.append(part)
+        items.append("\n")
+    return Content.assemble(*items[:-1])
+
+
 def _token_style(tok_type) -> str | None:
     while tok_type is not None:
         style = _TOKEN_STYLES.get(tok_type)
@@ -547,6 +564,7 @@ class StreamMarkdown:
         self._fence_body: list[str] = []
         self._fence_start = 0
         self._table_rows: list[str] | None = None
+        self._table_start = 0
 
     def feed(self, text: str) -> None:
         text = self._tail + text
@@ -567,10 +585,9 @@ class StreamMarkdown:
             self._fence_open = False
             self._fence_body = []
         if self._table_rows is not None:
-            rows = self._table_rows
+            self._rerender_open_table()
             self._table_rows = None
-            block, _ = _table_block(rows, 0, len(rows))
-            self._lines.append(block)
+            self._table_start = 0
         self._commit_prev()
 
     def render(self) -> Content:
@@ -579,11 +596,19 @@ class StreamMarkdown:
             parts.append(line)
             parts.append("\n")
         if self._prev is not None:
-            parts.append(self._prev)
+            if _is_table_row(self._prev_text):
+                parts.append(_single_row_table(self._prev_text))
+            else:
+                parts.append(self._prev)
             parts.append("\n")
         if self._tail:
             if self._fence_open:
                 parts.append(_open_fence(self._tail))
+                parts.append("\n")
+            elif self._table_rows is not None:
+                pass
+            elif _is_table_row(self._tail):
+                parts.append(_single_row_table(self._tail))
                 parts.append("\n")
             else:
                 tail_line = _render_line(self._tail)
@@ -610,11 +635,10 @@ class StreamMarkdown:
         if self._table_rows is not None:
             if _is_table_row(line):
                 self._table_rows.append(line)
+                self._rerender_open_table()
                 return
-            rows = self._table_rows
             self._table_rows = None
-            block, _ = _table_block(rows, 0, len(rows))
-            self._lines.append(block)
+            self._table_start = 0
         m = _FENCE_RE.match(line)
         if m is not None:
             info = m.group(1)
@@ -629,12 +653,22 @@ class StreamMarkdown:
         if self._prev is not None:
             if _is_table_row(self._prev_text) and _is_table_sep(line):
                 self._table_rows = [self._prev_text, line]
+                self._table_start = len(self._lines)
                 self._prev = None
                 self._prev_text = ""
+                self._rerender_open_table()
                 return
             self._lines.append(self._prev)
         self._prev = _render_line(line)
         self._prev_text = line
+
+    def _rerender_open_table(self) -> None:
+        rows = self._table_rows
+        if not rows:
+            return
+        block, _ = _table_block(rows, 0, len(rows))
+        del self._lines[self._table_start:]
+        self._lines.extend(block.split("\n", allow_blank=True))
 
     def _close_fence(self, code: str) -> None:
         lang = self._fence_lang
