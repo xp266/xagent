@@ -12,6 +12,9 @@ from textual.highlight import guess_language
 
 _INLINE_CODE_FG = "#6A9955"
 _HEADING_FG = "#FFA500"
+_HEADING_1_STYLE = "bold #FFA500"
+_HEADING_3_FG = "#9CCBFF"
+_ITALIC_FG = "#FFB6C1"
 _QUOTE_FG = "#9B9B9B"
 _HR_FG = "#555555"
 _LINK_FG = "#0178D4"
@@ -472,7 +475,7 @@ def _inline(text: str) -> Content:
             if token.startswith("**"):
                 parts.append((token[2:-2], f"{_HEADING_FG}"))
             else:
-                parts.append((token[1:-1], "italic"))
+                parts.append((token[1:-1], f"italic {_ITALIC_FG}"))
         elif token[0] == "~":
             parts.append((token[2:-2], "strike"))
         else:
@@ -489,7 +492,14 @@ def _render_line(line: str) -> Content | None:
         return None
     m = _HEADING_RE.match(line)
     if m is not None:
-        return Content.assemble((m.group(2), f"{_HEADING_FG}"))
+        level = len(m.group(1))
+        if level == 1:
+            style = _HEADING_1_STYLE
+        elif level == 2:
+            style = _HEADING_FG
+        else:
+            style = _HEADING_3_FG
+        return Content.assemble((m.group(2), style))
     if _HR_RE.match(line):
         return Content.assemble(("─" * 30, _HR_FG))
     m = _QUOTE_RE.match(line)
