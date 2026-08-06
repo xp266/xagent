@@ -434,6 +434,13 @@ def _open_fence(code: str) -> Content:
     return Content.assemble((code, f"{_OPEN_FENCE_FG} on {_FENCE_BG}"))
 
 
+def _plain_fence_body(code: str) -> list[Content]:
+    lines = code.split("\n")
+    while lines and not lines[-1]:
+        lines.pop()
+    return [Content(line).stylize(f"on {_FENCE_BG}") for line in lines]
+
+
 def _inline(text: str) -> Content:
     text = _ESCAPE_RE.sub(r"\1", text)
     parts: list = []
@@ -640,6 +647,5 @@ class StreamMarkdown:
 
     def _rerender_open_fence(self) -> None:
         code = "\n".join(self._fence_body)
-        block = _fence_body(code, self._fence_lang, numbered=self._numbered, diff_nums=self._fence_diff, line_number_start=self._line_number_start)
         del self._lines[self._fence_start:]
-        self._lines.extend(block.split("\n", allow_blank=True))
+        self._lines.extend(_plain_fence_body(code))
