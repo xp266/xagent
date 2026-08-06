@@ -163,6 +163,8 @@ def _table_row(cells: list[Content], widths: list[int], aligns: list[str], heade
     for ci, cell in enumerate(cells):
         w = widths[ci]
         cell = _truncate_content(cell, w)
+        if header:
+            cell = cell.stylize(f"{_HEADING_FG}")
         pad = w - cell.cell_length
         align = aligns[ci]
         if align == "c":
@@ -179,10 +181,7 @@ def _table_row(cells: list[Content], widths: list[int], aligns: list[str], heade
             parts.append(" " * right)
         parts.append(" ")
     parts.append(("│", _TABLE_BORDER))
-    row = Content.assemble(*parts)
-    if header:
-        row = row.stylize(f"{_HEADING_FG}")
-    return row
+    return Content.assemble(*parts)
 
 
 def _table_block(lines: list[str], start: int, n: int) -> tuple[Content, int]:
