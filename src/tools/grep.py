@@ -35,13 +35,14 @@ def execute(pattern: str, path: str = "", include: str = "", **kwargs) -> dict:
 
     matches = []
     limit = 100
+    _SKIP_DIRS = frozenset({".git", "__pycache__"})
 
     if os.path.isfile(search_dir):
         files = [search_dir]
     else:
         files = []
         for root, dirs, fnames in os.walk(search_dir):
-            dirs.sort()
+            dirs[:] = sorted(d for d in dirs if d not in _SKIP_DIRS)
             fnames.sort()
             for fname in fnames:
                 if include and not _match_include(fname, include):

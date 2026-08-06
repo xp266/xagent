@@ -84,44 +84,47 @@ class ProviderStore:
         return entry.get("api") or FALLBACK_BASE_URL.get(pid, "")
 
 
+    def _provider_info(self, pid: str, stored: dict, is_custom: bool) -> ProviderInfo:
+        if is_custom:
+            return ProviderInfo(
+                id=pid,
+                name=stored.get("name", pid[len(_CUSTOM_ID_PREFIX):]),
+                base_url=stored.get("base_url", ""),
+                api_key=stored.get("api_key", ""),
+                is_custom=True,
+                models=list(stored.get("models", [])),
+                selected_models=[m for m in stored.get("selected_models", []) if m],
+            )
+        entry = self._builtin.get(pid, {})
+        raw_models = entry.get("models", {})
+        models = list(raw_models.keys()) if isinstance(raw_models, dict) else []
+        meta = {mid: m for mid, m in raw_models.items() if isinstance(m, dict)}
+        return ProviderInfo(
+            id=pid,
+            name=entry.get("name") or pid,
+            base_url=self._builtin_base_url(pid),
+            api_key=stored.get("api_key", ""),
+            is_custom=False,
+            models=models,
+            model_meta=meta,
+            selected_models=[m for m in stored.get("selected_models", []) if m],
+        )
+
     def list_providers(self) -> list[ProviderInfo]:
         result = []
         for pid in self._builtin:
-            entry = self._builtin[pid]
-            name = entry.get("name") or pid
-            base_url = self._builtin_base_url(pid)
-            raw_models = entry.get("models", {})
-            models = list(raw_models.keys()) if isinstance(raw_models, dict) else []
-            meta = {mid: m for mid, m in raw_models.items() if isinstance(m, dict)}
-            stored = self._config.providers.get(pid, {})
-            result.append(ProviderInfo(
-                id=pid,
-                name=name,
-                base_url=base_url,
-                api_key=stored.get("api_key", ""),
-                is_custom=False,
-                models=models,
-                model_meta=meta,
-                selected_models=[m for m in stored.get("selected_models", []) if m],
-            ))
+            result.append(self._provider_info(pid, self._config.providers.get(pid, {}), False))
         for pid, stored in self._config.providers.items():
             if pid.startswith(_CUSTOM_ID_PREFIX):
-                result.append(ProviderInfo(
-                    id=pid,
-                    name=stored.get("name", pid[len(_CUSTOM_ID_PREFIX):]),
-                    base_url=stored.get("base_url", ""),
-                    api_key=stored.get("api_key", ""),
-                    is_custom=True,
-                    models=list(stored.get("models", [])),
-                    selected_models=[m for m in stored.get("selected_models", []) if m],
-                ))
+                result.append(self._provider_info(pid, stored, True))
         result.sort(key=lambda p: (not p.is_custom, p.name.lower()))
         return result
 
     def get_provider(self, pid: str) -> ProviderInfo | None:
-        for p in self.list_providers():
-            if p.id == pid:
-                return p
+        if pid in self._builtin:
+            return self._provider_info(pid, self._config.providers.get(pid, {}), False)
+        if pid.startswith(_CUSTOM_ID_PREFIX) and pid in self._config.providers:
+            return self._provider_info(pid, self._config.providers[pid], True)
         return None
 
     def get_provider_models(self, pid: str) -> list[str]:
@@ -158,6 +161,14 @@ class ProviderStore:
 
     def set_active_model(self, mid: str) -> None:
         self._config.active_model = mid
+        self.save()
+
+    def set_provider_api_key(self, pid: str, key: str) -> None:
+        stored = self._config.providers.setdefault(pid, {})
+        if not isinstance(stored, dict):
+            self._config.providers[pid] = {}
+            stored = self._config.providers[pid]
+        stored["api_key"] = key.strip()
         self.save()
 
     @property

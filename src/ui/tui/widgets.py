@@ -216,6 +216,21 @@ class CommandPalette(Vertical):
         return None
 
 
+def _center_widget(widget, *, w_frac: float = 0.45, h_frac: float = 0.45, h: int | None = None, use_region: bool = False) -> None:
+    try:
+        parent_w = widget.screen.size.width
+        parent_h = widget.screen.size.height
+        w = int(parent_w * w_frac)
+        if h is None:
+            h = int(parent_h * h_frac)
+        if use_region:
+            w = widget.region.width or w
+            h = widget.region.height or h
+        widget.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
+    except Exception:
+        pass
+
+
 def _format_session_time(iso: str) -> str:
     import datetime
     try:
@@ -288,30 +303,10 @@ class _ListPicker(Vertical):
         search = self.query_one("#picker-search", Input)
         search.value = ""
         self._rebuild()
-        self._center_presets()
+        _center_widget(self)
         self.add_class("visible")
-        self.call_after_refresh(self._center)
+        self.call_after_refresh(lambda: _center_widget(self, use_region=True))
         search.focus()
-
-    def _center_presets(self) -> None:
-        try:
-            parent_w = self.screen.size.width
-            parent_h = self.screen.size.height
-            w = int(parent_w * 0.45)
-            h = int(parent_h * 0.45)
-            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
-        except Exception:
-            pass
-
-    def _center(self) -> None:
-        try:
-            parent_w = self.screen.size.width
-            parent_h = self.screen.size.height
-            w = self.region.width or int(parent_w * 0.45)
-            h = self.region.height or int(parent_h * 0.45)
-            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
-        except Exception:
-            pass
 
     def hide(self) -> None:
         self.remove_class("visible")
@@ -684,9 +679,9 @@ class ProviderKeyDialog(Vertical):
         self.query_one("#custom-name").display = is_custom
         self.query_one("#custom-url").display = is_custom
         self._set_values(values or {})
-        self._center_presets()
+        _center_widget(self, h_frac=0.35)
         self.add_class("visible")
-        self.call_after_refresh(self._center)
+        self.call_after_refresh(lambda: _center_widget(self, h_frac=0.35, use_region=True))
         self.call_after_refresh(self._focus_first)
 
     def _set_values(self, values: dict) -> None:
@@ -703,26 +698,6 @@ class ProviderKeyDialog(Vertical):
         else:
             widget = self.query_one("#api-key", Input)
         widget.focus()
-
-    def _center_presets(self) -> None:
-        try:
-            parent_w = self.screen.size.width
-            parent_h = self.screen.size.height
-            w = int(parent_w * 0.45)
-            h = int(parent_h * 0.35)
-            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
-        except Exception:
-            pass
-
-    def _center(self) -> None:
-        try:
-            parent_w = self.screen.size.width
-            parent_h = self.screen.size.height
-            w = self.region.width or int(parent_w * 0.45)
-            h = self.region.height or int(parent_h * 0.35)
-            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
-        except Exception:
-            pass
 
     def hide(self) -> None:
         self.remove_class("visible")
@@ -837,9 +812,9 @@ class ExaKeyDialog(Vertical):
         self._error = ""
         self.query_one("#dialog-error", Static).update("")
         self.query_one("#api-key", Input).value = ""
-        self._center_presets()
+        _center_widget(self, h=9)
         self.add_class("visible")
-        self.call_after_refresh(self._center)
+        self.call_after_refresh(lambda: _center_widget(self, h_frac=0.35, use_region=True))
         self.call_after_refresh(lambda: self.query_one("#api-key", Input).focus())
 
     def hide(self) -> None:
@@ -853,26 +828,6 @@ class ExaKeyDialog(Vertical):
         self._error = message
         try:
             self.query_one("#dialog-error", Static).update(message)
-        except Exception:
-            pass
-
-    def _center_presets(self) -> None:
-        try:
-            parent_w = self.screen.size.width
-            parent_h = self.screen.size.height
-            w = int(parent_w * 0.45)
-            h = 9
-            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
-        except Exception:
-            pass
-
-    def _center(self) -> None:
-        try:
-            parent_w = self.screen.size.width
-            parent_h = self.screen.size.height
-            w = self.region.width or int(parent_w * 0.45)
-            h = self.region.height or int(parent_h * 0.35)
-            self.styles.offset = (max(0, (parent_w - w) // 2), max(0, (parent_h - h) // 2))
         except Exception:
             pass
 

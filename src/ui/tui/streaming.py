@@ -50,7 +50,7 @@ def stream_args(raw: str, name: str) -> dict:
             "newString": json_tail_field(raw, "newString"),
         }
     if name == "read":
-        return {"filePath": json_field(raw, "filePath") or json_tail_field(raw, "filePath")}
+        return {"path": json_field(raw, "path") or json_tail_field(raw, "path") or json_field(raw, "filePath")}
     try:
         parsed = json.loads(raw)
         return parsed if isinstance(parsed, dict) else {}

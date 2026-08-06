@@ -812,7 +812,7 @@ class XAgentTUI(PickerMixin, App):
         self._stop_all_spinners()
         self._waves.clear()
         self._busy = False
-        self.query_one("#input", ChatInput).busy = False
+        self._input().busy = False
         self._current = None
         self._update_status()
         self._scroll_end()
@@ -822,7 +822,7 @@ class XAgentTUI(PickerMixin, App):
             cmd, args = deferred
             cmd.handler(self, args)
             return
-        self.query_one("#input", ChatInput).focus()
+        self._input().focus()
 
     def _apply_name(self, s: object, name: str) -> None:
         if not name or name == "New Session":
@@ -850,7 +850,7 @@ class XAgentTUI(PickerMixin, App):
         self._show_logo()
         self._update_status()
         self._scroll_end()
-        self.query_one("#input", ChatInput).focus()
+        self._input().focus()
 
     def _switch_session(self, code: str) -> None:
         s = self._sm.get(code.strip())
@@ -871,7 +871,7 @@ class XAgentTUI(PickerMixin, App):
                 break
         self._render_messages()
         self._update_status()
-        self.query_one("#input", ChatInput).focus()
+        self._input().focus()
 
     def _render_messages(self) -> None:
         self._clear_chat_messages()
@@ -1002,7 +1002,7 @@ class XAgentTUI(PickerMixin, App):
     def _refresh_palette(self) -> None:
         if getattr(self, "_suppress_palette", False):
             return
-        text = self.query_one("#input", ChatInput).text
+        text = self._input().text
         if not text.startswith("/"):
             self._palette().hide()
             self._set_palette_open(False)
@@ -1013,7 +1013,7 @@ class XAgentTUI(PickerMixin, App):
         self._set_palette_open(bool(commands))
 
     def _set_palette_open(self, open: bool) -> None:
-        self.query_one("#input", ChatInput).palette_open = open
+        self._input().palette_open = open
 
     def on_chat_input_text_edited(self, message: ChatInput.TextEdited) -> None:
         self._refresh_palette()
@@ -1025,7 +1025,7 @@ class XAgentTUI(PickerMixin, App):
         cmd = self._palette().selected_command
         if cmd is None:
             return
-        inp = self.query_one("#input", ChatInput)
+        inp = self._input()
         inp.clear()
         self._palette().hide()
         self._set_palette_open(False)
@@ -1074,7 +1074,7 @@ class XAgentTUI(PickerMixin, App):
             return
         from src.agent.cancel import reset
         reset()
-        self.query_one("#input", ChatInput).busy = True
+        self._input().busy = True
         self._busy = True
         self._waves.clear()
         self._current = {
@@ -1139,7 +1139,7 @@ class XAgentTUI(PickerMixin, App):
         self._show_logo()
         self._scroll_end()
         self.set_interval(0.033, self._tick_animations, pause=False)
-        self.query_one("#input", ChatInput).focus()
+        self._input().focus()
 
     def on_unmount(self) -> None:
         from src.agent.cancel import abort, turn_done

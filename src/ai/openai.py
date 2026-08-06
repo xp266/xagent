@@ -14,6 +14,11 @@ _SURROGATE_RE = re.compile(r'[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDB
 _REASONING_MODEL = re.compile(r"(?i)^(gpt-5|o[1-9])")
 
 
+def _is_reasoning_model(model: str) -> bool:
+    short = model.rsplit("/", 1)[-1]
+    return bool(_REASONING_MODEL.match(short))
+
+
 def _replace_surrogates(text: str) -> str:
     if isinstance(text, str):
         return _SURROGATE_RE.sub('\uFFFD', text)
@@ -228,13 +233,18 @@ class OpenAIProvider(Provider):
             "stream_options": {"include_usage": True},
         }
         if self.max_tokens:
-            if _REASONING_MODEL.match(self.model):
+            if _is_reasoning_model(self.model):
                 kwargs["max_completion_tokens"] = self.max_tokens
             else:
                 kwargs["max_tokens"] = self.max_tokens
 
-        if self.reasoning_effort and self.reasoning_effort in reasoning_effort_options(self.model, self.model_meta):
-            kwargs["reasoning_effort"] = self.reasoning_effort
+        effort = self.reasoning_effort
+        if effort in ("none", "off"):
+            effort = ""
+        elif effort == "max":
+            effort = "high"
+        if effort and effort in reasoning_effort_options(self.model, self.model_meta):
+            kwargs["reasoning_effort"] = effort
 
         try:
             stream = self.client.chat.completions.create(**kwargs)
