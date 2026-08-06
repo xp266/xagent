@@ -202,12 +202,15 @@ def tool_block(name, args, result, is_error, preview=False):
             )
         else:
             diff = []
+            num = 0
             for line in old_str.rstrip("\n").split("\n"):
-                diff.append(f"- {line}")
+                num += 1
+                diff.append(f"{num} - {line}")
             if new_str:
                 for line in new_str.rstrip("\n").split("\n"):
-                    diff.append(f"+ {line}")
-            body = f"```{lang}\n" + "\n".join(diff)
+                    num += 1
+                    diff.append(f"{num} + {line}")
+            body = f"```{lang}@n\n" + "\n".join(diff)
         if not preview:
             body += "\n```"
         if is_error and result:
@@ -234,7 +237,9 @@ def tool_num_width(name: str, args: dict, result: str = "", is_error: bool = Fal
             )
             if rows is not None:
                 return len(str(max(r[0] for r in rows)))
-        return 1
+        old_lines = (args.get("oldString", "") or "").rstrip("\n").split("\n")
+        new_lines = (args.get("newString", "") or "").rstrip("\n").split("\n")
+        return len(str(max(1, len(old_lines) + len(new_lines))))
     return 0
 
 
