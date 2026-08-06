@@ -169,21 +169,18 @@ tool = Tool(
 
 OS: {_OS_NAME}, Shell: {_SHELL}.
 
-DO NOT use for file operations (read/write/edit/search) — use dedicated tools instead.
+IMPORTANT: strictly forbidden for file operations such as reading, writing, editing and searching — these operations must be executed with the dedicated tools.
 
 Execution rules:
 - Quote file paths containing spaces with double quotes
-- Prefer dedicated tools: Glob > find/ls, Grep > grep/rg, Read > cat/head/tail,
-  Edit > sed/awk, Write > echo/cat, text output > echo/printf
-- Output exceeding 2000 lines or 51200 bytes is auto-truncated to a file;
-  use Read offset/limit or Grep to search — NOT head/tail/sed/awk
+- Output exceeding 2000 lines or 51200 bytes is auto-truncated and saved to a file; when content is truncated, you will be told where it is stored.
 
 Multiple commands:
 - Independent tasks: parallel tool calls in one message
 - Sequential dependent tasks: chain with `&&`
   (e.g., `git add . && git commit -m "msg" && git push`)
 - Best-effort sequence: use `;`
-- Use `workdir` parameter, NOT `cd <dir> && <cmd>`
+- Only use the `workdir` parameter; strictly forbidden to use `cd <dir> && <cmd>`
 - No newlines between commands (use `&&` or `;`); newlines OK inside quoted strings
 
 Git rules:
