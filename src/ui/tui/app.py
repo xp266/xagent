@@ -243,7 +243,7 @@ class XAgentTUI(PickerMixin, App):
             return min(100.0, total / limit * 100)
         return 0.0
 
-    def _status_string(self) -> str:
+    def _info_string(self) -> str:
         cfg = get_config()
         if not cfg.base_url:
             model = "Type /provider to connect a provider"
@@ -256,7 +256,10 @@ class XAgentTUI(PickerMixin, App):
         total = self._session.token_usage.total_tokens
         limit = get_model_context_limit(cfg.model) if cfg.model else 0
         pct = self._context_pct(limit)
-        return f"{model}  {total:,} tokens  {fmt_pct(pct)}  |  xAgent - {self._project} - {self._session.name}"
+        return f"{model}  {total:,} tokens  {fmt_pct(pct)}"
+
+    def _status_string(self) -> str:
+        return f"xAgent - {self._project} - {self._session.name}"
 
     def _mcp_status_text(self) -> Text | None:
         counts = get_mcp_manager().status_counts()
@@ -276,7 +279,8 @@ class XAgentTUI(PickerMixin, App):
         if not inner:
             return None
         text = Text()
-        text.append("MCP ")
+        text.append("MCP", style="#1066cb")
+        text.append(" ")
         for i, (color, n) in enumerate(inner):
             text.append(f"{_MCP_DOT}{n}", style=color)
             if i < len(inner) - 1:
@@ -298,13 +302,13 @@ class XAgentTUI(PickerMixin, App):
             return _BLUE_WAVE[-1]
         return _lerp_hex(_BLUE_WAVE[i], _BLUE_WAVE[i + 1], frac)
 
-    def _update_status(self, status: str | None = None) -> None:
+    def _update_input_status(self, status: str | None = None) -> None:
         if status is None:
-            status = self._status_string()
+            status = self._info_string()
         width = self.size.width if self.size and self.size.width else 80
         mcp = self._mcp_status_text()
         mcp_len = mcp.cell_len if mcp is not None else 0
-        avail = max(0, width - 1 - mcp_len)
+        avail = max(0, width - 4 - mcp_len)
         status = _truncate_cells(status, avail)
         text = Text()
         if self._busy and self._waves:
@@ -320,7 +324,14 @@ class XAgentTUI(PickerMixin, App):
             text.append(" " * pad)
         if mcp is not None:
             text.append(mcp)
-        self.query_one("#status", Static).update(text)
+        self.query_one("#input-status", Static).update(text)
+
+    def _update_status(self) -> None:
+        self._update_input_status()
+        status = f" {self._status_string()}"
+        width = self.size.width if self.size and self.size.width else 80
+        status = _truncate_cells(status, max(0, width - 1))
+        self.query_one("#status", Static).update(Text(status, style="#666666"))
 
     def _append_user(self, text: str) -> None:
         block = self._append_block(kind="user", bg=_USER_BG)
@@ -519,7 +530,7 @@ class XAgentTUI(PickerMixin, App):
                 self._update_status()
             return
         now = time.monotonic()
-        status = self._status_string()
+        status = self._info_string()
         n = cell_len(status)
         if self._waves:
             head = (now - self._waves[0]) * _WAVE_SPEED
@@ -528,7 +539,7 @@ class XAgentTUI(PickerMixin, App):
         if not self._waves:
             self._waves.append(now)
         self._waves = [t0 for t0 in self._waves if (now - t0) * _WAVE_SPEED < n + len(_BLUE_WAVE)]
-        self._update_status(status=status)
+        self._update_input_status(status=status)
 
     def _ensure_thinking(self):
         cur = self._current
@@ -1133,7 +1144,7 @@ class XAgentTUI(PickerMixin, App):
                         self._deferred = (cmd, args)
                         from src.agent.cancel import cancel
                         cancel()
-                        self._update_status("Interrupting...")
+                        self._update_input_status("Interrupting...")
                         return
             self._append_error("Agent is busy, please wait.")
             return
@@ -1195,7 +1206,7 @@ class XAgentTUI(PickerMixin, App):
             return
         from src.agent.cancel import cancel
         cancel()
-        self._update_status("Interrupting...")
+        self._update_input_status("Interrupting...")
 
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-box"):
@@ -1205,6 +1216,7 @@ class XAgentTUI(PickerMixin, App):
 
         with Vertical(id="input-box"):
             yield ChatInput(soft_wrap=True, id="input")
+            yield Static("", id="input-status")
 
         with Vertical(id="status-box"):
             yield Static("", id="status")

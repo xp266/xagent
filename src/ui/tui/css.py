@@ -9,7 +9,7 @@ CSS = """
     #chat-box {
         height: 1fr;
         border: none;
-        padding: 1 1 1 2;
+        padding: 1 1 0 2;
         scrollbar-size: 2 1;
         scrollbar-color: #808080;
     }
@@ -165,6 +165,10 @@ CSS = """
         border: solid #334466;
         padding: 0;
     }
+    #input-status {
+        height: 1;
+        padding: 0 1;
+    }
     TextArea .text-area--cursor-line {
         background: transparent;
     }
@@ -175,6 +179,9 @@ CSS = """
         height: 1;
         border: none;
         padding: 0 0 0 1;
+    }
+    #status-box #status {
+        color: #666666;
     }
 
     #logo-overlay {
