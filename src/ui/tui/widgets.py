@@ -265,6 +265,8 @@ class _ListPicker(Vertical):
         self._items: list = items or []
         self._filtered: list = []
         self._selected = 0
+        self._rows: list = []
+        self._pending_select: int | None = None
 
     def item_label(self, item) -> str:
         return str(item)
@@ -278,31 +280,56 @@ class _ListPicker(Vertical):
             pass
         yield Static(self.footer_text, id="picker-footer")
 
-    def _rebuild(self) -> None:
+    def _make_row(self, item):
+        return Static(self.item_label(item), classes="picker-row")
+
+    def _sort_items(self, items: list) -> list:
+        return items
+
+    def _decorate_items(self, items: list) -> list:
+        return items
+
+    def _schedule_rebuild(self) -> None:
+        self.run_worker(self._build_rows, exclusive=True, group="picker-rebuild")
+
+    async def _build_rows(self) -> None:
         try:
             search = self.query_one("#picker-search", Input)
         except Exception:
             return
         query = search.value.strip().lower()
         if query:
-            self._filtered = [i for i in self._items if self.item_matches(i, query)]
+            filtered = [i for i in self._items if self.item_matches(i, query)]
         else:
-            self._filtered = list(self._items)
-        self._selected = 0
+            filtered = list(self._items)
+        filtered = self._sort_items(filtered)
+        filtered = self._decorate_items(filtered)
+        self._filtered = filtered
+        target = self._pending_select if self._pending_select is not None else self._selected
         list_box = self.query_one("#picker-list", VerticalScroll)
-        for child in list(list_box.children):
-            child.remove()
-        for i, item in enumerate(self._filtered):
-            row = Static(self.item_label(item), classes="picker-row")
+        await list_box.remove_children(list_box.children)
+        rows = []
+        for i, item in enumerate(filtered):
+            row = self._make_row(item)
             if i == 0:
                 row.add_class("selected")
-            list_box.mount(row)
+            rows.append(row)
+        await list_box.mount_all(rows)
+        self._rows = rows
+        if filtered:
+            self._selected = min(max(0, target if target is not None else 0), len(filtered) - 1)
+        else:
+            self._selected = 0
+        self._update_selection()
+        self._pending_select = None
 
     def show(self, items) -> None:
         self._items = items
+        self._pending_select = None
+        self._selected = 0
         search = self.query_one("#picker-search", Input)
         search.value = ""
-        self._rebuild()
+        self._schedule_rebuild()
         _center_widget(self)
         self.add_class("visible")
         self.call_after_refresh(lambda: _center_widget(self, use_region=True))
@@ -316,8 +343,7 @@ class _ListPicker(Vertical):
         return "visible" in self.classes
 
     def _update_selection(self) -> None:
-        rows = self.query(".picker-row")
-        for i, row in enumerate(rows):
+        for i, row in enumerate(self._rows):
             row.set_class(i == self._selected, "selected")
 
     def _select_item(self, item) -> None:
@@ -328,17 +354,18 @@ class _ListPicker(Vertical):
             return
         self._selected = (self._selected + delta) % len(self._filtered)
         self._update_selection()
-        rows = self.query(".picker-row")
-        row = rows[self._selected]
-        self.query_one("#picker-list", VerticalScroll).scroll_to_widget(row, animate=False)
+        if 0 <= self._selected < len(self._rows):
+            row = self._rows[self._selected]
+            self.query_one("#picker-list", VerticalScroll).scroll_to_widget(row, animate=False)
 
-    def update_items(self, items) -> None:
+    def update_items(self, items, select: int | None = None) -> None:
         self._items = items
-        self._rebuild()
+        self._pending_select = select
+        self._schedule_rebuild()
 
     def _on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "picker-search":
-            self._rebuild()
+            self._schedule_rebuild()
 
     async def _on_key(self, event: events.Key) -> None:
         if not self.is_visible:
@@ -460,26 +487,8 @@ class SessionPicker(_ListPicker):
             self._disarm_delete()
         await super()._on_key(event)
 
-    def _rebuild(self) -> None:
-        try:
-            search = self.query_one("#picker-search", Input)
-        except Exception:
-            return
-        query = search.value.strip().lower()
-        if query:
-            self._filtered = [s for s in self._items if self.item_matches(s, query)]
-        else:
-            self._filtered = list(self._items)
-        self._filtered.sort(key=lambda s: s.updated_at or s.created_at, reverse=True)
-        self._selected = 0
-        list_box = self.query_one("#picker-list", VerticalScroll)
-        for child in list(list_box.children):
-            child.remove()
-        for i, s in enumerate(self._filtered):
-            row = Static(self.item_label(s), classes="picker-row")
-            if i == 0:
-                row.add_class("selected")
-            list_box.mount(row)
+    def _sort_items(self, items: list) -> list:
+        return sorted(items, key=lambda s: s.updated_at or s.created_at, reverse=True)
 
 
 class ProviderPicker(_ListPicker):
@@ -519,29 +528,10 @@ class ProviderPicker(_ListPicker):
         else:
             self.post_message(self.Selected(item))
 
-    def _rebuild(self) -> None:
-        try:
-            search = self.query_one("#picker-search", Input)
-        except Exception:
-            return
-        query = search.value.strip().lower()
-        if query:
-            self._filtered = [i for i in self._items if self.item_matches(i, query)]
-        else:
-            self._filtered = list(self._items)
+    def _decorate_items(self, items: list) -> list:
         if self._connected_only:
-            self._filtered = [i for i in self._filtered if i is not self.ADD_CUSTOM and getattr(i, "api_key", "")]
-        else:
-            self._filtered = [self.ADD_CUSTOM] + self._filtered
-        self._selected = 0
-        list_box = self.query_one("#picker-list", VerticalScroll)
-        for child in list(list_box.children):
-            child.remove()
-        for i, item in enumerate(self._filtered):
-            row = Static(self.item_label(item), classes="picker-row")
-            if i == 0:
-                row.add_class("selected")
-            list_box.mount(row)
+            return [i for i in items if i is not self.ADD_CUSTOM and getattr(i, "api_key", "")]
+        return [self.ADD_CUSTOM] + items
 
 
 class ModelPicker(_ListPicker):
@@ -586,27 +576,10 @@ class ModelPicker(_ListPicker):
         else:
             self.post_message(self.Selected(item))
 
-    def _rebuild(self) -> None:
-        try:
-            search = self.query_one("#picker-search", Input)
-        except Exception:
-            return
-        query = search.value.strip().lower()
-        if query:
-            self._filtered = [i for i in self._items if self.item_matches(i, query)]
-        else:
-            self._filtered = list(self._items)
+    def _decorate_items(self, items: list) -> list:
         if self._add_enabled:
-            self._filtered = [self.ADD_MODEL] + self._filtered
-        self._selected = 0
-        list_box = self.query_one("#picker-list", VerticalScroll)
-        for child in list(list_box.children):
-            child.remove()
-        for i, item in enumerate(self._filtered):
-            row = self._make_row(item)
-            if i == 0:
-                row.add_class("selected")
-            list_box.mount(row)
+            return [self.ADD_MODEL] + items
+        return items
 
     def _make_row(self, item):
         if isinstance(item, tuple) and len(item) >= 3 and item[2]:
@@ -647,10 +620,23 @@ class McpPicker(_ListPicker):
         pass
 
     def item_label(self, item) -> str:
-        name, enabled = item
-        color = "green" if enabled else "red"
-        status = "enabled" if enabled else "disabled"
-        return f"{name}  [{color}]{status}[/]"
+        return item[0]
+
+    def item_matches(self, item, query: str) -> bool:
+        return query in item[0].lower()
+
+    def _make_row(self, item):
+        name, enabled, conn = item
+        if enabled:
+            conn_color = {"connected": "green", "connecting": "yellow", "failed": "red"}.get(conn, "yellow")
+            status = f"[{conn_color}]{conn}[/]  [green]enabled[/]"
+        else:
+            status = "[red]disabled[/]"
+        return Horizontal(
+            Static(name, classes="mcp-name"),
+            Static(status, classes="mcp-status"),
+            classes="picker-row",
+        )
 
     def _select_item(self, item) -> None:
         self.post_message(self.Toggled(item[0]))

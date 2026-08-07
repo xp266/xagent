@@ -1,5 +1,6 @@
 from src.utils.models import reasoning_effort_options
 from src.utils.providers import get_store, list_providers
+from src.mcp.manager import get_mcp_manager
 from src.ui.tui.widgets import (
     ChatInput,
     McpPicker,
@@ -111,7 +112,8 @@ class PickerMixin:
 
     def _mcp_items(self) -> list:
         store = get_store()
-        return [(name, store.mcp_server_status(name)) for name in store.mcp_servers]
+        mgr = get_mcp_manager()
+        return [(name, store.mcp_server_status(name), mgr.server_status(name)) for name in store.mcp_servers]
 
     def _open_mcp_picker(self) -> None:
         self._palette().hide()
@@ -121,14 +123,16 @@ class PickerMixin:
     def on_mcp_picker_toggled(self, message: McpPicker.Toggled) -> None:
         store = get_store()
         store.toggle_mcp_server(message.server)
+        get_mcp_manager().connect_async(store.mcp_servers)
         self._session.registry = None
-        picker = self._mcp_picker()
-        picker.update_items(self._mcp_items())
-        for i, item in enumerate(picker._filtered):
+        items = self._mcp_items()
+        select = None
+        for i, item in enumerate(items):
             if item[0] == message.server:
-                picker._selected = i
-                picker._update_selection()
+                select = i
                 break
+        self._mcp_picker().update_items(items, select=select)
+        self._update_status()
 
     def on_mcp_picker_dismissed(self, message: McpPicker.Dismissed) -> None:
         self._input().focus()

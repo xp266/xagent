@@ -12,6 +12,8 @@ from src.agent import get_session_manager, run_session_turn, name_session_from_f
 from src.agent.turn import RETRY_LIMIT
 from src.utils.models import get_model_context_limit
 from src.utils.config import get_config
+from src.utils.providers import get_store
+from src.mcp.manager import get_mcp_manager
 from src.types.events import StreamEvent
 
 from src.ui.tui.css import CSS
@@ -38,6 +40,7 @@ from src.ui.tui.widgets import (
 )
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+_MCP_DOT = "●"
 
 _BLUE_WAVE = (
     "#1E3A8A",
@@ -85,6 +88,8 @@ class XAgentTUI(PickerMixin, App):
         self._add_model_provider_flow = False
         self._pending_model_provider = None
         self._deferred = None
+        self._last_mcp_sig = None
+        get_mcp_manager().connect_async(get_store().mcp_servers)
 
     def _post(self, fn, *args) -> None:
         try:
@@ -240,6 +245,23 @@ class XAgentTUI(PickerMixin, App):
         pct = self._context_pct(limit)
         return f"{model}  {total:,} tokens  {fmt_pct(pct)}  |  xAgent - {self._project} - {self._session.name}"
 
+    def _mcp_status_text(self) -> Text | None:
+        counts = get_mcp_manager().status_counts()
+        inner = []
+        for key, color in (("connected", "green"), ("connecting", "yellow"), ("failed", "red")):
+            n = counts.get(key, 0)
+            if n > 0:
+                inner.append((color, n))
+        if not inner:
+            return None
+        text = Text()
+        text.append("MCP ")
+        for i, (color, n) in enumerate(inner):
+            text.append(f"{_MCP_DOT}{n}", style=color)
+            if i < len(inner) - 1:
+                text.append(" ")
+        return text
+
     def _wave_color_at(self, index: int, now: float):
         best = None
         for t0 in self._waves:
@@ -258,13 +280,25 @@ class XAgentTUI(PickerMixin, App):
     def _update_status(self, status: str | None = None) -> None:
         if status is None:
             status = self._status_string()
+        width = self.size.width if self.size and self.size.width else 80
+        mcp = self._mcp_status_text()
+        mcp_len = len(mcp.plain) if mcp is not None else 0
+        avail = max(0, width - 1 - mcp_len)
+        if len(status) > avail:
+            status = status[:avail]
+        text = Text()
         if self._busy and self._waves:
             now = time.monotonic()
-            text = Text()
             for i, ch in enumerate(status):
                 text.append(ch, style=self._wave_color_at(i, now))
         else:
-            text = Text(status)
+            text.append(status)
+        pad = avail - len(status)
+        if pad > 0:
+            text.append(" " * pad)
+        if mcp is not None:
+            text.append(mcp)
+        self._last_mcp_sig = tuple(sorted(get_mcp_manager().status_counts().items()))
         self.query_one("#status", Static).update(text)
 
     def _append_user(self, text: str) -> None:
@@ -432,9 +466,33 @@ class XAgentTUI(PickerMixin, App):
         if self._busy:
             self._tick_spinners()
             self._tick_status_wave()
+        else:
+            self._refresh_mcp_status()
+            self._refresh_mcp_picker()
         if self._current is not None:
             self._flush_streaming_content()
             self._tick_retry()
+
+    def _refresh_mcp_status(self) -> None:
+        sig = tuple(sorted(get_mcp_manager().status_counts().items()))
+        if sig != self._last_mcp_sig:
+            self._last_mcp_sig = sig
+            self._update_status()
+
+    def _refresh_mcp_picker(self) -> None:
+        try:
+            picker = self._mcp_picker()
+        except Exception:
+            return
+        if not picker.is_visible:
+            return
+        if picker._pending_select is not None:
+            return
+        items = self._mcp_items()
+        sig = tuple(items)
+        if sig != getattr(self, "_mcp_picker_sig", None):
+            self._mcp_picker_sig = sig
+            picker.update_items(items, select=picker._selected)
 
     def _tick_status_wave(self) -> None:
         if not self._busy:

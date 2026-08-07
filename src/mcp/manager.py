@@ -1,3 +1,5 @@
+import threading
+
 from src.mcp import register_mcp_tool_names
 from src.mcp.client import McpHttpClient, McpStdioClient
 
@@ -7,23 +9,38 @@ class McpManager:
         self._servers: dict[str, dict] = {}
         self._clients: dict = {}
         self._tools: list[dict] = []
+        self._status: dict[str, str] = {}
+        self._threads: list[threading.Thread] = []
+        self._generation = 0
+        self._loading = False
         self._loaded = False
+        self._lock = threading.Lock()
         self._abort_registered = False
 
     def configure(self, servers: dict[str, dict] | None) -> None:
         raw = servers or {}
-        self._servers = {
+        enabled = {
             name: cfg
             for name, cfg in raw.items()
             if isinstance(cfg, dict) and str(cfg.get("status", "enabled")).lower() != "disabled"
         }
-        self._reset()
-        if self._servers and not self._abort_registered:
+        with self._lock:
+            if enabled == self._servers and (self._loaded or self._loading):
+                return
+            self._servers = enabled
+            self._reset_locked()
+            self._loaded = False
+            self._loading = False
+        if enabled and not self._abort_registered:
             self._abort_registered = True
             from src.agent.cancel import register_abort
             register_abort(self._abort_all)
 
-    def _reset(self) -> None:
+    def connect_async(self, servers: dict[str, dict] | None) -> None:
+        self.configure(servers)
+        self._start_load()
+
+    def _reset_locked(self) -> None:
         for client in self._clients.values():
             try:
                 client.close()
@@ -31,52 +48,113 @@ class McpManager:
                 pass
         self._clients = {}
         self._tools = []
-        self._loaded = False
-        register_mcp_tool_names([])
+        self._threads = []
+        self._generation += 1
+        self._status = {name: "connecting" for name in self._servers}
+
+    def _start_load(self) -> None:
+        with self._lock:
+            if self._loaded or self._loading:
+                return
+            if not self._servers:
+                self._loaded = True
+                return
+            self._loading = True
+            generation = self._generation
+            self._threads = [
+                threading.Thread(target=self._load_server, args=(name, cfg, generation), daemon=True)
+                for name, cfg in self._servers.items()
+            ]
+            threads = list(self._threads)
+        for thread in threads:
+            thread.start()
+
+    def _join_load(self) -> None:
+        with self._lock:
+            if self._loaded:
+                return
+            threads = list(self._threads)
+            if not threads:
+                self._loaded = True
+                return
+        for thread in threads:
+            thread.join()
+        with self._lock:
+            self._threads = []
+            self._loading = False
+            self._loaded = True
+            tools = list(self._tools)
+        register_mcp_tool_names([t["name"] for t in tools])
 
     def _ensure_loaded(self) -> None:
-        if self._loaded:
-            return
-        self._loaded = True
-        for name, cfg in self._servers.items():
-            try:
-                if cfg.get("url"):
-                    client = McpHttpClient(name, cfg["url"], headers=cfg.get("headers"))
-                elif cfg.get("command"):
-                    client = McpStdioClient(name, cfg["command"], args=cfg.get("args"), env=cfg.get("env"))
-                else:
-                    continue
-                tools = client.list_tools()
+        self._start_load()
+        self._join_load()
+
+    def _load_server(self, name: str, cfg: dict, generation: int) -> None:
+        try:
+            if cfg.get("url"):
+                client = McpHttpClient(name, cfg["url"], headers=cfg.get("headers"))
+            elif cfg.get("command"):
+                client = McpStdioClient(name, cfg["command"], args=cfg.get("args"), env=cfg.get("env"))
+            else:
+                with self._lock:
+                    if generation == self._generation:
+                        self._status[name] = "failed"
+                return
+            tools = client.list_tools()
+            with self._lock:
+                if generation != self._generation:
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
+                    return
                 self._clients[name] = client
+                self._status[name] = "connected"
                 for tool in tools:
                     entry = dict(tool)
                     entry["server"] = name
                     self._tools.append(entry)
-            except Exception:
-                try:
-                    if name in self._clients:
-                        self._clients[name].close()
-                except Exception:
-                    pass
-        register_mcp_tool_names([t["name"] for t in self._tools])
+        except Exception:
+            with self._lock:
+                if generation == self._generation:
+                    self._status[name] = "failed"
 
     @property
     def tools(self) -> list[dict]:
         self._ensure_loaded()
-        return self._tools
+        with self._lock:
+            return list(self._tools)
+
+    def status_counts(self) -> dict[str, int]:
+        counts = {"connected": 0, "connecting": 0, "failed": 0}
+        with self._lock:
+            for state in self._status.values():
+                if state in counts:
+                    counts[state] += 1
+        return counts
+
+    def server_status(self, name: str) -> str:
+        with self._lock:
+            return self._status.get(name, "connecting")
 
     def execute(self, tool_name: str, arguments: dict) -> dict:
         self._ensure_loaded()
-        for tool in self._tools:
+        with self._lock:
+            tools = list(self._tools)
+            clients = dict(self._clients)
+        for tool in tools:
             if tool.get("name") == tool_name:
-                client = self._clients.get(tool.get("server", ""))
+                client = clients.get(tool.get("server", ""))
                 if client is None:
                     break
                 return client.call_tool(tool_name, arguments)
         return {"output": f"Unknown MCP tool: {tool_name}", "metadata": {"error": True}}
 
     def _abort_all(self) -> None:
-        for client in self._clients.values():
+        with self._lock:
+            clients = list(self._clients.values())
+        for client in clients:
             try:
                 client.close()
             except Exception:

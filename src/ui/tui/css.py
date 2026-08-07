@@ -102,6 +102,21 @@ CSS = """
     McpPicker .picker-row.selected {
         background: #334466;
     }
+    McpPicker .picker-row {
+        layout: horizontal;
+        width: 100%;
+    }
+    McpPicker .mcp-name {
+        width: 1fr;
+        height: 1;
+        overflow: hidden;
+    }
+    McpPicker .mcp-status {
+        width: auto;
+        height: 1;
+        text-align: right;
+        padding-left: 1;
+    }
     ProviderKeyDialog {
         display: none;
         layer: overlay;
