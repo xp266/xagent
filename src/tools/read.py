@@ -27,8 +27,11 @@ def _is_binary(path: str, raw: bytes) -> bool:
     n = len(raw)
     if n == 0:
         return False
-    printable = sum(1 for b in raw if 0x20 <= b <= 0x7E or b in (0x09, 0x0A, 0x0D))
-    return printable < n * 0.7
+    text = raw.decode("utf-8", errors="replace").replace("\ufffd", "")
+    if not text:
+        return True
+    printable = sum(1 for ch in text if ch.isprintable() or ch in "\t\n\r")
+    return printable < len(text) * 0.7
 
 
 def _list_directory(path: str, offset: int = 0, limit: int = 0) -> dict:
