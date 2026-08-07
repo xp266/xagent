@@ -208,7 +208,7 @@ class CanvasBlock:
             if self.expandable:
                 marker = self.marker
                 if marker is None and not self.arrow_hidden and not self.hide_arrow:
-                    marker = "▾" if not self.collapsed else "▸"
+                    marker = "↓" if not self.collapsed else "-"
                 if marker is None:
                     title_line = Content.assemble("   ", title_line)
                 else:

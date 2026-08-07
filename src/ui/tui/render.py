@@ -28,6 +28,10 @@ def block_tool(name) -> bool:
     return name in _BLOCK_TOOLS
 
 
+def _cap_tool(name: str) -> str:
+    return name[:1].upper() + name[1:] if name else name
+
+
 def is_error_result(name, result):
     if not result:
         return False
@@ -108,7 +112,7 @@ def _params_suffix(args: dict, keys: tuple | None = None) -> str:
 
 
 def _read_title(path: str, args: dict) -> str:
-    return f"read {path}{_params_suffix(args, ('offset', 'limit'))}"
+    return f"Read {path}{_params_suffix(args, ('offset', 'limit'))}"
 
 
 def tool_render(name, args, result, is_error, preview=False):
@@ -119,19 +123,19 @@ def tool_render(name, args, result, is_error, preview=False):
         t.append(f"$ {cmd}")
         if result:
             t.append("\n" + result, style="#9B9B9B")
-        return "bash", t
+        return _cap_tool(name), t
     if name == "read":
         path = args.get("path", "") or args.get("filePath", "")
         if path:
             return _read_title(path, args), Text(result)
     if name == "web":
-        return f"web{_params_suffix(args)}", Text(result)
+        return f"{_cap_tool(name)}{_params_suffix(args)}", Text(result)
     if is_mcp_tool(name):
         return f"MCP({name})", Text(result)
     if args:
-        title = f"{name}{_params_suffix(args)}"
+        title = f"{_cap_tool(name)}{_params_suffix(args)}"
     else:
-        title = name
+        title = _cap_tool(name)
     return title, Text(result)
 
 
@@ -193,7 +197,7 @@ def tool_block(name, args, result, is_error, preview=False):
             body = f"```{_lang_for(path)}\n" + "\n".join(lines) + "\n```"
         if is_error and result:
             body = body.rstrip("\n") + f"\n\n{result}"
-        return f"write {path}", body
+        return f"Write {path}", body
     if name == "edit":
         file_path = args.get("filePath", "") or args.get("path", "")
         old_str = args.get("oldString", "") or ""
@@ -221,7 +225,7 @@ def tool_block(name, args, result, is_error, preview=False):
             body += "\n```"
         if is_error and result:
             body = body.rstrip("\n") + f"\n\n{result}"
-        return f"edit {file_path}", body
+        return f"Edit {file_path}", body
     return None
 
 

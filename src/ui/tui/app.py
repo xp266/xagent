@@ -26,7 +26,7 @@ from src.ui.tui.canvas import CanvasBlock, ChatCanvas, _THINKING_BODY, _THINKING
 from src.ui.tui.lazy import LazyText
 from src.ui.tui.markdown import StreamMarkdown, render_markdown
 from src.ui.tui.render import (
-    block_tool, clean_result, code_tool, fmt_duration, fmt_pct, is_error_result,
+    _cap_tool, block_tool, clean_result, code_tool, fmt_duration, fmt_pct, is_error_result,
     read_line_start, tool_block, tool_markdown, tool_num_width, tool_render,
 )
 from src.ui.tui.streaming import stream_args
@@ -227,7 +227,7 @@ class XAgentTUI(PickerMixin, App):
                 tool["st"].update(render_markdown(body))
             else:
                 title, t = tool_render(name, args, None, False, preview=True)
-                title = title.strip() or name
+                title = title.strip() or _cap_tool(name)
                 if tool["block"] is not None and tool["block"].title != title:
                     tool["block"].set_title(title)
                     self._render_tool_spinner(tool)
@@ -620,7 +620,7 @@ class XAgentTUI(PickerMixin, App):
     def _add_tool_streaming(self, tc_id: str, name: str) -> None:
         tool = {
             "name": name,
-            "title": name,
+            "title": _cap_tool(name),
             "spinning": False,
             "done": False,
             "input": {},
