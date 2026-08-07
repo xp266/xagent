@@ -6,6 +6,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+irrelevant_content/
 .xagent/
 .opencode/
 AGENTS.md

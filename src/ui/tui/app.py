@@ -2,11 +2,13 @@ import json
 import os
 import threading
 import time
+import unicodedata
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, VerticalScroll
 from textual.widgets import Static
 from rich.text import Text
+from rich.cells import cell_len
 
 from src.agent import get_session_manager, run_session_turn, name_session_from_first_message
 from src.agent.turn import RETRY_LIMIT
@@ -41,6 +43,18 @@ from src.ui.tui.widgets import (
 
 _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 _MCP_DOT = "●"
+
+
+def _truncate_cells(text: str, max_cells: int) -> str:
+    if max_cells <= 0:
+        return ""
+    cells = 0
+    for i, ch in enumerate(text):
+        w = 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+        if cells + w > max_cells:
+            return text[:i]
+        cells += w
+    return text
 
 _BLUE_WAVE = (
     "#1E3A8A",
@@ -88,7 +102,6 @@ class XAgentTUI(PickerMixin, App):
         self._add_model_provider_flow = False
         self._pending_model_provider = None
         self._deferred = None
-        self._last_mcp_sig = None
         get_mcp_manager().connect_async(get_store().mcp_servers)
 
     def _post(self, fn, *args) -> None:
@@ -247,6 +260,14 @@ class XAgentTUI(PickerMixin, App):
 
     def _mcp_status_text(self) -> Text | None:
         counts = get_mcp_manager().status_counts()
+        if sum(counts.values()) == 0:
+            enabled = [
+                name
+                for name, cfg in get_store().mcp_servers.items()
+                if isinstance(cfg, dict) and str(cfg.get("status", "enabled")).lower() != "disabled"
+            ]
+            if enabled:
+                counts["connecting"] = len(enabled)
         inner = []
         for key, color in (("connected", "green"), ("connecting", "yellow"), ("failed", "red")):
             n = counts.get(key, 0)
@@ -282,23 +303,23 @@ class XAgentTUI(PickerMixin, App):
             status = self._status_string()
         width = self.size.width if self.size and self.size.width else 80
         mcp = self._mcp_status_text()
-        mcp_len = len(mcp.plain) if mcp is not None else 0
+        mcp_len = mcp.cell_len if mcp is not None else 0
         avail = max(0, width - 1 - mcp_len)
-        if len(status) > avail:
-            status = status[:avail]
+        status = _truncate_cells(status, avail)
         text = Text()
         if self._busy and self._waves:
             now = time.monotonic()
-            for i, ch in enumerate(status):
-                text.append(ch, style=self._wave_color_at(i, now))
+            cell = 0
+            for ch in status:
+                text.append(ch, style=self._wave_color_at(cell, now))
+                cell += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
         else:
             text.append(status)
-        pad = avail - len(status)
+        pad = avail - cell_len(status)
         if pad > 0:
             text.append(" " * pad)
         if mcp is not None:
             text.append(mcp)
-        self._last_mcp_sig = tuple(sorted(get_mcp_manager().status_counts().items()))
         self.query_one("#status", Static).update(text)
 
     def _append_user(self, text: str) -> None:
@@ -474,10 +495,7 @@ class XAgentTUI(PickerMixin, App):
             self._tick_retry()
 
     def _refresh_mcp_status(self) -> None:
-        sig = tuple(sorted(get_mcp_manager().status_counts().items()))
-        if sig != self._last_mcp_sig:
-            self._last_mcp_sig = sig
-            self._update_status()
+        self._update_status()
 
     def _refresh_mcp_picker(self) -> None:
         try:
@@ -502,7 +520,7 @@ class XAgentTUI(PickerMixin, App):
             return
         now = time.monotonic()
         status = self._status_string()
-        n = len(status)
+        n = cell_len(status)
         if self._waves:
             head = (now - self._waves[0]) * _WAVE_SPEED
             if head >= (n - 1) + (len(_BLUE_WAVE) - 1):
