@@ -29,6 +29,7 @@ from src.ui.tui.streaming import stream_args
 from src.ui.tui.widgets import (
     ChatInput,
     CommandPalette,
+    McpPicker,
     ModelPicker,
     ProviderKeyDialog,
     ProviderPicker,
@@ -1127,6 +1128,7 @@ class XAgentTUI(PickerMixin, App):
         yield ProviderPicker(id="provider-picker")
         yield ModelPicker(id="model-picker")
         yield StrengthPicker(id="strength-picker")
+        yield McpPicker(id="mcp-picker")
         yield ProviderKeyDialog(id="provider-key-dialog")
 
     def on_mount(self) -> None:

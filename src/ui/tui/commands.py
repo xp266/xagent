@@ -39,6 +39,10 @@ def _cmd_effort(app, args: str) -> None:
     app._open_strength_picker()
 
 
+def _cmd_mcp(app, args: str) -> None:
+    app._open_mcp_picker()
+
+
 def get_commands() -> list[Command]:
     return [
         Command("new", "Start a new chat", _cmd_new),
@@ -46,6 +50,7 @@ def get_commands() -> list[Command]:
         Command("provider", "Switch API provider", _cmd_provider),
         Command("model", "Switch model", _cmd_model),
         Command("effort", "Set model reasoning strength", _cmd_effort),
+        Command("mcp", "Toggle MCP server status", _cmd_mcp),
         Command("exit", "Exit xagent", _cmd_exit),
     ]
 

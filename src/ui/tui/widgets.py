@@ -634,6 +634,39 @@ class StrengthPicker(_ListPicker):
         self.post_message(self.Selected(item))
 
 
+class McpPicker(_ListPicker):
+    placeholder = "Search MCP servers..."
+    footer_text = "Enter: toggle status  |  ESC: exit"
+
+    class Toggled(Message):
+        def __init__(self, server: str) -> None:
+            super().__init__()
+            self.server = server
+
+    class Dismissed(Message):
+        pass
+
+    def item_label(self, item) -> str:
+        name, enabled = item
+        color = "green" if enabled else "red"
+        status = "enabled" if enabled else "disabled"
+        return f"{name}  [{color}]{status}[/]"
+
+    def _select_item(self, item) -> None:
+        self.post_message(self.Toggled(item[0]))
+
+    async def _on_key(self, event: events.Key) -> None:
+        if not self.is_visible:
+            return
+        if event.key == "enter":
+            event.stop()
+            event.prevent_default()
+            if self._filtered and 0 <= self._selected < len(self._filtered):
+                self.post_message(self.Toggled(self._filtered[self._selected][0]))
+            return
+        await super()._on_key(event)
+
+
 class ProviderKeyDialog(Vertical):
     class Saved(Message):
         def __init__(self, values: dict, provider=None) -> None:

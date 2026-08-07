@@ -2,6 +2,7 @@ from src.utils.models import reasoning_effort_options
 from src.utils.providers import get_store, list_providers
 from src.ui.tui.widgets import (
     ChatInput,
+    McpPicker,
     ModelPicker,
     ProviderKeyDialog,
     ProviderPicker,
@@ -104,6 +105,33 @@ class PickerMixin:
         self._set_palette_open(False)
         picker = self._strength_picker()
         picker.show(options)
+
+    def _mcp_picker(self) -> McpPicker:
+        return self.query_one("#mcp-picker", McpPicker)
+
+    def _mcp_items(self) -> list:
+        store = get_store()
+        return [(name, store.mcp_server_status(name)) for name in store.mcp_servers]
+
+    def _open_mcp_picker(self) -> None:
+        self._palette().hide()
+        self._set_palette_open(False)
+        self._mcp_picker().show(self._mcp_items())
+
+    def on_mcp_picker_toggled(self, message: McpPicker.Toggled) -> None:
+        store = get_store()
+        store.toggle_mcp_server(message.server)
+        self._session.registry = None
+        picker = self._mcp_picker()
+        picker.update_items(self._mcp_items())
+        for i, item in enumerate(picker._filtered):
+            if item[0] == message.server:
+                picker._selected = i
+                picker._update_selection()
+                break
+
+    def on_mcp_picker_dismissed(self, message: McpPicker.Dismissed) -> None:
+        self._input().focus()
 
     def on_strength_picker_selected(self, message: StrengthPicker.Selected) -> None:
         store = get_store()
@@ -265,6 +293,7 @@ class PickerMixin:
             ("#provider-picker", self._provider_picker),
             ("#model-picker", self._model_picker),
             ("#strength-picker", self._strength_picker),
+            ("#mcp-picker", self._mcp_picker),
             ("#provider-key-dialog", self._key_dialog),
         ]
         active = None

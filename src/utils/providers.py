@@ -179,6 +179,21 @@ class ProviderStore:
     def mcp_servers(self) -> dict[str, dict]:
         return {k: v for k, v in self._config.mcp_servers.items() if isinstance(v, dict)}
 
+    def mcp_server_status(self, name: str) -> bool:
+        cfg = self._config.mcp_servers.get(name)
+        if not isinstance(cfg, dict):
+            return False
+        return str(cfg.get("status", "enabled")).lower() != "disabled"
+
+    def toggle_mcp_server(self, name: str) -> None:
+        cfg = self._config.mcp_servers.get(name)
+        if not isinstance(cfg, dict):
+            cfg = {}
+            self._config.mcp_servers[name] = cfg
+        enabled = str(cfg.get("status", "enabled")).lower() != "disabled"
+        cfg["status"] = "disabled" if enabled else "enabled"
+        self.save()
+
     def get_reasoning_effort(self, model: str) -> str:
         return self._config.reasoning_effort.get(model, "")
 
