@@ -29,7 +29,6 @@ from src.ui.tui.streaming import stream_args
 from src.ui.tui.widgets import (
     ChatInput,
     CommandPalette,
-    ExaKeyDialog,
     ModelPicker,
     ProviderKeyDialog,
     ProviderPicker,
@@ -1129,7 +1128,6 @@ class XAgentTUI(PickerMixin, App):
         yield ModelPicker(id="model-picker")
         yield StrengthPicker(id="strength-picker")
         yield ProviderKeyDialog(id="provider-key-dialog")
-        yield ExaKeyDialog(id="exa-key-dialog")
 
     def on_mount(self) -> None:
         self.title = "XAgent"

@@ -4,6 +4,8 @@ import re
 from rich.text import Text
 from textual.highlight import guess_language
 
+from src.mcp import is_mcp_tool
+
 _READ_HEADER_RE = re.compile(r"^\([^,]+(?:, \d+ lines|, lines [\d-]+/\d+)\)$")
 _READ_LINE_RE = re.compile(r"^(\d+):(.*)$")
 
@@ -122,6 +124,8 @@ def tool_render(name, args, result, is_error, preview=False):
             return _read_title(path, args), Text(result)
     if name == "web":
         return f"web{_params_suffix(args)}", Text(result)
+    if is_mcp_tool(name):
+        return f"MCP({name})", Text(result)
     if args:
         title = f"{name}{_params_suffix(args)}"
     else:

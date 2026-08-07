@@ -95,8 +95,7 @@ CSS = """
     StrengthPicker .picker-row.selected {
         background: #334466;
     }
-    ProviderKeyDialog,
-    ExaKeyDialog {
+    ProviderKeyDialog {
         display: none;
         layer: overlay;
         width: 45%;
@@ -105,18 +104,15 @@ CSS = """
         border: none;
         padding: 1;
     }
-    ProviderKeyDialog.visible,
-    ExaKeyDialog.visible {
+    ProviderKeyDialog.visible {
         display: block;
     }
-    ProviderKeyDialog #dialog-title,
-    ExaKeyDialog #dialog-title {
+    ProviderKeyDialog #dialog-title {
         height: 1;
         margin-bottom: 1;
         color: #888888;
     }
-    ProviderKeyDialog Input,
-    ExaKeyDialog Input {
+    ProviderKeyDialog Input {
         height: 1;
         border: none;
         background: #222222;
@@ -126,14 +122,12 @@ CSS = """
     ProviderKeyDialog #custom-url {
         display: none;
     }
-    ProviderKeyDialog #dialog-error,
-    ExaKeyDialog #dialog-error {
+    ProviderKeyDialog #dialog-error {
         height: 1;
         margin-bottom: 1;
         color: #FF5555;
     }
-    ProviderKeyDialog #dialog-footer,
-    ExaKeyDialog #dialog-footer {
+    ProviderKeyDialog #dialog-footer {
         height: 1;
         padding: 0;
         color: #888888;

@@ -2,7 +2,6 @@ from src.utils.models import reasoning_effort_options
 from src.utils.providers import get_store, list_providers
 from src.ui.tui.widgets import (
     ChatInput,
-    ExaKeyDialog,
     ModelPicker,
     ProviderKeyDialog,
     ProviderPicker,
@@ -29,7 +28,8 @@ class PickerMixin:
 
     def on_session_picker_deleted(self, message: SessionPicker.Deleted) -> None:
         target = message.session
-        was_current = self._sm.current.id == target.id
+        current = self._sm.current
+        was_current = current is not None and current.id == target.id
         self._sm.delete(target.id)
         remaining = self._sm.list()
         if not remaining:
@@ -58,23 +58,6 @@ class PickerMixin:
 
     def _strength_picker(self) -> StrengthPicker:
         return self.query_one("#strength-picker", StrengthPicker)
-
-    def _exa_key_dialog(self) -> ExaKeyDialog:
-        return self.query_one("#exa-key-dialog", ExaKeyDialog)
-
-    def _open_exa_key_dialog(self) -> None:
-        self._palette().hide()
-        self._set_palette_open(False)
-        self._exa_key_dialog().show()
-
-    def on_exa_key_dialog_saved(self, message: ExaKeyDialog.Saved) -> None:
-        store = get_store()
-        store.set_exa_api_key(message.api_key)
-        store.save()
-        self._input().focus()
-
-    def on_exa_key_dialog_canceled(self, message: ExaKeyDialog.Canceled) -> None:
-        self._input().focus()
 
     def _open_provider_picker(self) -> None:
         self._palette().hide()
@@ -283,7 +266,6 @@ class PickerMixin:
             ("#model-picker", self._model_picker),
             ("#strength-picker", self._strength_picker),
             ("#provider-key-dialog", self._key_dialog),
-            ("#exa-key-dialog", self._exa_key_dialog),
         ]
         active = None
         for selector, getter in modals:

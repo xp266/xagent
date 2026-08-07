@@ -10,7 +10,3 @@ def get_config() -> Config:
         api_key=resolved["api_key"],
         reasoning_effort=resolved.get("reasoning_effort", ""),
     )
-
-
-def get_exa_api_key() -> str:
-    return get_store().exa_api_key

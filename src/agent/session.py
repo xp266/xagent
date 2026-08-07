@@ -9,10 +9,13 @@ from typing import TYPE_CHECKING
 from src.utils.paths import data_dir
 from src.utils.prompts import load as load_prompt
 from src.utils.providers import get_store, is_anthropic_provider
+from src.utils.instructions import build_system_prompt
 from src.agent.manager import MessageManager
 from src.agent.naming import generate_name
 from src.tools.registry import ToolRegistry
 from src.types.events import TokenUsage
+from src.types.tools import Tool
+from src.mcp.manager import get_mcp_manager
 
 if TYPE_CHECKING:
     from src.ai.base import Provider
@@ -27,6 +30,13 @@ def _data_root() -> str:
 
 def _index_path() -> str:
     return os.path.join(data_dir(), "sessions_index.json")
+
+
+def _make_mcp_execute(manager, name: str):
+    def execute(**kwargs) -> dict:
+        return manager.execute(name, kwargs)
+
+    return execute
 
 
 def _ensure_dirs():
@@ -67,8 +77,11 @@ def _read_session(session_id: str) -> dict | None:
 
 def _write_session(data: dict):
     os.makedirs(_data_root(), exist_ok=True)
-    with open(_file_path(data["id"]), "w", encoding="utf-8") as f:
+    path = _file_path(data["id"])
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
 class Session:
@@ -136,16 +149,33 @@ class Session:
         if self._registry is None:
             self._registry = ToolRegistry()
             self._registry.load_local(os.path.join(_PROJECT_ROOT, "src", "tools"))
+            self._register_mcp_tools()
         return self._registry
 
     @registry.setter
     def registry(self, value):
         self._registry = value
 
+    def _register_mcp_tools(self) -> None:
+        manager = get_mcp_manager()
+        manager.configure(get_store().mcp_servers)
+        for tool in manager.tools:
+            name = tool.get("name", "")
+            if not name or name in self._registry._tools:
+                continue
+            self._registry.register(Tool(
+                name=name,
+                description=tool.get("description", "") or "",
+                parameters=tool.get("inputSchema") or {"type": "object", "properties": {}},
+                execute=_make_mcp_execute(manager, name),
+                to_model_output=lambda data: data.get("output", ""),
+            ))
+
     @property
     def msgs(self) -> MessageManager:
         if self._msgs is None:
-            self._msgs = MessageManager(load_prompt("default"), session=self)
+            system_prompt = build_system_prompt(load_prompt("default"), self.path)
+            self._msgs = MessageManager(system_prompt, session=self)
         return self._msgs
 
     @msgs.setter
@@ -187,6 +217,11 @@ class SessionManager:
         self._index = {}
         for entry in _read_index():
             self._index[entry["id"]] = entry
+        stale = [sid for sid in self._index if not os.path.isfile(_file_path(sid))]
+        for sid in stale:
+            del self._index[sid]
+        if stale:
+            self._save_index()
 
     def _save_index(self):
         entries = []
@@ -198,10 +233,15 @@ class SessionManager:
 
     @property
     def current(self):
-        if not self._current_id and self._index:
-            self._current_id = next(iter(self._index))
         if self._current_id:
-            return self.get(self._current_id)
+            s = self.get(self._current_id)
+            if s is not None:
+                return s
+        for sid in self._index:
+            s = self.get(sid)
+            if s is not None:
+                self._current_id = sid
+                return s
         return None
 
     @current.setter

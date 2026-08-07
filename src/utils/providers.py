@@ -52,18 +52,18 @@ class ProviderStore:
         return AppConfig(
             active_provider=str(raw.get("active_provider", "")),
             active_model=str(raw.get("active_model", "")),
-            exa_api_key=str(raw.get("exa_api_key", "")),
             reasoning_effort=efforts,
             providers={k: v for k, v in providers.items() if isinstance(v, dict)},
+            mcp_servers={k: v for k, v in raw.get("mcp_servers", {}).items() if isinstance(v, dict)},
         )
 
     def save(self) -> None:
         payload = {
             "active_provider": self._config.active_provider,
             "active_model": self._config.active_model,
-            "exa_api_key": self._config.exa_api_key,
             "reasoning_effort": self._config.reasoning_effort,
             "providers": self._config.providers,
+            "mcp_servers": self._config.mcp_servers,
         }
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         tmp = self.path + ".tmp"
@@ -172,16 +172,12 @@ class ProviderStore:
         self.save()
 
     @property
-    def exa_api_key(self) -> str:
-        return self._config.exa_api_key
-
-    def set_exa_api_key(self, key: str) -> None:
-        self._config.exa_api_key = key.strip()
-        self.save()
-
-    @property
     def reasoning_effort(self) -> dict[str, str]:
         return dict(self._config.reasoning_effort)
+
+    @property
+    def mcp_servers(self) -> dict[str, dict]:
+        return {k: v for k, v in self._config.mcp_servers.items() if isinstance(v, dict)}
 
     def get_reasoning_effort(self, model: str) -> str:
         return self._config.reasoning_effort.get(model, "")
