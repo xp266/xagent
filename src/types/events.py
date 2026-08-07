@@ -13,6 +13,7 @@ class ToolResultData(TypedDict, total=False):
     name: str
     result: str
     attachments: list
+    is_error: bool
 
 
 class ToolErrorData(TypedDict):

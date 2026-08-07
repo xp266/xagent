@@ -817,11 +817,12 @@ class XAgentTUI(PickerMixin, App):
         elif t == "tool-result":
             data = event.data
             result = clean_result(data["name"], data.get("result", ""))
+            is_error = data.get("is_error", is_error_result(data["name"], result))
             self._set_tool_result(
                 data["id"],
                 data["name"],
                 result,
-                is_error_result(data["name"], result),
+                is_error,
             )
             self._scroll_end()
             self._ensure_waiting()
@@ -877,6 +878,7 @@ class XAgentTUI(PickerMixin, App):
     def _finalize_turn(self, elapsed: float) -> None:
         cur = self._current
         if cur is not None:
+            self._flush_streaming_content(force=True)
             md = cur.get("_reply_md")
             if md is not None:
                 md.finish()
@@ -953,9 +955,11 @@ class XAgentTUI(PickerMixin, App):
         self._clear_chat_messages()
         canvas = self._canvas()
         tool_results = {}
+        tool_errors = {}
         for msg in self._session.messages:
             if msg.get("role") == "tool":
                 tool_results[msg["tool_call_id"]] = msg["content"]
+                tool_errors[msg["tool_call_id"]] = bool(msg.get("is_error"))
 
         messages = self._session.messages
         for idx, msg in enumerate(messages):
@@ -1001,7 +1005,12 @@ class XAgentTUI(PickerMixin, App):
                     except Exception:
                         args = {}
                     result = clean_result(name, tool_results.get(tc.get("id", ""), ""))
-                    is_error = is_error_result(name, result)
+                    tc_id = tc.get("id", "")
+                    is_error = (
+                        tool_errors[tc_id]
+                        if tc_id in tool_errors
+                        else is_error_result(name, result)
+                    )
                     if block_tool(name):
                         title, body = tool_block(name, args, result, is_error)
                         block = self._append_block(

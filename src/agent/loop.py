@@ -33,6 +33,7 @@ def agent_stream(
                     "name": call["name"],
                     "result": result,
                     "attachments": attachments,
+                    "is_error": bool(result_data.get("metadata", {}).get("error")),
                 }
                 yield StreamEvent(type="tool-result", data=tool_result_data)
             except Exception as e:

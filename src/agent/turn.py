@@ -214,7 +214,7 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                                 tr["id"],
                                 tr.get("result", tr.get("error", "")),
                                 tr.get("attachments"),
-                                is_error=bool(tr.get("error")),
+                                is_error=bool(tr.get("is_error") or tr.get("error")),
                             )
                         _persist(session)
                     delay = _retry_delay(retry_count)
@@ -245,7 +245,7 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                         tr["id"],
                         tr.get("result", tr.get("error", "")),
                         tr.get("attachments"),
-                        is_error=bool(tr.get("error")),
+                        is_error=bool(tr.get("is_error") or tr.get("error")),
                     )
                 _persist(session)
 
@@ -260,7 +260,7 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                     tr["id"],
                     tr.get("result", tr.get("error", "")),
                     tr.get("attachments"),
-                    is_error=bool(tr.get("error")),
+                    is_error=bool(tr.get("is_error") or tr.get("error")),
                 )
             _persist(session)
 

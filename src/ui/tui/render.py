@@ -31,6 +31,8 @@ def block_tool(name) -> bool:
 def is_error_result(name, result):
     if not result:
         return False
+    if is_mcp_tool(name):
+        return False
     if name == "bash":
         return not result.startswith("Command exited with code 0.")
     if name == "read":
