@@ -270,4 +270,4 @@ def fmt_duration(seconds: float) -> str:
 
 
 def fmt_pct(pct: float) -> str:
-    return f"{pct:g}% context"
+    return f"{round(pct)}% context"

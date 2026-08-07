@@ -82,6 +82,42 @@ def _diff_marker_end(line: Content, offset: int = 0) -> int:
     return 0
 
 
+def _line_bgcolor(line: Content) -> str | None:
+    for s in line.spans:
+        style = _parse_rich_style(s.style)
+        if style is not None and style.bgcolor is not None:
+            r, g, b = style.bgcolor.get_truecolor(None)
+            return f"#{r:02x}{g:02x}{b:02x}"
+    return None
+
+
+def _wrap_continuation(line: Content, width: int) -> list[Content]:
+    if line.cell_length <= width:
+        return [line]
+    indent = _line_no_end(line) + _diff_marker_end(line)
+    wrapped = line.wrap(width)
+    if indent <= 0 or len(wrapped) <= 1:
+        return wrapped
+    avail = width - indent
+    if avail < 1:
+        return wrapped
+    bg = _line_bgcolor(wrapped[0])
+    head = (
+        Content(" " * indent, spans=[Span(0, indent, f"on {bg}")])
+        if bg
+        else Content(" " * indent)
+    )
+    out = [wrapped[0]]
+    for piece in wrapped[1:]:
+        if piece.cell_length > avail:
+            piece_lines = piece.wrap(avail)
+        else:
+            piece_lines = [piece]
+        for sub in piece_lines:
+            out.append(head + sub)
+    return out
+
+
 def _apply_highlight(line: Content, style, start: int, end: int) -> Content:
     spans: list = []
     for s in line.spans:
@@ -114,7 +150,7 @@ class LazyText(Static):
             self._lines = []
             for line in lines:
                 if width > 0 and line.cell_length > width:
-                    self._lines.extend(line.wrap(width))
+                    self._lines.extend(_wrap_continuation(line, width))
                 else:
                     self._lines.append(line)
         else:

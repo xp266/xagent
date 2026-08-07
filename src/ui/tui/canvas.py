@@ -9,7 +9,7 @@ from textual.content import Content, Span
 from textual.strip import Strip
 from textual.widgets import Static
 
-from src.ui.tui.lazy import _apply_selection, _build_strip, _diff_marker_end, _line_no_end, _pad_line
+from src.ui.tui.lazy import _apply_selection, _build_strip, _diff_marker_end, _line_no_end, _pad_line, _wrap_continuation
 
 _USER_BG = "#1A1A1A"
 _THINKING_TITLE = "#5B9BD5"
@@ -177,7 +177,7 @@ class CanvasBlock:
         for line in content_lines[keep:]:
             if inner_width > 0:
                 if line.cell_length > inner_width:
-                    wrapped = line.wrap(inner_width)
+                    wrapped = _wrap_continuation(line, inner_width)
                 else:
                     wrapped = [line]
             else:
