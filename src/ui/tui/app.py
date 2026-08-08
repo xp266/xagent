@@ -1247,9 +1247,9 @@ class XAgentTUI(PickerMixin, App):
         self._scroll_end()
         self.set_interval(0.033, self._tick_animations, pause=False)
         self._input().focus()
-        asyncio.create_task(self._prewarm_render(), name="xagent-prewarm")
+        asyncio.create_task(self._prewarm(), name="xagent-prewarm")
 
-    async def _prewarm_render(self) -> None:
+    async def _prewarm(self) -> None:
         try:
             await asyncio.sleep(0)
             self.screen._on_timer_update()
@@ -1257,6 +1257,17 @@ class XAgentTUI(PickerMixin, App):
             pass
         except Exception:
             pass
+        try:
+            await asyncio.to_thread(self._prewarm_providers)
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
+
+    @staticmethod
+    def _prewarm_providers() -> None:
+        import src.ai.openai
+        import src.ai.anthropic
 
     def on_unmount(self) -> None:
         from src.agent.cancel import cancel
