@@ -102,6 +102,7 @@ class XAgentTUI(PickerMixin, App):
         self._add_model_provider_flow = False
         self._pending_model_provider = None
         self._deferred = None
+        self._closing = False
         get_mcp_manager().connect_async(get_store().mcp_servers)
 
     def _chat(self):
@@ -879,8 +880,12 @@ class XAgentTUI(PickerMixin, App):
         start = time.monotonic()
         try:
             async for event in run_session_turn(self._session, text):
+                if self._exit or self._closing:
+                    break
                 self._handle_event(event)
         except asyncio.CancelledError:
+            if self._exit or self._closing:
+                raise
             cur = self._current
             if cur is not None:
                 self._clear_retry()
@@ -890,10 +895,13 @@ class XAgentTUI(PickerMixin, App):
                 block.update("Turn interrupted by user")
                 self._scroll_end()
         except Exception as e:
+            if self._exit or self._closing:
+                return
             self._append_error(f"{type(e).__name__}: {e}")
         finally:
             elapsed = time.monotonic() - start
-            self._finalize_turn(elapsed)
+            if not (self._exit or self._closing):
+                self._finalize_turn(elapsed)
             set_turn_task(None)
 
     def _finalize_turn(self, elapsed: float) -> None:
@@ -936,7 +944,7 @@ class XAgentTUI(PickerMixin, App):
             name = await name_session_from_first_message(s, first_message)
         except Exception:
             name = None
-        if name:
+        if name and not self._closing:
             self._apply_name(s, name)
 
     def _new_chat(self) -> None:
@@ -1270,6 +1278,7 @@ class XAgentTUI(PickerMixin, App):
         import src.ai.anthropic
 
     def on_unmount(self) -> None:
+        self._closing = True
         from src.agent.cancel import cancel
         cancel()
 
