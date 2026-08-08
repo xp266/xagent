@@ -236,6 +236,27 @@ def _center_widget(widget, *, w_frac: float = 0.45, h_frac: float = 0.45, h: int
         pass
 
 
+class _CenteredOverlay:
+    _center_w_frac = 0.45
+    _center_h_frac = 0.45
+
+    def _store_center(self, *, w_frac: float = 0.45, h_frac: float = 0.45) -> None:
+        self._center_w_frac = w_frac
+        self._center_h_frac = h_frac
+
+    def _recenter(self) -> None:
+        _center_widget(
+            self,
+            w_frac=self._center_w_frac,
+            h_frac=self._center_h_frac,
+            use_region=True,
+        )
+
+    def on_resize(self, event) -> None:
+        if getattr(self, "is_visible", False):
+            self._recenter()
+
+
 def _format_session_time(iso: str) -> str:
     import datetime
     try:
@@ -255,7 +276,7 @@ def _format_session_time(iso: str) -> str:
     return dt.strftime("%Y-%m-%d")
 
 
-class _ListPicker(Vertical):
+class _ListPicker(_CenteredOverlay, Vertical):
     class Selected(Message):
         pass
 
@@ -335,9 +356,10 @@ class _ListPicker(Vertical):
         search = self.query_one("#picker-search", Input)
         search.value = ""
         self._schedule_rebuild()
-        _center_widget(self)
+        self._store_center()
+        self._recenter()
         self.add_class("visible")
-        self.call_after_refresh(lambda: _center_widget(self, use_region=True))
+        self.call_after_refresh(self._recenter)
         search.focus()
 
     def hide(self) -> None:
@@ -661,7 +683,7 @@ class McpPicker(_ListPicker):
         await super()._on_key(event)
 
 
-class ProviderKeyDialog(Vertical):
+class ProviderKeyDialog(_CenteredOverlay, Vertical):
     class Saved(Message):
         def __init__(self, values: dict, provider=None) -> None:
             super().__init__()
@@ -706,9 +728,10 @@ class ProviderKeyDialog(Vertical):
         self.query_one("#custom-name").display = is_custom
         self.query_one("#custom-url").display = is_custom
         self._set_values(values or {})
-        _center_widget(self, h_frac=0.35)
+        self._store_center(h_frac=0.35)
+        self._recenter()
         self.add_class("visible")
-        self.call_after_refresh(lambda: _center_widget(self, h_frac=0.35, use_region=True))
+        self.call_after_refresh(self._recenter)
         self.call_after_refresh(self._focus_first)
 
     def _set_values(self, values: dict) -> None:
