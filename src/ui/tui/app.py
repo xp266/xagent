@@ -1272,10 +1272,17 @@ class XAgentTUI(PickerMixin, App):
         except Exception:
             pass
 
-    @staticmethod
-    def _prewarm_providers() -> None:
+    def _prewarm_providers(self) -> None:
         import src.ai.openai
         import src.ai.anthropic
+        try:
+            import openai.resources
+        except Exception:
+            pass
+        try:
+            self._session.provider
+        except Exception:
+            pass
 
     def on_unmount(self) -> None:
         self._closing = True
