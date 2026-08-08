@@ -4,7 +4,6 @@ import json
 import os
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
 
 from src.utils.paths import data_dir
 from src.utils.prompts import load as load_prompt
@@ -16,9 +15,6 @@ from src.tools.registry import ToolRegistry
 from src.types.events import TokenUsage
 from src.types.tools import Tool
 from src.mcp.manager import get_mcp_manager
-
-if TYPE_CHECKING:
-    from src.ai.base import Provider
 
 
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -149,14 +145,15 @@ class Session:
         if self._registry is None:
             self._registry = ToolRegistry()
             self._registry.load_local(os.path.join(_PROJECT_ROOT, "src", "tools"))
-            self._register_mcp_tools()
+            self._registry.sync_hook = self._sync_mcp_tools
+            self._sync_mcp_tools()
         return self._registry
 
     @registry.setter
     def registry(self, value):
         self._registry = value
 
-    def _register_mcp_tools(self) -> None:
+    def _sync_mcp_tools(self) -> None:
         manager = get_mcp_manager()
         manager.configure(get_store().mcp_servers)
         for tool in manager.tools:
@@ -328,9 +325,8 @@ def get_session_manager() -> SessionManager:
     return _SESSION_MANAGER
 
 
-def name_session_from_first_message(session: Session, first_message: str) -> str | None:
+async def name_session_from_first_message(session: Session, first_message: str) -> str | None:
     try:
-        name = generate_name(session.provider, first_message)
-        return name
+        return await generate_name(session.provider, first_message)
     except Exception:
         return None

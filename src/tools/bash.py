@@ -5,7 +5,7 @@ import signal
 import subprocess
 import threading
 
-from src.agent.cancel import is_cancelled, register_abort
+from src.agent.cancel import is_cancelled
 from src.types.tools import Tool
 
 DEFAULT_TIMEOUT_MS = 120_000
@@ -27,16 +27,6 @@ def _track(pid: int) -> None:
 def _untrack(pid: int) -> None:
     with _pid_lock:
         _active_pids.discard(pid)
-
-
-def kill_all() -> None:
-    with _pid_lock:
-        pids = list(_active_pids)
-    for pid in pids:
-        _kill_process_group(pid, force_kill_after=1)
-
-
-register_abort(kill_all)
 
 
 def _kill_process_group(pid: int, force_kill_after: int = 3):
@@ -127,7 +117,7 @@ def execute(command: str, workdir: str = "", timeout: int = 0, **kwargs) -> dict
         except OSError:
             return {
                 "title": command,
-                "output": f"Command interrupted by user.",
+                "output": "Command interrupted by user.",
                 "metadata": {"error": True, "exit": None, "truncated": False, "interrupted": True},
             }
     finally:

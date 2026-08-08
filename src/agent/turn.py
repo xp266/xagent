@@ -1,10 +1,10 @@
+import asyncio
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 
 import httpx
 
-from src.agent.cancel import TurnCancelled, is_cancelled, register_abort, unregister_abort
 from src.agent.loop import agent_stream
 from src.agent.session import Session, get_session_manager
 from src.types.events import (
@@ -80,14 +80,6 @@ def _retry_delay(attempt: int) -> float:
     return RETRY_BASE_DELAY * (2 ** (attempt - 1))
 
 
-def _sleep_interruptible(seconds: float) -> None:
-    end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        if is_cancelled():
-            raise TurnCancelled
-        time.sleep(0.25)
-
-
 class _ProviderError(Exception):
     def __init__(self, message: str, code: int = 0) -> None:
         super().__init__(message)
@@ -133,7 +125,7 @@ def _persist(session: Session) -> None:
     get_session_manager().save(session)
 
 
-def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]:
+async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[StreamEvent]:
     session.msgs.add_user(user_input)
     start = time.monotonic()
 
@@ -141,12 +133,18 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
     retry_count = 0
 
     provider = session.provider
-    register_abort(provider.abort)
+    response = LLMResponse()
+    tool_calls_pending: list[ToolCallData] = []
+    tool_results: list[ToolResultData | ToolErrorData] = []
+    turn_usage = TokenUsage()
+    last_prompt_tokens = 0
+    committed = False
+
     try:
-        while not cancelled:
+        while True:
             response = LLMResponse()
-            tool_calls_pending: list[ToolCallData] = []
-            tool_results: list[ToolResultData | ToolErrorData] = []
+            tool_calls_pending = []
+            tool_results = []
             turn_usage = TokenUsage()
             last_prompt_tokens = 0
             committed = False
@@ -159,7 +157,7 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                     session.registry,
                 )
 
-                for event in stream:
+                async for event in stream:
                     if event.type == "step-start":
                         response = LLMResponse()
                         tool_calls_pending = []
@@ -190,8 +188,6 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                                 total_tokens=session.token_usage.total_tokens + usage.get("total_tokens", 0),
                             )
                     elif event.type == "provider-error":
-                        if is_cancelled():
-                            raise TurnCancelled
                         raise _ProviderError(
                             event.data.get("error", "provider error"),
                             int(event.data.get("code") or 0),
@@ -199,12 +195,11 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
 
                     yield event
 
-            except TurnCancelled:
+            except asyncio.CancelledError:
                 cancelled = True
+                raise
             except Exception as e:
-                if is_cancelled():
-                    cancelled = True
-                elif retry_count < RETRY_LIMIT and _is_retryable(e):
+                if retry_count < RETRY_LIMIT and _is_retryable(e):
                     retry_count += 1
                     if tool_calls_pending or tool_results:
                         _fill_tool_calls(response, tool_calls_pending)
@@ -225,32 +220,41 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                     }
                     yield StreamEvent(type="retry-schedule", data=retry_data)
                     try:
-                        _sleep_interruptible(delay)
-                    except TurnCancelled:
+                        await asyncio.sleep(delay)
+                    except asyncio.CancelledError:
                         cancelled = True
+                        raise
                     continue
                 else:
                     err_data: ProviderErrorData = {"error": str(e), "code": 0}
                     yield StreamEvent(type="provider-error", data=err_data)
-                    _persist(session)
-                    return
-
-            if not cancelled:
-                _fill_tool_calls(response, tool_calls_pending)
-                _commit_response(session, response, tool_results, cancelled=False)
-                committed = True
-                retry_count = 0
-                for tr in tool_results:
-                    session.msgs.add_tool(
-                        tr["id"],
-                        tr.get("result", tr.get("error", "")),
-                        tr.get("attachments"),
-                        is_error=bool(tr.get("is_error") or tr.get("error")),
-                    )
-                _persist(session)
-
-                if response.finish_reason != "tool_calls":
                     break
+
+            if cancelled:
+                break
+
+            _fill_tool_calls(response, tool_calls_pending)
+            _commit_response(session, response, tool_results, cancelled=False)
+            committed = True
+            retry_count = 0
+            for tr in tool_results:
+                session.msgs.add_tool(
+                    tr["id"],
+                    tr.get("result", tr.get("error", "")),
+                    tr.get("attachments"),
+                    is_error=bool(tr.get("is_error") or tr.get("error")),
+                )
+            _persist(session)
+
+            if response.finish_reason != "tool_calls":
+                break
+    finally:
+        try:
+            task = asyncio.current_task()
+            if task is not None and task.cancelling() > 0:
+                cancelled = True
+        except Exception:
+            pass
 
         if cancelled and not committed:
             _fill_tool_calls(response, tool_calls_pending)
@@ -262,13 +266,9 @@ def run_session_turn(session: Session, user_input: str) -> Iterator[StreamEvent]
                     tr.get("attachments"),
                     is_error=bool(tr.get("is_error") or tr.get("error")),
                 )
-            _persist(session)
-
-        if cancelled:
-            yield StreamEvent(type="turn-cancelled", data={})
-            session.reset_provider()
 
         _attach_turn_meta(session, provider.model, turn_usage, last_prompt_tokens, time.monotonic() - start)
         _persist(session)
-    finally:
-        unregister_abort(provider.abort)
+
+        if cancelled:
+            session.reset_provider()

@@ -11,6 +11,7 @@ class ToolRegistry:
 
         self._tools: dict[str, Tool] = {}
         self._truncate = TruncateService(truncation_dir)
+        self.sync_hook = None
 
     def register(self, tool: Tool):
         self._tools[tool.name] = tool
@@ -41,6 +42,11 @@ class ToolRegistry:
             return None
 
     def schemas(self) -> list:
+        if self.sync_hook is not None:
+            try:
+                self.sync_hook()
+            except Exception:
+                pass
         return [
             {
                 "type": "function",

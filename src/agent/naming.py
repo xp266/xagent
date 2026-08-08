@@ -12,13 +12,13 @@ def _truncate(name: str) -> str:
     return name
 
 
-def generate_name(provider: Provider, first_message: str) -> str:
+async def generate_name(provider: Provider, first_message: str) -> str:
     messages = [
         {"role": "system", "content": load_prompt("naming")},
         {"role": "user", "content": first_message[:_MAX_FIRST_MSG]},
     ]
     try:
-        response = provider.respond(messages)
+        response = await provider.arespond(messages)
         raw = response.content.strip()
         return _truncate(raw) if raw else "New Session"
     except Exception:

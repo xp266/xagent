@@ -1,14 +1,13 @@
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 
 from httpx import Timeout
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from src.types.events import StreamEvent, TokenUsage
 from src.ai.base import Provider
 from src.utils.models import detect_capabilities, get_model_output_limit, reasoning_effort_options
-from src.agent.cancel import TurnCancelled, is_cancelled
 
 _SURROGATE_RE = re.compile(r'[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]')
 _REASONING_MODEL = re.compile(r"(?i)^(gpt-5|o[1-9])")
@@ -78,7 +77,7 @@ def _clean_openai_messages(messages: list[dict], capabilities) -> list[dict]:
     return _filter_unsupported_media(cleaned, capabilities)
 
 
-def _stream_openai_events(stream, capabilities) -> Iterator[StreamEvent]:
+async def _stream_openai_events(stream, capabilities) -> AsyncIterator[StreamEvent]:
     tool_calls: list[dict | None] = []
     finish_reason = ""
     usage = TokenUsage()
@@ -86,9 +85,7 @@ def _stream_openai_events(stream, capabilities) -> Iterator[StreamEvent]:
     reasoning_active = False
     text_active = False
 
-    for chunk in stream:
-        if is_cancelled():
-            raise TurnCancelled
+    async for chunk in stream:
         if hasattr(chunk, "usage") and chunk.usage:
             raw = chunk.usage
             usage = TokenUsage(
@@ -215,14 +212,14 @@ class OpenAIProvider(Provider):
         self.capabilities = detect_capabilities(model, model_meta)
         self.max_tokens = get_model_output_limit(model, model_meta)
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=api_key,
             base_url=base_url,
             timeout=timeout,
             max_retries=max_retries,
         )
 
-    def stream(self, messages: list[dict], tools: list | None = None) -> Iterator[StreamEvent]:
+    async def astream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[StreamEvent]:
         cleaned = _clean_openai_messages(messages, self.capabilities)
 
         kwargs: dict = {
@@ -247,15 +244,10 @@ class OpenAIProvider(Provider):
             kwargs["reasoning_effort"] = effort
 
         try:
-            stream = self.client.chat.completions.create(**kwargs)
+            stream = await self.client.chat.completions.create(**kwargs)
         except Exception as e:
             yield StreamEvent(type="provider-error", data={"error": str(e), "code": getattr(e, "status_code", None) or 0})
             return
 
-        yield from _stream_openai_events(stream, self.capabilities)
-
-    def abort(self) -> None:
-        try:
-            self.client.close()
-        except Exception:
-            pass
+        async for event in _stream_openai_events(stream, self.capabilities):
+            yield event

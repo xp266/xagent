@@ -1,6 +1,6 @@
+import asyncio
 import json
 import os
-import threading
 import time
 import unicodedata
 
@@ -103,12 +103,6 @@ class XAgentTUI(PickerMixin, App):
         self._pending_model_provider = None
         self._deferred = None
         get_mcp_manager().connect_async(get_store().mcp_servers)
-
-    def _post(self, fn, *args) -> None:
-        try:
-            self.call_from_thread(fn, *args)
-        except Exception:
-            pass
 
     def _chat(self):
         return self.query_one("#chat-box")
@@ -324,14 +318,20 @@ class XAgentTUI(PickerMixin, App):
             text.append(" " * pad)
         if mcp is not None:
             text.append(mcp)
-        self.query_one("#input-status", Static).update(text)
+        try:
+            self.query_one("#input-status", Static).update(text)
+        except Exception:
+            pass
 
     def _update_status(self) -> None:
         self._update_input_status()
         status = f" {self._status_string()}"
         width = self.size.width if self.size and self.size.width else 80
         status = _truncate_cells(status, max(0, width - 1))
-        self.query_one("#status", Static).update(Text(status, style="#666666"))
+        try:
+            self.query_one("#status", Static).update(Text(status, style="#666666"))
+        except Exception:
+            pass
 
     def _append_user(self, text: str) -> None:
         block = self._append_block(kind="user", bg=_USER_BG)
@@ -874,17 +874,27 @@ class XAgentTUI(PickerMixin, App):
             block.update("Turn interrupted by user")
             self._scroll_end()
 
-    def _turn_worker(self, text: str) -> None:
-        from src.agent.cancel import turn_done
+    async def _turn_worker(self, text: str) -> None:
+        from src.agent.cancel import set_turn_task
         start = time.monotonic()
         try:
-            for event in run_session_turn(self._session, text):
-                self._post(self._handle_event, event)
+            async for event in run_session_turn(self._session, text):
+                self._handle_event(event)
+        except asyncio.CancelledError:
+            cur = self._current
+            if cur is not None:
+                self._clear_retry()
+                self._hide_waiting()
+                cur["interrupted"] = True
+                block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
+                block.update("Turn interrupted by user")
+                self._scroll_end()
         except Exception as e:
-            self._post(self._append_error, f"{type(e).__name__}: {e}")
-        elapsed = time.monotonic() - start
-        self._post(self._finalize_turn, elapsed)
-        turn_done()
+            self._append_error(f"{type(e).__name__}: {e}")
+        finally:
+            elapsed = time.monotonic() - start
+            self._finalize_turn(elapsed)
+            set_turn_task(None)
 
     def _finalize_turn(self, elapsed: float) -> None:
         cur = self._current
@@ -921,13 +931,13 @@ class XAgentTUI(PickerMixin, App):
         if s is self._session:
             self._update_status()
 
-    def _name_worker(self, s: object, first_message: str) -> None:
+    async def _name_worker(self, s: object, first_message: str) -> None:
         try:
-            name = name_session_from_first_message(s, first_message)
+            name = await name_session_from_first_message(s, first_message)
         except Exception:
             name = None
         if name:
-            self._post(self._apply_name, s, name)
+            self._apply_name(s, name)
 
     def _new_chat(self) -> None:
         if os.path.isdir(self._launch_dir):
@@ -964,7 +974,6 @@ class XAgentTUI(PickerMixin, App):
 
     def _render_messages(self) -> None:
         self._clear_chat_messages()
-        canvas = self._canvas()
         tool_results = {}
         tool_errors = {}
         for msg in self._session.messages:
@@ -1168,7 +1177,7 @@ class XAgentTUI(PickerMixin, App):
         if not cfg.model:
             self._append_error("No model selected. Type /model to select one.")
             return
-        from src.agent.cancel import reset
+        from src.agent.cancel import reset, set_turn_task
         reset()
         self._input().busy = True
         self._busy = True
@@ -1193,8 +1202,9 @@ class XAgentTUI(PickerMixin, App):
         self._scroll_end()
         if self._session.name == "New Session":
             s = self._session
-            threading.Thread(target=self._name_worker, args=(s, text), name="xagent-naming", daemon=True).start()
-        threading.Thread(target=self._turn_worker, args=(text,), name="xagent-turn", daemon=True).start()
+            asyncio.create_task(self._name_worker(s, text), name="xagent-naming")
+        task = asyncio.create_task(self._turn_worker(text), name="xagent-turn")
+        set_turn_task(task)
 
     def on_chat_input_submitted(self, message: ChatInput.Submitted) -> None:
         self._palette().hide()
@@ -1237,11 +1247,20 @@ class XAgentTUI(PickerMixin, App):
         self._scroll_end()
         self.set_interval(0.033, self._tick_animations, pause=False)
         self._input().focus()
+        asyncio.create_task(self._prewarm_render(), name="xagent-prewarm")
+
+    async def _prewarm_render(self) -> None:
+        try:
+            await asyncio.sleep(0)
+            self.screen._on_timer_update()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            pass
 
     def on_unmount(self) -> None:
-        from src.agent.cancel import abort, turn_done
-        turn_done()
-        abort()
+        from src.agent.cancel import cancel
+        cancel()
 
 
 def run_tui() -> None:

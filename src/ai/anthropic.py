@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 
 import httpx
 from httpx import Timeout
@@ -15,7 +15,6 @@ from src.utils.models import (
     get_reasoning_budget_bounds,
 )
 from src.types.events import StreamEvent, TokenUsage
-from src.agent.cancel import TurnCancelled, is_cancelled
 
 _ANTHROPIC_VERSION = "2023-06-01"
 _DEFAULT_MAX_TOKENS = 8192
@@ -186,12 +185,10 @@ def _extract_api_error(body: str) -> str:
         return body[:300]
 
 
-def _iter_sse_events(resp: httpx.Response) -> Iterator[tuple[str, str]]:
+async def _iter_sse_events(resp: httpx.Response) -> AsyncIterator[tuple[str, str]]:
     event_name = ""
     data_lines: list[str] = []
-    for line in resp.iter_lines():
-        if is_cancelled():
-            raise TurnCancelled
+    async for line in resp.aiter_lines():
         if line == "":
             if data_lines:
                 yield event_name, "\n".join(data_lines)
@@ -205,7 +202,7 @@ def _iter_sse_events(resp: httpx.Response) -> Iterator[tuple[str, str]]:
         yield event_name, "\n".join(data_lines)
 
 
-def _stream_anthropic_events(resp: httpx.Response) -> Iterator[StreamEvent]:
+async def _stream_anthropic_events(resp: httpx.Response) -> AsyncIterator[StreamEvent]:
     step_started = False
     reasoning_active = False
     text_active = False
@@ -218,7 +215,7 @@ def _stream_anthropic_events(resp: httpx.Response) -> Iterator[StreamEvent]:
     input_tokens = 0
     output_tokens = 0
 
-    for name, data in _iter_sse_events(resp):
+    async for name, data in _iter_sse_events(resp):
         try:
             payload = json.loads(data)
         except json.JSONDecodeError:
@@ -335,9 +332,9 @@ class AnthropicProvider(Provider):
         self.model_meta: dict | None = model_meta
         self.capabilities: Capabilities = detect_capabilities(model, model_meta)
         self.max_tokens: int = get_model_output_limit(model, model_meta) or _DEFAULT_MAX_TOKENS
-        self._client: httpx.Client = httpx.Client(timeout=self.timeout)
+        self._client: httpx.AsyncClient = httpx.AsyncClient(timeout=self.timeout)
 
-    def stream(self, messages: list[dict], tools: list | None = None) -> Iterator[StreamEvent]:
+    async def astream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[StreamEvent]:
         system, anthropic_messages = _messages_to_anthropic(messages, self.capabilities)
         anthropic_tools = _tools_to_anthropic(tools)
 
@@ -370,21 +367,13 @@ class AnthropicProvider(Provider):
         }
 
         try:
-            with self._client.stream("POST", f"{self.base_url}/messages", json=payload, headers=headers) as resp:
+            async with self._client.stream("POST", f"{self.base_url}/messages", json=payload, headers=headers) as resp:
                 if resp.status_code != 200:
-                    body = resp.read().decode("utf-8", "replace")
-                    yield StreamEvent(type="provider-error", data={"error": _extract_api_error(body), "code": resp.status_code})
+                    body = await resp.aread()
+                    text = body.decode("utf-8", "replace")
+                    yield StreamEvent(type="provider-error", data={"error": _extract_api_error(text), "code": resp.status_code})
                     return
-                yield from _stream_anthropic_events(resp)
-        except TurnCancelled:
-            raise
+                async for event in _stream_anthropic_events(resp):
+                    yield event
         except Exception as e:
-            if is_cancelled():
-                raise TurnCancelled
             yield StreamEvent(type="provider-error", data={"error": str(e), "code": getattr(e, "status_code", None) or 0})
-
-    def abort(self) -> None:
-        try:
-            self._client.close()
-        except Exception:
-            pass

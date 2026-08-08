@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import subprocess
@@ -8,10 +9,10 @@ import httpx
 
 
 def _check_cancel() -> None:
-    from src.agent.cancel import TurnCancelled, is_cancelled
+    from src.agent.cancel import is_cancelled
 
     if is_cancelled():
-        raise TurnCancelled
+        raise asyncio.CancelledError
 
 
 def _parse_response(text: str) -> dict | None:
@@ -58,7 +59,6 @@ class McpHttpClient:
                 pass
 
     def _request(self, method: str, params: dict | None = None, timeout: float | None = None) -> dict | None:
-        _check_cancel()
         notification = method.startswith("notifications/")
         payload: dict = {"jsonrpc": "2.0", "method": method}
         if not notification:
@@ -216,7 +216,6 @@ class McpStdioClient:
                 fut.set_result({"error": {"message": "MCP stdio server closed"}})
 
     def _request(self, method: str, params: dict | None = None, timeout: float = 30.0) -> dict | None:
-        _check_cancel()
         self._start()
         with self._lock:
             proc = self._proc

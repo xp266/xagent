@@ -1,28 +1,27 @@
 from __future__ import annotations
-from collections.abc import Iterator
+import asyncio
+from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 from src.types.events import StreamEvent, ToolResultData
 from src.ai.base import Provider
-from src.agent.cancel import TurnCancelled, is_cancelled
 
 if TYPE_CHECKING:
     from src.tools.registry import ToolRegistry
 
 
-def agent_stream(
+async def agent_stream(
     provider: Provider,
     messages: list[dict],
     tools: list | None,
     registry: ToolRegistry,
-) -> Iterator[StreamEvent]:
-    for event in provider.stream(messages, tools):
+) -> AsyncIterator[StreamEvent]:
+    async for event in provider.astream(messages, tools):
         yield event
-        if is_cancelled():
-            raise TurnCancelled
         if event.type == "tool-call":
             call = event.data
             try:
-                result_data = registry.execute(
+                result_data = await asyncio.to_thread(
+                    registry.execute,
                     call["name"],
                     call["input"] if isinstance(call["input"], dict) else {},
                 )
@@ -36,6 +35,8 @@ def agent_stream(
                     "is_error": bool(result_data.get("metadata", {}).get("error")),
                 }
                 yield StreamEvent(type="tool-result", data=tool_result_data)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 yield StreamEvent(type="tool-error", data={
                     "id": call["id"],

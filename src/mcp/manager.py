@@ -15,7 +15,6 @@ class McpManager:
         self._loading = False
         self._loaded = False
         self._lock = threading.Lock()
-        self._abort_registered = False
 
     def configure(self, servers: dict[str, dict] | None) -> None:
         raw = servers or {}
@@ -31,10 +30,6 @@ class McpManager:
             self._reset_locked()
             self._loaded = False
             self._loading = False
-        if enabled and not self._abort_registered:
-            self._abort_registered = True
-            from src.agent.cancel import register_abort
-            register_abort(self._abort_all)
 
     def connect_async(self, servers: dict[str, dict] | None) -> None:
         self.configure(servers)
@@ -122,7 +117,7 @@ class McpManager:
 
     @property
     def tools(self) -> list[dict]:
-        self._ensure_loaded()
+        self._start_load()
         with self._lock:
             return list(self._tools)
 
@@ -150,15 +145,6 @@ class McpManager:
                     break
                 return client.call_tool(tool_name, arguments)
         return {"output": f"Unknown MCP tool: {tool_name}", "metadata": {"error": True}}
-
-    def _abort_all(self) -> None:
-        with self._lock:
-            clients = list(self._clients.values())
-        for client in clients:
-            try:
-                client.close()
-            except Exception:
-                pass
 
 
 _manager: McpManager | None = None
