@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import sys
 import time
 import unicodedata
 
@@ -1267,6 +1268,8 @@ class XAgentTUI(PickerMixin, App):
 
     def on_mount(self) -> None:
         self.title = "XAgent"
+        if sys.platform == "win32":
+            self._sync_available = True
         from src.agent.truncate import TruncateService
         TruncateService().cleanup()
         self._update_status()
