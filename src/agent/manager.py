@@ -6,6 +6,27 @@ from src.types.events import LLMResponse
 SYNTHETIC_ATTACHMENT_PROMPT = "The tool returned the following image attachment(s). Please use them to continue."
 
 
+def _sanitize_for_storage(api: dict) -> dict:
+    if api.get("role") != "user":
+        return api
+    content = api.get("content")
+    if not isinstance(content, list):
+        return api
+    out = dict(api)
+    cleaned = []
+    for part in content:
+        if isinstance(part, dict) and part.get("type") == "image_url":
+            filename = part.get("filename") or ""
+            cleaned.append({"type": "text", "text": f"[image: {filename}]" if filename else "[image]"})
+        else:
+            cleaned.append(part)
+    if all(isinstance(p, dict) and p.get("type") == "text" for p in cleaned):
+        out["content"] = "\n".join(p.get("text", "") for p in cleaned)
+    else:
+        out["content"] = cleaned
+    return out
+
+
 def _messages_to_api(messages: list, *, include_meta: bool = False) -> list[dict]:
     result = []
     for m in messages:
@@ -14,6 +35,8 @@ def _messages_to_api(messages: list, *, include_meta: bool = False) -> list[dict
             api["_meta"] = dict(m.meta)
         elif isinstance(api, dict) and "_meta" in api and not include_meta:
             api = {k: v for k, v in api.items() if k != "_meta"}
+        if include_meta:
+            api = _sanitize_for_storage(api)
         if api.get("role") == "assistant" and not api.get("content") and not api.get("tool_calls"):
             continue
         result.append(api)
@@ -24,6 +47,7 @@ class MessageManager:
     def __init__(self, system_prompt: str = "", session=None):
         self._session = session
         self._messages: list[Message | dict] = list(session.messages) if session else []
+        self._pending_attachments: list = []
 
         if system_prompt:
             if not self._messages or not isinstance(self._messages[0], dict) or self._messages[0].get("role") != "system":
@@ -62,7 +86,16 @@ class MessageManager:
             is_error=is_error,
         ))
         if attachments:
-            self._messages.append(UserMessage(content=SYNTHETIC_ATTACHMENT_PROMPT))
+            self._pending_attachments.extend(attachments)
+
+    def finalize_tool_results(self) -> None:
+        if not self._pending_attachments:
+            return
+        self._messages.append(UserMessage(
+            content=SYNTHETIC_ATTACHMENT_PROMPT,
+            attachments=self._pending_attachments,
+        ))
+        self._pending_attachments = []
 
     def get_messages(self) -> list:
         return self._messages

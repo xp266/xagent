@@ -211,6 +211,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                                 tr.get("attachments"),
                                 is_error=bool(tr.get("is_error") or tr.get("error")),
                             )
+                        session.msgs.finalize_tool_results()
                         _persist(session)
                     delay = _retry_delay(retry_count)
                     retry_data: RetryScheduleData = {
@@ -244,6 +245,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                     tr.get("attachments"),
                     is_error=bool(tr.get("is_error") or tr.get("error")),
                 )
+            session.msgs.finalize_tool_results()
             _persist(session)
 
             if response.finish_reason != "tool_calls":
@@ -266,6 +268,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                     tr.get("attachments"),
                     is_error=bool(tr.get("is_error") or tr.get("error")),
                 )
+            session.msgs.finalize_tool_results()
 
         _attach_turn_meta(session, provider.model, turn_usage, last_prompt_tokens, time.monotonic() - start)
         _persist(session)

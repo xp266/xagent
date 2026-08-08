@@ -113,13 +113,24 @@ def _assistant_content_to_anthropic(msg: dict) -> list[dict]:
     return blocks
 
 
+def _has_tool_result(content) -> bool:
+    return any(isinstance(b, dict) and b.get("type") == "tool_result" for b in content)
+
+
 def _merge_anthropic_messages(messages: list[dict]) -> list[dict]:
     merged: list[dict] = []
     for msg in messages:
+        blocks = msg["content"]
+        can_merge = False
         if merged and merged[-1]["role"] == msg["role"]:
-            merged[-1]["content"] = merged[-1]["content"] + msg["content"]
+            if msg["role"] == "user":
+                can_merge = _has_tool_result(merged[-1]["content"]) == _has_tool_result(blocks)
+            else:
+                can_merge = True
+        if can_merge:
+            merged[-1]["content"] = merged[-1]["content"] + blocks
         else:
-            merged.append({"role": msg["role"], "content": list(msg["content"])})
+            merged.append({"role": msg["role"], "content": list(blocks)})
     return merged
 
 

@@ -34,9 +34,24 @@ class SystemMessage(BaseModel):
 
 class UserMessage(BaseModel):
     content: str
+    attachments: list = []
 
     def to_api(self) -> dict:
-        return {"role": "user", "content": self.content}
+        if not self.attachments:
+            return {"role": "user", "content": self.content}
+        parts: list = []
+        if self.content:
+            parts.append({"type": "text", "text": self.content})
+        for att in self.attachments:
+            if not isinstance(att, dict):
+                continue
+            parts.append({
+                "type": "image_url",
+                "image_url": {"url": att.get("url", "")},
+                "mediaType": att.get("mime", ""),
+                "filename": att.get("filename", ""),
+            })
+        return {"role": "user", "content": parts}
 
 
 class AssistantMessage(BaseModel):
