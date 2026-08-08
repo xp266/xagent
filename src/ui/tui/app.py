@@ -891,9 +891,10 @@ class XAgentTUI(PickerMixin, App):
                 self._clear_retry()
                 self._hide_waiting()
                 cur["interrupted"] = True
-                block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
-                block.update("Turn interrupted by user")
-                self._scroll_end()
+                if self._deferred is None:
+                    block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
+                    block.update("Turn interrupted by user")
+                    self._scroll_end()
         except Exception as e:
             if self._exit or self._closing:
                 return
@@ -926,8 +927,7 @@ class XAgentTUI(PickerMixin, App):
         deferred = self._deferred
         self._deferred = None
         if deferred is not None:
-            cmd, args = deferred
-            cmd.handler(self, args)
+            deferred()
             return
         self._input().focus()
 
@@ -947,7 +947,15 @@ class XAgentTUI(PickerMixin, App):
         if name and not self._closing:
             self._apply_name(s, name)
 
+    def _defer_switch(self, fn) -> None:
+        self._deferred = fn
+        from src.agent.cancel import cancel
+        cancel()
+
     def _new_chat(self) -> None:
+        if self._busy:
+            self._defer_switch(self._new_chat)
+            return
         if os.path.isdir(self._launch_dir):
             os.chdir(self._launch_dir)
         self._project = self._launch_dir
@@ -963,6 +971,9 @@ class XAgentTUI(PickerMixin, App):
         s = self._sm.get(code.strip())
         if s is None:
             self._append_error(f"Session not found: {code.strip()}")
+            return
+        if self._busy:
+            self._defer_switch(lambda: self._switch_session(code))
             return
         self._sm.current = s.id
         self._session = s
@@ -1151,20 +1162,6 @@ class XAgentTUI(PickerMixin, App):
         text = text.strip()
         if not text:
             return
-        if self._busy:
-            parts = text.split(None, 1)
-            name = parts[0][1:]
-            args = parts[1] if len(parts) > 1 else ""
-            for cmd in get_commands():
-                if cmd.name == name or name in cmd.aliases:
-                    if cmd.name in ("new", "session", "exit"):
-                        self._deferred = (cmd, args)
-                        from src.agent.cancel import cancel
-                        cancel()
-                        self._update_input_status("Interrupting...")
-                        return
-            self._append_error("Agent is busy, please wait.")
-            return
         if text.startswith("/"):
             parts = text.split(None, 1)
             name = parts[0][1:]
@@ -1174,6 +1171,9 @@ class XAgentTUI(PickerMixin, App):
                     cmd.handler(self, args)
                     return
             self._append_error(f"Unknown command: /{name}")
+            return
+        if self._busy:
+            self._append_error("Agent is busy, please wait.")
             return
         self._send(text)
 

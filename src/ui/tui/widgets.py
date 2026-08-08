@@ -108,6 +108,11 @@ class ChatInput(TextArea):
             self.placeholder = ""
 
     async def _on_key(self, event: events.Key) -> None:
+        if event.key in ("ctrl+j", "newline"):
+            event.stop()
+            event.prevent_default()
+            self.insert("\n")
+            return
         if event.key in ("enter", "ctrl+m"):
             if self.palette_open:
                 event.stop()
@@ -599,6 +604,9 @@ class StrengthPicker(_ListPicker):
         def __init__(self, effort: str) -> None:
             super().__init__()
             self.effort = effort
+
+    class Dismissed(Message):
+        pass
 
     def item_label(self, item) -> str:
         return str(item)
