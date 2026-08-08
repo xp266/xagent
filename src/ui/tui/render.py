@@ -11,6 +11,7 @@ _READ_LINE_RE = re.compile(r"^(\d+):(.*)$")
 
 _CODE_TOOLS = {"write", "edit", "read"}
 _BLOCK_TOOLS = {"write", "edit"}
+_STREAM_PREVIEW_MAX = 100
 
 
 def _lang_for(path: str) -> str:
@@ -187,12 +188,11 @@ def tool_block(name, args, result, is_error, preview=False):
         content = args.get("content", "")
         lines = content.rstrip("\n").split("\n")
         if preview:
-            max_preview = 100
-            if len(lines) > max_preview:
-                body = f"( {len(lines)} lines, streaming )\n\n" + "\n".join(lines[-max_preview:])
+            if len(lines) > _STREAM_PREVIEW_MAX:
+                body = f"( {len(lines)} lines, streaming )\n\n" + "\n".join(lines[-_STREAM_PREVIEW_MAX:])
             else:
                 body = "\n".join(lines)
-            body = f"```\n{body}"
+            body = f"```text\n{body}"
         else:
             body = f"```{_lang_for(path)}\n" + "\n".join(lines) + "\n```"
         if is_error and result:
@@ -207,9 +207,7 @@ def tool_block(name, args, result, is_error, preview=False):
         if not is_error and not args.get("replaceAll"):
             rows = _edit_hunk(file_path, old_str, new_str)
         if rows is not None:
-            body = f"```{lang}@n\n" + "\n".join(
-                f"{num} {marker} {text}" for num, marker, text in rows
-            )
+            diff = [f"{num} {marker} {text}" for num, marker, text in rows]
         else:
             diff = []
             num = 0
@@ -220,6 +218,9 @@ def tool_block(name, args, result, is_error, preview=False):
                 for line in new_str.rstrip("\n").split("\n"):
                     num += 1
                     diff.append(f"{num} + {line}")
+        if preview and len(diff) > _STREAM_PREVIEW_MAX:
+            body = f"( {len(diff)} lines, streaming )\n\n" + f"```{lang}@n\n" + "\n".join(diff[-_STREAM_PREVIEW_MAX:])
+        else:
             body = f"```{lang}@n\n" + "\n".join(diff)
         if not preview:
             body += "\n```"

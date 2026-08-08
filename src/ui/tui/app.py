@@ -74,6 +74,7 @@ _BLUE_WAVE = (
 _WAVE_SPEED = 10.0
 
 _RENDER_COOLDOWN = 0.016
+_TOOL_RENDER_COOLDOWN = 0.08
 
 
 def _lerp_hex(c1: str, c2: str, t: float) -> str:
@@ -201,6 +202,23 @@ class XAgentTUI(PickerMixin, App):
                 md.feed(text[prev_len:])
                 cur["_reply_md_len"] = len(text)
             cur["reply"].update(md.render())
+
+        pending_tool = False
+        for tc_id, tool in cur["tools"].items():
+            if tool.get("done"):
+                continue
+            info = cur["tool_buffers"].get(tc_id)
+            if info is None:
+                continue
+            if force or len(info["raw"]) != info.get("_last_len", 0):
+                pending_tool = True
+                break
+
+        if pending_tool and not force and now - cur.get("last_tool_render", 0.0) < _TOOL_RENDER_COOLDOWN:
+            return
+
+        if pending_tool:
+            cur["last_tool_render"] = now
 
         for tc_id, tool in cur["tools"].items():
             if tool.get("done"):
@@ -1203,6 +1221,7 @@ class XAgentTUI(PickerMixin, App):
             "tool_done": set(),
             "waiting": None,
             "last_stream_render": 0.0,
+            "last_tool_render": 0.0,
             "_reply_md_len": 0,
         }
         self._append_user(text)
