@@ -2,9 +2,11 @@ import os
 import re
 
 from rich.text import Text
+from textual.content import Content
 from textual.highlight import guess_language
 
 from src.mcp import is_mcp_tool
+from src.ui.tui.markdown import _fence_body, render_markdown
 
 _READ_HEADER_RE = re.compile(r"^\([^,]+(?:, \d+ lines|, lines [\d-]+/\d+)\)$")
 _READ_LINE_RE = re.compile(r"^(\d+):(.*)$")
@@ -283,3 +285,45 @@ def fmt_duration(seconds: float) -> str:
 
 def fmt_pct(pct: float) -> str:
     return f"{round(pct)}% context"
+
+_FENCE_LINE_RE = re.compile(r"^```([A-Za-z0-9_+.\-@]*)\s*$")
+
+
+def render_tool_markdown(body: str, *, numbered: bool = False, line_number_start: int = 1, open: bool = False) -> Content:
+    lines = body.split("\n")
+    i = 0
+    header: list[str] = []
+    while i < len(lines) and not lines[i].startswith("```"):
+        header.append(lines[i])
+        i += 1
+    if i >= len(lines):
+        return render_markdown(body)
+    info = lines[i][3:].strip()
+    lang, _, flags = info.partition("@")
+    diff_nums = flags == "n"
+    lines = lines[i + 1:]
+    rest: list[str] = []
+    if open:
+        code_lines = lines
+    else:
+        close_idx = None
+        for k in range(len(lines) - 1, -1, -1):
+            if _FENCE_LINE_RE.match(lines[k]):
+                close_idx = k
+                break
+        if close_idx is None:
+            code_lines = lines
+        else:
+            code_lines = lines[:close_idx]
+            rest = lines[close_idx + 1:]
+    parts: list = []
+    if header:
+        parts.append(render_markdown("\n".join(header)))
+    code = "\n".join(code_lines).rstrip("\n")
+    parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start))
+    parts.append("\n")
+    if rest:
+        parts.append(render_markdown("\n".join(rest)))
+    return Content.assemble(*parts)
+
+

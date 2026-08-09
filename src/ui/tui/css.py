@@ -21,6 +21,21 @@ CSS = """
         max-height: 8;
         margin: 0 0 7 0;
         border: none;
+        display: none;
+        background: #1A1A1A;
+        padding: 0;
+        overflow-y: auto;
+        scrollbar-size: 0 0;
+    }
+    CommandPalette.visible {
+        display: block;
+    }
+    CommandPalette > .cmd-row {
+        height: 1;
+        padding: 0 1;
+    }
+    CommandPalette > .cmd-row.selected {
+        background: #334466;
     }
     SessionPicker,
     ProviderPicker,

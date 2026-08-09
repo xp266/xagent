@@ -1,8 +1,8 @@
 from src.utils.models import reasoning_effort_options
 from src.utils.providers import get_store, list_providers
 from src.mcp.manager import get_mcp_manager
-from src.ui.tui.widgets import (
-    ChatInput,
+from src.ui.tui.inputbar import ChatInput
+from src.ui.tui.pickers import (
     McpPicker,
     ModelPicker,
     ProviderKeyDialog,
@@ -114,6 +114,21 @@ class PickerMixin:
         store = get_store()
         mgr = get_mcp_manager()
         return [(name, store.mcp_server_status(name), mgr.server_status(name)) for name in store.mcp_servers]
+
+    def _refresh_mcp_picker(self) -> None:
+        try:
+            picker = self._mcp_picker()
+        except Exception:
+            return
+        if not picker.is_visible:
+            return
+        if picker._pending_select is not None:
+            return
+        items = self._mcp_items()
+        sig = tuple(items)
+        if sig != getattr(self, "_mcp_picker_sig", None):
+            self._mcp_picker_sig = sig
+            picker.update_items(items, select=picker._selected)
 
     def _open_mcp_picker(self) -> None:
         self._palette().hide()
@@ -237,7 +252,7 @@ class PickerMixin:
         try:
             from src.utils.providers import fetch_models
             models = fetch_models(provider.base_url, provider.api_key)
-        except Exception as e:
+        except Exception:
             models = []
         store.set_custom_models(pid, models)
         self.call_from_thread(self._custom_models_refreshed, pid, models, open_picker)

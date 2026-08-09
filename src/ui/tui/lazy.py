@@ -82,13 +82,17 @@ def _diff_marker_end(line: Content, offset: int = 0) -> int:
     return 0
 
 
-def _line_bgcolor(line: Content) -> str | None:
+def _line_bg(line: Content) -> tuple[str | None, int]:
+    color = None
+    end = 0
     for s in line.spans:
         style = _parse_rich_style(s.style)
         if style is not None and style.bgcolor is not None:
             r, g, b = style.bgcolor.get_truecolor(None)
-            return f"#{r:02x}{g:02x}{b:02x}"
-    return None
+            color = f"#{r:02x}{g:02x}{b:02x}"
+            if s.end > end:
+                end = s.end
+    return color, end
 
 
 def _wrap_continuation(line: Content, width: int) -> list[Content]:
@@ -101,7 +105,7 @@ def _wrap_continuation(line: Content, width: int) -> list[Content]:
     avail = width - indent
     if avail < 1:
         return wrapped
-    bg = _line_bgcolor(wrapped[0])
+    bg, _ = _line_bg(wrapped[0])
     head = (
         Content(" " * indent, spans=[Span(0, indent, f"on {bg}")])
         if bg
@@ -116,6 +120,27 @@ def _wrap_continuation(line: Content, width: int) -> list[Content]:
         for sub in piece_lines:
             out.append(head + sub)
     return out
+
+
+def selection_slice(line: Content, fill_at: int | None, x0: int, x1: int, pl: int) -> str:
+    plain = line.plain
+    s = x0
+    e = x1 if x1 >= 0 else -1
+    no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
+    if s < pl + no_w:
+        s = pl + no_w
+    if e < 0 or (fill_at is not None and e > fill_at):
+        e = fill_at if fill_at is not None else len(plain)
+    if fill_at is not None and s >= fill_at:
+        s = pl + no_w
+    return plain[s:e] if s < e else ""
+
+
+def clip_selection_start(line: Content, start: int, pl: int = 0) -> int:
+    no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
+    if start < pl + no_w:
+        return pl + no_w
+    return start
 
 
 def _apply_highlight(line: Content, style, start: int, end: int) -> Content:
@@ -133,7 +158,7 @@ def _apply_highlight(line: Content, style, start: int, end: int) -> Content:
 
 
 class LazyText(Static):
-    def __init__(self, content: str | RichText = "", **kwargs) -> None:
+    def __init__(self, content: str = "", **kwargs) -> None:
         super().__init__(content, **kwargs)
         self._lines: list[Content] = []
         self._strips: list[Strip | None] = []
@@ -193,9 +218,7 @@ class LazyText(Static):
                     start, end = span
                     if end == -1:
                         end = len(line.plain)
-                    no_w = _line_no_end(line) + _diff_marker_end(line)
-                    if start < no_w:
-                        start = no_w
+                    start = clip_selection_start(line, start)
                     if start < end:
                         selection_style = TextualStyle.from_styles(
                             self.screen.get_component_styles("screen--selection")
@@ -225,18 +248,10 @@ class LazyText(Static):
         out: list[str] = []
         for y in range(y0, y1 + 1):
             line = self._lines[y]
-            plain = line.plain
             s = x0 if y == y0 else 0
             e = x1 if y == y1 and x1 >= 0 else -1
-            no_w = _line_no_end(line) + _diff_marker_end(line)
-            if s < no_w:
-                s = no_w
             fill_at = self._fill_at[y] if y < len(self._fill_at) else None
-            if e < 0 or (fill_at is not None and e > fill_at):
-                e = fill_at if fill_at is not None else len(plain)
-            if fill_at is not None and s >= fill_at:
-                s = no_w
-            out.append(plain[s:e] if s < e else "")
+            out.append(selection_slice(line, fill_at, s, e, 0))
         return "\n".join(out), "\n"
 
     def update(self, content="", layout=True):

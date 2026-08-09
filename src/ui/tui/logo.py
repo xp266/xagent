@@ -1,6 +1,8 @@
 from rich.text import Text
 from textual.widgets import Static
 
+from src.ui.tui.colors import _lerp_hex, _LOGO_DEFAULT_COLOR, _LOGO_LAYER_COLORS
+
 LOGO_ART = [
     "██▒   ██▒   ███▒     █████▒   ███████▒ ██▒   ██▒ ███████▒ ",
     "██▒   ██▒  ██▒ ██▒  ██▒   ██▒ ██▒      ███▒  ██▒   ██▒    ",
@@ -10,18 +12,6 @@ LOGO_ART = [
     "██▒   ██▒ ██▒   ██▒ ██▒   ██▒ ██▒      ██▒   ██▒   ██▒    ",
     "██▒   ██▒ ██▒   ██▒  █████▒   ███████▒ ██▒   ██▒   ██▒    ",
 ]
-
-_LAYER_COLORS = {
-    1: "#00ffff",
-    2: "#00f0ff",
-    3: "#00e0ff",
-    4: "#00ccff",
-    5: "#00bcff",
-    6: "#00acff",
-    7: "#0099ff",
-}
-
-_DEFAULT_COLOR = "#5B5B5B"
 
 SLANT = 1.5
 BAND_WIDTH = 3
@@ -38,13 +28,7 @@ _TOTAL_FRAMES = _SWEEP_FRAMES + FPS * PAUSE_SECONDS
 
 
 def _lerp_white(hex_color: str, w: float) -> str:
-    r = int(hex_color[1:3], 16)
-    g = int(hex_color[3:5], 16)
-    b = int(hex_color[5:7], 16)
-    r = round(r + (255 - r) * w)
-    g = round(g + (255 - g) * w)
-    b = round(b + (255 - b) * w)
-    return f"#{r:02x}{g:02x}{b:02x}"
+    return _lerp_hex(hex_color, "#ffffff", w)
 
 
 def _sweep_weight(row: int, col: int, tick: int) -> float:
@@ -66,7 +50,7 @@ def build_logo_text(tick: int = -1) -> Text:
                 w = _sweep_weight(layer - 1, col, tick)
             else:
                 w = 0.0
-            base = _LAYER_COLORS[layer] if ch == "█" else _DEFAULT_COLOR
+            base = _LOGO_LAYER_COLORS[layer] if ch == "█" else _LOGO_DEFAULT_COLOR
             style = _lerp_white(base, w) if w > 0 and ch == "█" else base
             text.append(ch, style=style)
         text.append("\n")

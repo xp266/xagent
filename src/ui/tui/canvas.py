@@ -9,33 +9,7 @@ from textual.content import Content, Span
 from textual.strip import Strip
 from textual.widgets import Static
 
-from src.ui.tui.lazy import _apply_selection, _build_strip, _diff_marker_end, _line_no_end, _pad_line, _wrap_continuation
-
-_USER_BG = "#1A1A1A"
-_THINKING_TITLE = "#5B9BD5"
-_TOOL_TITLE = "#808080"
-_TOOL_ERROR = "#A75252"
-_TOOL_HEADER = "#808080"
-_THINKING_BODY = "#9B9B9B"
-
-
-def _bg_span_end(line: Content) -> int:
-    end = 0
-    for s in line.spans:
-        style = s.style
-        if style is None:
-            continue
-        if isinstance(style, str):
-            if not style:
-                continue
-            from rich.style import Style
-
-            rich = Style.parse(style)
-        else:
-            rich = getattr(style, "rich_style", style)
-        if rich is not None and rich.bgcolor is not None and s.end > end:
-            end = s.end
-    return end
+from src.ui.tui.lazy import _apply_selection, _build_strip, _line_bg, _pad_line, _wrap_continuation, clip_selection_start, selection_slice
 
 
 class CanvasBlock:
@@ -185,7 +159,7 @@ class CanvasBlock:
             new_spans.append(len(wrapped))
             for nline in wrapped:
                 if cbg:
-                    bg_end = _bg_span_end(nline)
+                    bg_end = _line_bg(nline)[1]
                     if bg_end < len(nline.plain):
                         nline = Content(
                             nline.plain,
@@ -308,19 +282,11 @@ class ChatCanvas(Static):
                 parts.append("")
                 continue
             line = block._lines[by]
-            plain = line.plain
             pl = 0 if block.title_line is not None and by == block.pad_top else block.content_pad_left
             s = x0 if y == y0 else 0
             e = x1 if y == y1 else -1
-            no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
-            if s < pl + no_w:
-                s = pl + no_w
             fill_at = block._fill_at[by] if by < len(block._fill_at) else None
-            if e < 0 or (fill_at is not None and e > fill_at):
-                e = fill_at if fill_at is not None else len(plain)
-            if fill_at is not None and s >= fill_at:
-                s = pl + no_w
-            parts.append(plain[s:e] if s < e else "")
+            parts.append(selection_slice(line, fill_at, s, e, pl))
         return "\n".join(parts), "\n"
 
     def selection_updated(self, selection) -> None:
@@ -390,9 +356,7 @@ class ChatCanvas(Static):
                     if block is not None and by < len(block._lines):
                         line = block._lines[by]
                         pl = 0 if block.title_line is not None and by == block.pad_top else block.content_pad_left
-                        no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
-                        if start < pl + no_w:
-                            start = pl + no_w
+                        start = clip_selection_start(line, start, pl)
                     if start < end:
                         style = self.screen.get_component_styles("screen--selection")
                         strip = _apply_selection(strip, start, end, style)
