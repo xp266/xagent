@@ -10,3 +10,6 @@ irrelevant_content/
 .xagent/
 .opencode/
 AGENTS.md
+tests/stress/logs/
+tests/stress/data/
+tests/stress/scratch/
