@@ -268,7 +268,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._update_status()
         self._show_logo()
         self._scroll_end()
-        self.set_interval(0.033, self._tick_animations, pause=False)
+        self.set_interval(1 / 60, self._tick_animations, pause=False)
         self._input().focus()
         asyncio.create_task(self._prewarm(), name="xagent-prewarm")
 
