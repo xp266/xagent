@@ -7,7 +7,7 @@ from src.agent import run_session_turn
 from src.agent.turn import RETRY_LIMIT
 from src.types.events import StreamEvent
 from src.ui.tui.canvas import CanvasBlock
-from src.ui.tui.colors import _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
+from src.ui.tui.colors import _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
 from src.ui.tui.lazy import LazyText
 from src.ui.tui.markdown import StreamMarkdown
 from src.ui.tui.render import (
@@ -20,6 +20,7 @@ from src.utils.config import get_config
 
 _RENDER_COOLDOWN = 0.016
 _TOOL_RENDER_COOLDOWN = 0.08
+_THINKING_RENDER_INTERVAL = 0.1
 
 
 def new_turn_state() -> dict:
@@ -36,6 +37,7 @@ def new_turn_state() -> dict:
         "last_stream_render": 0.0,
         "last_tool_render": 0.0,
         "_thinking_md_len": 0,
+        "_thinking_render": 0.0,
         "_reply_md_len": 0,
     }
 
@@ -60,7 +62,9 @@ class TurnRenderMixin:
             if len(text) > prev_len:
                 md.feed(text[prev_len:])
                 cur["_thinking_md_len"] = len(text)
-            cur["thinking"].update(md.render())
+            if force or now - cur.get("_thinking_render", 0.0) >= _THINKING_RENDER_INTERVAL:
+                cur["_thinking_render"] = now
+                cur["thinking"].update(md.render())
 
         if cur["reply"] is not None and cur.get("reply_text"):
             md = cur.get("_reply_md")
@@ -206,6 +210,7 @@ class TurnRenderMixin:
             kind="thinking",
             title="Thinking",
             title_style=_THINKING_TITLE,
+            body_style=_THINKING_BODY,
             expandable=True,
             collapsed=False,
             pad_bottom=0,

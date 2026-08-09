@@ -4,7 +4,7 @@ import json
 import os
 
 from src.agent import name_session_from_first_message
-from src.ui.tui.colors import _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
+from src.ui.tui.colors import _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
 from src.ui.tui.markdown import render_markdown
 from src.ui.tui.render import (
     block_tool, clean_result, fmt_duration, is_error_result, read_line_start,
@@ -103,6 +103,7 @@ class ChatMixin:
                         kind="thinking",
                         title="Thinking",
                         title_style=_THINKING_TITLE,
+                        body_style=_THINKING_BODY,
                         expandable=True,
                         collapsed=False,
                         pad_bottom=0,

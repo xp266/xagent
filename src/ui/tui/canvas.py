@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import bisect
 
+from rich.segment import Segment
 from rich.style import Style as RichStyle
 from rich.text import Text as RichText
 
@@ -60,6 +61,10 @@ class CanvasBlock:
         self._built_content_raw: list[Content] = []
         self._built_spans: list[int] = []
         self._built_content: list[Content] = []
+        self._built_padded: list[Content] = []
+        self._built_plain: str = ""
+        self._built_content_start = 0
+        self._built_reuse = 0
 
     @property
     def title_line(self) -> Content | None:
@@ -117,7 +122,6 @@ class CanvasBlock:
         self._fill_at = []
         self._key = ()
         self._bump()
-
     def _bump(self) -> None:
         owner = self.owner
         if owner is not None and owner.is_mounted:
@@ -133,18 +137,42 @@ class CanvasBlock:
             self._built_content_raw = []
             self._built_spans = []
             self._built_content = []
+            self._built_padded = []
+            self._built_plain = ""
 
         content_lines: list[Content] = []
+        incremental = False
         if not self.collapsed and self.content is not None:
-            content_lines = self.content.split("\n", allow_blank=True)
-            while content_lines and not content_lines[-1].plain:
-                content_lines.pop()
+            plain = self.content.plain
+            prev_plain = self._built_plain if self._built_width == width else ""
+            if len(plain) > len(prev_plain) and plain.startswith(prev_plain):
+                incremental = True
+                content_lines = list(self._built_content_raw)
+                tail_plain = plain[len(prev_plain):]
+                tail_spans = []
+                for s in self.content.spans:
+                    if s.end <= len(prev_plain):
+                        continue
+                    start = s.start if s.start >= len(prev_plain) else len(prev_plain)
+                    tail_spans.append(Span(start - len(prev_plain), s.end - len(prev_plain), s.style))
+                tail_lines = Content(tail_plain, spans=tail_spans).split("\n", allow_blank=True)
+                while tail_lines and not tail_lines[-1].plain:
+                    tail_lines.pop()
+                content_lines.extend(tail_lines)
+            else:
+                content_lines = self.content.split("\n", allow_blank=True)
+                while content_lines and not content_lines[-1].plain:
+                    content_lines.pop()
+            self._built_plain = plain
 
-        keep = 0
-        for a, b in zip(self._built_content_raw, content_lines):
-            if a.plain != b.plain or a.spans != b.spans:
-                break
-            keep += 1
+        if incremental:
+            keep = len(self._built_content_raw)
+        else:
+            keep = 0
+            for a, b in zip(self._built_content_raw, content_lines):
+                if a.plain != b.plain or a.spans != b.spans:
+                    break
+                keep += 1
 
         new_content: list[Content] = []
         new_spans: list[int] = []
@@ -198,13 +226,19 @@ class CanvasBlock:
             lines.append(title_line)
             if not self.collapsed and self.content is not None:
                 lines.append(Content(f"{' ' * width}", spans=[Span(0, width, bg)]))
+        self._built_content_start = len(lines)
         if inner_width > 0 and rendered_content:
             if cbg:
                 left_pad = Content(" " * self.content_pad_left, spans=[Span(0, self.content_pad_left, cbg)])
             else:
                 left_pad = Content(" " * self.content_pad_left)
-            for line in rendered_content:
-                lines.append(left_pad + line)
+            if reuse and len(self._built_padded) == reuse:
+                padded_lines = self._built_padded[:reuse] + [left_pad + line for line in new_content]
+            else:
+                padded_lines = [left_pad + line for line in rendered_content]
+            self._built_padded = padded_lines
+            lines.extend(padded_lines)
+        self._built_reuse = reuse
         if self.pad_bottom > 0:
             lines.extend(
                 Content(f"{' ' * width}", spans=[Span(0, width, bg)]) for _ in range(self.pad_bottom)
@@ -217,14 +251,32 @@ class CanvasBlock:
             return
         raw = self._build(width)
         if width > 0:
-            padded: list[Content] = []
-            fills: list[int | None] = []
-            for line in raw:
-                pl, fa = _pad_line(line, width)
-                padded.append(pl)
-                fills.append(fa)
-            raw = padded
-            self._fill_at = fills
+            cs = self._built_content_start
+            reuse = self._built_reuse
+            if reuse and len(self._lines) >= cs + reuse:
+                padded = []
+                fills = []
+                for line in raw[:cs]:
+                    pl, fa = _pad_line(line, width)
+                    padded.append(pl)
+                    fills.append(fa)
+                padded.extend(self._lines[cs:cs + reuse])
+                fills.extend(self._fill_at[cs:cs + reuse])
+                for line in raw[cs + reuse:]:
+                    pl, fa = _pad_line(line, width)
+                    padded.append(pl)
+                    fills.append(fa)
+                raw = padded
+                self._fill_at = fills
+            else:
+                padded: list[Content] = []
+                fills: list[int | None] = []
+                for line in raw:
+                    pl, fa = _pad_line(line, width)
+                    padded.append(pl)
+                    fills.append(fa)
+                raw = padded
+                self._fill_at = fills
         else:
             self._fill_at = [None] * len(raw)
         self._lines = raw
@@ -244,7 +296,15 @@ class CanvasBlock:
             self._strips[y] = _build_strip(line, self.offset + y)
         strip = self._strips[y]
         if self.body_style:
-            strip = strip.apply_style(RichStyle.parse(self.body_style))
+            style = RichStyle.parse(self.body_style)
+            segments = []
+            for seg in strip:
+                if seg.style is None or seg.style.color is None:
+                    new_style = seg.style + style if seg.style is not None else style
+                    segments.append(Segment(seg.text, new_style, control=seg.control))
+                else:
+                    segments.append(seg)
+            strip = Strip(segments, strip.cell_length)
         return strip
 
 

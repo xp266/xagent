@@ -4,7 +4,7 @@ import re
 
 from textual.content import Content, Span
 
-from src.ui.tui.colors import _INLINE_CODE_FG, _THINKING_BODY
+from src.ui.tui.colors import _INLINE_CODE_FG
 from src.ui.tui.highlight import _highlight_lines_fg
 from src.ui.tui.markdown import _FENCE_RE
 
@@ -14,21 +14,24 @@ _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 def _thinking_inline(text: str) -> Content:
     if not text:
         return Content("")
+    m = _INLINE_CODE_RE.search(text)
+    if m is None:
+        return Content(text)
     parts: list = []
     pos = 0
     for m in _INLINE_CODE_RE.finditer(text):
         if m.start() > pos:
-            parts.append((text[pos:m.start()], _THINKING_BODY))
+            parts.append(text[pos:m.start()])
         parts.append((m.group(0)[1:-1], _INLINE_CODE_FG))
         pos = m.end()
     if pos < len(text):
-        parts.append((text[pos:], _THINKING_BODY))
+        parts.append(text[pos:])
     return Content.assemble(*parts)
 
 
 def _thinking_line(line: str) -> Content:
     if _FENCE_RE.match(line) is not None:
-        return Content(line, spans=[Span(0, len(line), _THINKING_BODY)])
+        return Content(line)
     return _thinking_inline(line)
 
 
@@ -40,6 +43,9 @@ class ThinkingMarkdown:
         self._fence_lang: str | None = None
         self._fence_body: list[str] = []
         self._fence_start = 0
+        self._rendered: Content | None = None
+        self._rendered_n = 0
+        self._rendered_cell = 0
 
     def feed(self, text: str) -> None:
         text = self._tail + text
@@ -56,14 +62,41 @@ class ThinkingMarkdown:
             self._close_fence()
 
     def render(self) -> Content:
-        parts: list = []
-        for line in self._lines:
-            parts.append(line)
-            parts.append("\n")
+        if self._rendered_n < len(self._lines):
+            parts = []
+            for line in self._lines[self._rendered_n:]:
+                parts.append(line)
+                parts.append("\n")
+            block = Content.assemble(*parts)
+            if self._rendered is None:
+                self._rendered = block
+                self._rendered_cell = block.cell_length
+            else:
+                base = self._rendered.plain
+                self._rendered = Content(
+                    base + block.plain,
+                    spans=list(self._rendered.spans)
+                    + [Span(s.start + len(base), s.end + len(base), s.style) for s in block.spans],
+                    cell_length=self._rendered_cell + block.cell_length,
+                    strip_control_codes=False,
+                )
+                self._rendered_cell += block.cell_length
+            self._rendered_n = len(self._lines)
+        result = self._rendered
         if self._tail:
-            parts.append(_thinking_line(self._tail))
-            parts.append("\n")
-        return Content.assemble(*parts)
+            tail_c = _thinking_line(self._tail)
+            if result is None:
+                result = Content.assemble(tail_c, "\n")
+            else:
+                base = result.plain
+                result = Content(
+                    base + tail_c.plain + "\n",
+                    spans=list(result.spans)
+                    + [Span(s.start + len(base), s.end + len(base), s.style) for s in tail_c.spans],
+                    cell_length=result.cell_length + tail_c.cell_length + 1,
+                    strip_control_codes=False,
+                )
+        return result if result is not None else Content("")
 
     def _line(self, line: str) -> None:
         if self._fence_open:
@@ -93,6 +126,8 @@ class ThinkingMarkdown:
         self._lines.extend(lines)
         self._fence_open = False
         self._fence_body = []
+        self._rendered = None
+        self._rendered_n = 0
 
 
 def render_thinking_markdown(source: str) -> Content:
