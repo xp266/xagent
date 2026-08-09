@@ -129,11 +129,13 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
     def _append_user(self, text: str) -> None:
         block = self._append_block(kind="user", bg=_USER_BG)
         block.update(text)
+        block.settle()
         self._scroll_end()
 
     def _append_error(self, text: str) -> None:
         block = self._append_block(kind="error", body_style="bold #FF5555")
         block.update(text)
+        block.settle()
         self._scroll_end()
 
     def _tick_animations(self) -> None:

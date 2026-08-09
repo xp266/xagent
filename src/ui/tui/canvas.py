@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import bisect
 
+from rich._wrap import divide_line
 from rich.segment import Segment
 from rich.style import Style as RichStyle
 from rich.text import Text as RichText
@@ -65,6 +66,8 @@ class CanvasBlock:
         self._built_plain: str = ""
         self._built_content_start = 0
         self._built_reuse = 0
+        self._wrap_cache: tuple[int, str, list[Content], list[Content], int] | None = None
+        self._settled = False
 
     @property
     def title_line(self) -> Content | None:
@@ -117,10 +120,20 @@ class CanvasBlock:
                 content.plain,
                 spans=[Span(s.start, s.end, s.style) for s in content.spans],
             )
+        self._settled = False
         self.content = content
         self._strips = []
         self._key = ()
         self._bump()
+
+    def settle(self) -> None:
+        self._settled = True
+        self._built_content_raw = []
+        self._built_content = []
+        self._built_padded = []
+        self._built_plain = ""
+        self._wrap_cache = None
+        self._built_reuse = 0
     def _bump(self) -> None:
         owner = self.owner
         if owner is not None and owner.is_mounted:
@@ -131,6 +144,10 @@ class CanvasBlock:
         bg = f"on {self.bg}" if self.bg else ""
         cbg = f"on {self.content_bg}" if self.content_bg else bg
         inner_width = max(0, width - self.pad_left - self.pad_right)
+        if cbg:
+            left_pad = Content(" " * self.content_pad_left, spans=[Span(0, self.content_pad_left, cbg)])
+        else:
+            left_pad = Content(" " * self.content_pad_left)
         if self._built_width != width:
             self._built_width = width
             self._built_content_raw = []
@@ -187,17 +204,23 @@ class CanvasBlock:
             self._built_plain = plain
 
         new_content: list[Content] = []
+        new_padded: list[Content] = []
         new_spans: list[int] = []
+        reused_total = 0
         for line in content_lines[keep:]:
             if inner_width > 0:
                 if line.cell_length > inner_width:
-                    wrapped = _wrap_continuation(line, inner_width)
+                    if not cbg:
+                        wrapped, reused, wrapped_padded = self._wrap_line(line, inner_width, left_pad)
+                    else:
+                        wrapped, reused, wrapped_padded = _wrap_continuation(line, inner_width), 0, []
                 else:
-                    wrapped = [line]
+                    wrapped, reused, wrapped_padded = [line], 0, []
             else:
-                wrapped = [line]
+                wrapped, reused, wrapped_padded = [line], 0, []
+            reused_total += reused
             new_spans.append(len(wrapped))
-            for nline in wrapped:
+            for i, nline in enumerate(wrapped):
                 if cbg:
                     bg_end = _line_bg(nline)[1]
                     if bg_end < len(nline.plain):
@@ -206,6 +229,11 @@ class CanvasBlock:
                             [*nline.spans, Span(bg_end, len(nline.plain), cbg)],
                         )
                 new_content.append(nline)
+                if inner_width > 0:
+                    if i < reused:
+                        new_padded.append(wrapped_padded[i])
+                    else:
+                        new_padded.append(left_pad + nline)
         if incremental:
             if keep < len(self._built_spans):
                 dropped = sum(self._built_spans[keep:])
@@ -251,14 +279,10 @@ class CanvasBlock:
                 lines.append(Content(f"{' ' * width}", spans=[Span(0, width, bg)]))
         self._built_content_start = len(lines)
         if inner_width > 0 and rendered_content:
-            if cbg:
-                left_pad = Content(" " * self.content_pad_left, spans=[Span(0, self.content_pad_left, cbg)])
-            else:
-                left_pad = Content(" " * self.content_pad_left)
-            if reuse and len(self._built_padded) >= reuse:
+            if incremental and len(new_padded) == len(new_content) and len(self._built_padded) >= reuse:
                 if len(self._built_padded) > reuse:
                     del self._built_padded[reuse:]
-                self._built_padded.extend(left_pad + line for line in new_content)
+                self._built_padded.extend(new_padded)
             else:
                 self._built_padded = [left_pad + line for line in rendered_content]
             lines.extend(self._built_padded)
@@ -267,7 +291,47 @@ class CanvasBlock:
             lines.extend(
                 Content(f"{' ' * width}", spans=[Span(0, width, bg)]) for _ in range(self.pad_bottom)
             )
+        if self._settled:
+            self._built_content_raw = []
+            self._built_content = []
+            self._built_padded = []
+            self._built_plain = ""
+            self._wrap_cache = None
+            self._built_reuse = 0
         return lines
+
+    def _wrap_line(self, line: Content, inner_width: int, left_pad: Content) -> tuple[list[Content], int, list[Content]]:
+        cache = self._wrap_cache
+        if cache is not None and cache[0] == inner_width and cache[2] and line.plain.startswith(cache[1]):
+            _, prev_plain, pieces, padded, tail_start = cache
+            tail = line.plain[tail_start:]
+            if tail:
+                tail_spans = []
+                spans = line.spans
+                if spans:
+                    start = bisect.bisect_right(spans, tail_start, key=lambda s: s.start)
+                    for s in spans[max(0, start - 1):]:
+                        if s.end <= tail_start:
+                            continue
+                        head = s.start if s.start >= tail_start else tail_start
+                        tail_spans.append(Span(head - tail_start, s.end - tail_start, s.style))
+                new_pieces = Content(tail, spans=tail_spans).wrap(inner_width)
+                tail_offsets = divide_line(tail, inner_width, fold=True)
+                if tail_offsets:
+                    tail_start += tail_offsets[-1]
+                reused = len(pieces) - 1
+                pieces = [*pieces[:-1], *new_pieces]
+                padded = [*padded[:-1], *(left_pad + p for p in new_pieces)]
+            else:
+                reused = len(pieces)
+            self._wrap_cache = (inner_width, line.plain, pieces, padded, tail_start)
+            return pieces, reused, padded
+        wrapped = _wrap_continuation(line, inner_width)
+        padded = [left_pad + p for p in wrapped]
+        offsets = divide_line(line.plain, inner_width, fold=True)
+        tail_start = offsets[-1] if offsets else 0
+        self._wrap_cache = (inner_width, line.plain, wrapped, padded, tail_start)
+        return wrapped, 0, padded
 
     def _rebuild(self, width: int) -> None:
         key = (width, self._content_sig())

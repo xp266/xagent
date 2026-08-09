@@ -377,6 +377,7 @@ class TurnRenderMixin:
             if is_error:
                 self._mark_tool_error(tool["block"])
             tool["done"] = True
+            tool["block"].settle()
             return
         if code_tool(name):
             md = tool_markdown(name, tool["input"], result, is_error)
@@ -389,6 +390,7 @@ class TurnRenderMixin:
                 if is_error:
                     self._mark_tool_error(tool["block"])
                 tool["done"] = True
+                tool["block"].settle()
                 return
         title, t = tool_render(name, tool["input"], result, is_error)
         self._set_tool_title(tool, title)
@@ -396,6 +398,7 @@ class TurnRenderMixin:
         if is_error:
             self._mark_tool_error(tool["block"])
         tool["done"] = True
+        tool["block"].settle()
 
     def _add_summary(self, elapsed: float) -> None:
         cfg = get_config()
@@ -549,6 +552,11 @@ class TurnRenderMixin:
             if md is not None:
                 md.finish()
         self._flush_streaming_content(force=True)
+        if cur is not None:
+            for key in ("thinking", "reply"):
+                block = cur.get(key)
+                if block is not None:
+                    block.settle()
         if cur and cur["steps"] > 0 and not cur.get("interrupted"):
             self._add_summary(elapsed)
         self._remove_empty_thinking()

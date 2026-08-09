@@ -355,6 +355,7 @@ class StreamMarkdown:
         self._line_number_start = line_number_start
         self._bg = bg
         self._lines: list[Content] = []
+        self._line_lens: list[int] = []
         self._tail = ""
         self._prev: Content | None = None
         self._prev_text = ""
@@ -366,6 +367,40 @@ class StreamMarkdown:
         self._fence_marker: Content | None = None
         self._table_rows: list[str] | None = None
         self._table_start = 0
+        self._committed: Content | None = None
+        self._committed_n = 0
+
+    def _extend_committed(self, line: Content) -> None:
+        if self._committed is None:
+            self._committed = Content.assemble(line, "\n")
+        else:
+            base = self._committed.plain
+            spans = self._committed.spans
+            spans.extend(
+                Span(s.start + len(base), s.end + len(base), s.style) for s in line.spans
+            )
+            self._committed = Content(
+                base + line.plain + "\n",
+                spans=spans,
+                cell_length=self._committed.cell_length + line.cell_length + 1,
+                strip_control_codes=False,
+            )
+        self._committed_n += 1
+
+    def _push(self, line: Content) -> None:
+        if self._committed is None and self._lines:
+            self._rebuild_committed()
+        self._lines.append(line)
+        self._line_lens.append(len(line.plain) + 1)
+        self._extend_committed(line)
+
+    def _rebuild_committed(self) -> None:
+        parts: list = []
+        for line in self._lines:
+            parts.append(line)
+            parts.append("\n")
+        self._committed = Content.assemble(*parts) if parts else None
+        self._committed_n = len(self._lines)
 
     def feed(self, text: str) -> None:
         text = self._tail + text
@@ -387,12 +422,19 @@ class StreamMarkdown:
         self._commit_prev()
         while self._lines and not self._lines[-1].plain:
             self._lines.pop()
+            self._line_lens.pop()
+        self._committed = None
+        self._committed_n = 0
 
     def render(self) -> Content:
+        if self._committed is None:
+            self._rebuild_committed()
+        elif self._committed_n < len(self._lines):
+            for line in self._lines[self._committed_n:]:
+                self._extend_committed(line)
         parts: list = []
-        for line in self._lines:
-            parts.append(line)
-            parts.append("\n")
+        if self._committed is not None:
+            parts.append(self._committed)
         if self._prev is not None:
             if _is_table_row(self._prev_text):
                 parts.append(_single_row_table(self._prev_text))
@@ -413,11 +455,11 @@ class StreamMarkdown:
                 if tail_line is not None:
                     parts.append(tail_line)
                     parts.append("\n")
-        return Content.assemble(*parts)
+        return Content.assemble(*parts) if parts else Content("")
 
     def _commit_prev(self) -> None:
         if self._prev is not None:
-            self._lines.append(self._prev)
+            self._push(self._prev)
             self._prev = None
             self._prev_text = ""
 
@@ -448,14 +490,14 @@ class StreamMarkdown:
             self._fence_start = len(self._lines)
             if not self._bg:
                 self._fence_marker = Content(line, spans=[Span(0, len(line), _OPEN_FENCE_FG)])
-                self._lines.append(self._fence_marker)
+                self._push(self._fence_marker)
             else:
                 self._fence_marker = None
             return
         if not line.strip():
             self._commit_prev()
             if self._lines and self._lines[-1].plain != "":
-                self._lines.append(Content(""))
+                self._push(Content(""))
             return
         if self._prev is not None:
             if _is_table_row(self._prev_text) and _is_table_sep(line):
@@ -465,7 +507,7 @@ class StreamMarkdown:
                 self._prev_text = ""
                 self._rerender_open_table()
                 return
-            self._lines.append(self._prev)
+            self._push(self._prev)
         self._prev = _render_line(line)
         self._prev_text = line
 
@@ -475,16 +517,51 @@ class StreamMarkdown:
             return
         block, _ = _table_block(rows, 0, len(rows))
         del self._lines[self._table_start:]
+        del self._line_lens[self._table_start:]
         self._lines.extend(block.split("\n", allow_blank=True))
+        self._line_lens.extend(len(l.plain) + 1 for l in self._lines[self._table_start:])
+        self._committed = None
+        self._committed_n = 0
 
     def _close_fence(self, close_line: str | None) -> None:
         code = "\n".join(self._fence_body).rstrip("\n")
         block = _fence_body(code, self._fence_lang, numbered=self._numbered, diff_nums=self._fence_diff, line_number_start=self._line_number_start, bg=self._bg)
+        lines = block.split("\n", allow_blank=True)
         offset = 1 if self._fence_marker is not None else 0
-        del self._lines[self._fence_start + offset:]
-        self._lines.extend(block.split("\n", allow_blank=True))
+        region_start = self._fence_start + offset
+        committed = self._committed
+        if (
+            not self._bg
+            and committed is not None
+            and self._committed_n > region_start
+            and sum(self._line_lens[region_start:]) == sum(len(l.plain) + 1 for l in lines)
+        ):
+            start = sum(self._line_lens[:region_start])
+            rendered_end = sum(self._line_lens[:self._committed_n])
+            spans = committed.spans
+            kept = [s for s in spans if s.end <= start or s.start >= rendered_end]
+            base = start
+            for i, ln in enumerate(lines):
+                idx = region_start + i
+                if idx < self._committed_n:
+                    for s in ln.spans:
+                        kept.append(Span(s.start + base, s.end + base, s.style))
+                base += self._line_lens[idx]
+            self._committed = Content(
+                committed.plain,
+                spans=kept,
+                cell_length=committed.cell_length,
+                strip_control_codes=False,
+            )
+        else:
+            self._committed = None
+            self._committed_n = 0
+        del self._lines[region_start:]
+        del self._line_lens[region_start:]
+        self._lines.extend(lines)
+        self._line_lens.extend(len(l.plain) + 1 for l in lines)
         if self._fence_marker is not None and close_line is not None:
-            self._lines.append(Content(close_line, spans=[Span(0, len(close_line), _OPEN_FENCE_FG)]))
+            self._push(Content(close_line, spans=[Span(0, len(close_line), _OPEN_FENCE_FG)]))
         self._fence_open = False
         self._fence_body = []
         self._fence_start = 0
@@ -494,7 +571,11 @@ class StreamMarkdown:
         code = "\n".join(self._fence_body)
         offset = 1 if self._fence_marker is not None else 0
         del self._lines[self._fence_start + offset:]
+        del self._line_lens[self._fence_start + offset:]
         self._lines.extend(_plain_fence_body(code, self._bg))
+        self._line_lens.extend(len(l.plain) + 1 for l in self._lines[self._fence_start + offset:])
+        self._committed = None
+        self._committed_n = 0
 
 
 

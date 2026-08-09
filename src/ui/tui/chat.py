@@ -191,6 +191,9 @@ class ChatMixin:
         else:
             self._hide_logo()
 
+        for block in self._canvas()._blocks:
+            block.settle()
+
         self.call_after_refresh(lambda: self._scroll_end(force=True))
 
     @staticmethod

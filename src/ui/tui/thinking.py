@@ -38,6 +38,7 @@ def _thinking_line(line: str) -> Content:
 class ThinkingMarkdown:
     def __init__(self):
         self._lines: list[Content] = []
+        self._line_lens: list[int] = []
         self._tail = ""
         self._fence_open = False
         self._fence_lang: str | None = None
@@ -46,6 +47,10 @@ class ThinkingMarkdown:
         self._rendered: Content | None = None
         self._rendered_n = 0
         self._rendered_cell = 0
+
+    def _push(self, line: Content) -> None:
+        self._lines.append(line)
+        self._line_lens.append(len(line.plain) + 1)
 
     def feed(self, text: str) -> None:
         text = self._tail + text
@@ -108,10 +113,10 @@ class ThinkingMarkdown:
         if self._fence_open:
             if _FENCE_RE.match(line) is not None:
                 self._close_fence()
-                self._lines.append(_thinking_line(line))
+                self._push(_thinking_line(line))
             else:
                 self._fence_body.append(line)
-                self._lines.append(_thinking_line(line))
+                self._push(_thinking_line(line))
             return
         m = _FENCE_RE.match(line)
         if m is not None:
@@ -121,19 +126,46 @@ class ThinkingMarkdown:
             self._fence_lang = lang or None
             self._fence_body = []
             self._fence_start = len(self._lines)
-            self._lines.append(_thinking_line(line))
+            self._push(_thinking_line(line))
             return
-        self._lines.append(_thinking_line(line))
+        self._push(_thinking_line(line))
 
     def _close_fence(self) -> None:
         code = "\n".join(self._fence_body).rstrip("\n")
         lines = _highlight_lines_fg(code, self._fence_lang)
         del self._lines[self._fence_start + 1:]
+        del self._line_lens[self._fence_start + 1:]
         self._lines.extend(lines)
+        self._line_lens.extend(len(l.plain) + 1 for l in lines)
         self._fence_open = False
         self._fence_body = []
-        self._rendered = None
-        self._rendered_n = 0
+        rendered = self._rendered
+        region_start = self._fence_start + 1
+        if (
+            rendered is not None
+            and self._rendered_n > self._fence_start
+            and sum(self._line_lens[region_start:]) == sum(len(l.plain) + 1 for l in lines)
+        ):
+            start = sum(self._line_lens[:region_start])
+            rendered_end = sum(self._line_lens[:self._rendered_n])
+            spans = rendered.spans
+            kept = [s for s in spans if s.end <= start or s.start >= rendered_end]
+            base = start
+            for i, hl in enumerate(lines):
+                idx = region_start + i
+                if idx < self._rendered_n:
+                    for s in hl.spans:
+                        kept.append(Span(s.start + base, s.end + base, s.style))
+                base += self._line_lens[idx]
+            self._rendered = Content(
+                rendered.plain,
+                spans=kept,
+                cell_length=self._rendered_cell,
+                strip_control_codes=False,
+            )
+        else:
+            self._rendered = None
+            self._rendered_n = 0
 
 
 def render_thinking_markdown(source: str) -> Content:
