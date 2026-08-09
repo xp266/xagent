@@ -23,9 +23,9 @@ from src.ui.tui.css import CSS
 from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.dialogs import PickerMixin
 from src.ui.tui.logo import LogoWidget
-from src.ui.tui.canvas import CanvasBlock, ChatCanvas, _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
+from src.ui.tui.canvas import CanvasBlock, ChatCanvas, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
 from src.ui.tui.lazy import LazyText
-from src.ui.tui.markdown import StreamMarkdown, render_markdown
+from src.ui.tui.markdown import StreamMarkdown, ThinkingMarkdown, render_markdown, render_thinking_markdown, render_tool_markdown
 from src.ui.tui.render import (
     _cap_tool, block_tool, clean_result, code_tool, fmt_duration, fmt_pct, is_error_result,
     read_line_start, tool_block, tool_markdown, tool_num_width, tool_render,
@@ -190,7 +190,16 @@ class XAgentTUI(PickerMixin, App):
         cur["last_stream_render"] = now
 
         if cur["thinking"] is not None and cur.get("reasoning_text"):
-            cur["thinking"].update(cur["reasoning_text"])
+            md = cur.get("_thinking_md")
+            if md is None:
+                md = ThinkingMarkdown()
+                cur["_thinking_md"] = md
+            prev_len = cur.get("_thinking_md_len", 0)
+            text = cur["reasoning_text"]
+            if len(text) > prev_len:
+                md.feed(text[prev_len:])
+                cur["_thinking_md_len"] = len(text)
+            cur["thinking"].update(md.render())
 
         if cur["reply"] is not None and cur.get("reply_text"):
             md = cur.get("_reply_md")
@@ -238,7 +247,7 @@ class XAgentTUI(PickerMixin, App):
                 if tool["title"] != title:
                     tool["title"] = title
                     self._render_tool_spinner(tool)
-                tool["st"].update(render_markdown(body))
+                tool["st"].update(render_tool_markdown(body, open=True))
             else:
                 title, t = tool_render(name, args, None, False, preview=True)
                 title = title.strip() or _cap_tool(name)
@@ -426,6 +435,8 @@ class XAgentTUI(PickerMixin, App):
                     pass
                 cur[key] = None
         cur["reasoning_text"] = ""
+        cur.pop("_thinking_md", None)
+        cur["_thinking_md_len"] = 0
         reply = cur.get("reply")
         if reply is not None:
             try:
@@ -568,9 +579,8 @@ class XAgentTUI(PickerMixin, App):
                 kind="thinking",
                 title="Thinking",
                 title_style=_THINKING_TITLE,
-                body_style=_THINKING_BODY,
                 expandable=True,
-                collapsed=True,
+                collapsed=False,
                 pad_bottom=0,
             )
             cur["thinking"] = block
@@ -721,7 +731,7 @@ class XAgentTUI(PickerMixin, App):
                 tool["title"] = title
                 self._render_tool_spinner(tool)
             tool["block"].pad_left = tool_num_width(name, args) + 1
-            tool["st"].update(render_markdown(body, numbered=(name == "write")))
+            tool["st"].update(render_tool_markdown(body, numbered=(name == "write")))
         else:
             title, t = tool_render(name, args, None, False)
             tool["title"] = title
@@ -743,7 +753,7 @@ class XAgentTUI(PickerMixin, App):
             tool["title"] = title
             tool["header"].set_title(title)
             tool["block"].pad_left = tool_num_width(name, tool["input"], result, is_error) + 1
-            tool["st"].update(render_markdown(body, numbered=(name == "write")))
+            tool["st"].update(render_tool_markdown(body, numbered=(name == "write")))
             if is_error:
                 tool["col"].title_style = _TOOL_ERROR
                 tool["col"]._strips = []
@@ -760,7 +770,7 @@ class XAgentTUI(PickerMixin, App):
                     tool["block"].set_title(m_title)
                 tool["col"].pad_left = tool_num_width(name, tool["input"], result, is_error) + 1
                 tool["col"].content_pad_left = 0
-                self._set_tool_content(tool["col"], LazyText(render_markdown(m, numbered=(name == "read"), line_number_start=read_line_start(result, tool["input"]))))
+                self._set_tool_content(tool["col"], LazyText(render_tool_markdown(m, numbered=(name == "read"), line_number_start=read_line_start(result, tool["input"]))))
                 if is_error:
                     tool["col"].title_style = _TOOL_ERROR
                     tool["col"]._strips = []
@@ -797,6 +807,8 @@ class XAgentTUI(PickerMixin, App):
             self._clear_retry()
         if t == "reasoning-start":
             cur["reasoning_text"] = ""
+            cur.pop("_thinking_md", None)
+            cur["_thinking_md_len"] = 0
             self._hide_waiting()
             self._ensure_thinking()
         elif t == "reasoning-delta":
@@ -807,6 +819,12 @@ class XAgentTUI(PickerMixin, App):
             self._flush_streaming_content()
         elif t == "reasoning-end":
             self._flush_streaming_content(force=True)
+            md = cur.get("_thinking_md")
+            if md is not None:
+                md.finish()
+                block = cur.get("thinking")
+                if block is not None:
+                    block.update(md.render())
             self._stop_spinner(cur.get("thinking_title"))
             cur["thinking"] = None
             cur["thinking_title"] = None
@@ -928,6 +946,12 @@ class XAgentTUI(PickerMixin, App):
         cur = self._current
         if cur is not None:
             self._flush_streaming_content(force=True)
+            tmd = cur.get("_thinking_md")
+            if tmd is not None:
+                tmd.finish()
+                tblock = cur.get("thinking")
+                if tblock is not None:
+                    tblock.update(tmd.render())
             md = cur.get("_reply_md")
             if md is not None:
                 md.finish()
@@ -1038,12 +1062,11 @@ class XAgentTUI(PickerMixin, App):
                         kind="thinking",
                         title="Thinking",
                         title_style=_THINKING_TITLE,
-                        body_style=_THINKING_BODY,
                         expandable=True,
-                        collapsed=True,
+                        collapsed=False,
                         pad_bottom=0,
                     )
-                    block.update(reasoning)
+                    block.update(render_thinking_markdown(reasoning))
 
                 if content:
                     block = self._append_block(
@@ -1083,12 +1106,12 @@ class XAgentTUI(PickerMixin, App):
                             pad_right=1,
                             content_pad_left=0,
                         )
-                        block.update(render_markdown(body, numbered=(name == "write")))
+                        block.update(render_tool_markdown(body, numbered=(name == "write")))
                         continue
                     md = tool_markdown(name, args, result, is_error)
                     if md is not None:
                         title, m = md
-                        content_widget = render_markdown(m, numbered=(name == "read"), line_number_start=read_line_start(result, args))
+                        content_widget = render_tool_markdown(m, numbered=(name == "read"), line_number_start=read_line_start(result, args))
                     else:
                         title, t = tool_render(name, args, result, is_error)
                         content_widget = t
@@ -1223,6 +1246,7 @@ class XAgentTUI(PickerMixin, App):
             "waiting": None,
             "last_stream_render": 0.0,
             "last_tool_render": 0.0,
+            "_thinking_md_len": 0,
             "_reply_md_len": 0,
         }
         self._append_user(text)

@@ -11,7 +11,7 @@ _READ_LINE_RE = re.compile(r"^(\d+):(.*)$")
 
 _CODE_TOOLS = {"write", "edit", "read"}
 _BLOCK_TOOLS = {"write", "edit"}
-_STREAM_PREVIEW_MAX = 100
+_STREAM_PREVIEW_MAX = 20
 
 
 def _lang_for(path: str) -> str:
@@ -218,12 +218,13 @@ def tool_block(name, args, result, is_error, preview=False):
                 for line in new_str.rstrip("\n").split("\n"):
                     num += 1
                     diff.append(f"{num} + {line}")
-        if preview and len(diff) > _STREAM_PREVIEW_MAX:
-            body = f"( {len(diff)} lines, streaming )\n\n" + f"```{lang}@n\n" + "\n".join(diff[-_STREAM_PREVIEW_MAX:])
+        if preview:
+            if len(diff) > _STREAM_PREVIEW_MAX:
+                body = f"( {len(diff)} lines, streaming )\n\n" + "```text\n" + "\n".join(diff[-_STREAM_PREVIEW_MAX:])
+            else:
+                body = "```text\n" + "\n".join(diff)
         else:
-            body = f"```{lang}@n\n" + "\n".join(diff)
-        if not preview:
-            body += "\n```"
+            body = f"```{lang}@n\n" + "\n".join(diff) + "\n```"
         if is_error and result:
             body = body.rstrip("\n") + f"\n\n{result}"
         return f"Edit {file_path}", body

@@ -10,6 +10,8 @@ from rich.style import Style as RichStyle
 from textual.content import Content, Span
 from textual.highlight import guess_language
 
+from src.ui.tui.canvas import _THINKING_BODY
+
 _INLINE_CODE_FG = "#6A9955"
 _HEADING_FG = "#FFA500"
 _HEADING_1_STYLE = "bold #FFA500"
@@ -235,6 +237,8 @@ def _single_row_table(line: str) -> Content:
 
 
 def _token_style(tok_type) -> str | None:
+    if tok_type is Token.Error:
+        return None
     while tok_type is not None:
         style = _TOKEN_STYLES.get(tok_type)
         if style is not None:
@@ -362,7 +366,7 @@ def _highlight_lines(code: str, lang: str | None) -> list[Content]:
         out = [Content("")]
         _HIGHLIGHT_CACHE[key] = out
         return out
-    if _is_diff_code(code):
+    if lang != "markdown" and _is_diff_code(code):
         out = _diff_highlight(code, lang)
         _HIGHLIGHT_CACHE[key] = out
         return out
@@ -377,6 +381,57 @@ def _highlight_lines(code: str, lang: str | None) -> list[Content]:
     pos = 0
     try:
         for tok_type, tok_text in _get_lexer(lang, code).get_tokens(code):
+            style = _token_style(tok_type)
+            while True:
+                nl = tok_text.find("\n")
+                if nl < 0:
+                    if style and tok_text:
+                        spans.append(Span(pos, pos + len(tok_text), style))
+                    text_parts.append(tok_text)
+                    pos += len(tok_text)
+                    break
+                head, tok_text = tok_text[:nl], tok_text[nl + 1:]
+                if style and head:
+                    spans.append(Span(pos, pos + len(head), style))
+                text_parts.append(head)
+                lines.append("".join(text_parts))
+                spans_by_line.append(spans)
+                text_parts = []
+                spans = []
+                pos = 0
+    except Exception:
+        lines = code.split("\n")
+        spans_by_line = [[] for _ in lines]
+        text_parts = []
+        spans = []
+    lines.append("".join(text_parts))
+    spans_by_line.append(spans)
+    out = [Content(text, spans=sp) for text, sp in zip(lines, spans_by_line)]
+    _HIGHLIGHT_CACHE[key] = out
+    return out
+
+
+def _highlight_lines_fg(code: str, lang: str | None) -> list[Content]:
+    key = ("fg", lang, code)
+    hit = _HIGHLIGHT_CACHE.get(key)
+    if hit is not None:
+        return hit
+    if len(_HIGHLIGHT_CACHE) >= _HIGHLIGHT_CACHE_MAX:
+        _HIGHLIGHT_CACHE.clear()
+    if lang:
+        try:
+            lexer = get_lexer_by_name(lang, stripnl=False, ensurenl=False)
+        except ClassNotFound:
+            lexer = get_lexer_by_name("text", stripnl=False, ensurenl=False)
+    else:
+        lexer = get_lexer_by_name("text", stripnl=False, ensurenl=False)
+    lines: list[str] = []
+    spans_by_line: list[list[Span]] = []
+    text_parts: list[str] = []
+    spans: list[Span] = []
+    pos = 0
+    try:
+        for tok_type, tok_text in lexer.get_tokens(code):
             style = _token_style(tok_type)
             while True:
                 nl = tok_text.find("\n")
@@ -559,6 +614,47 @@ def render_markdown(source: str, *, numbered: bool = False, line_number_start: i
     return Content.assemble(*parts)
 
 
+_FENCE_LINE_RE = re.compile(r"^```([A-Za-z0-9_+.\-@]*)\s*$")
+
+
+def render_tool_markdown(body: str, *, numbered: bool = False, line_number_start: int = 1, open: bool = False) -> Content:
+    lines = body.split("\n")
+    i = 0
+    header: list[str] = []
+    while i < len(lines) and not lines[i].startswith("```"):
+        header.append(lines[i])
+        i += 1
+    if i >= len(lines):
+        return render_markdown(body)
+    info = lines[i][3:].strip()
+    lang, _, flags = info.partition("@")
+    diff_nums = flags == "n"
+    lines = lines[i + 1:]
+    rest: list[str] = []
+    if open:
+        code_lines = lines
+    else:
+        close_idx = None
+        for k in range(len(lines) - 1, -1, -1):
+            if _FENCE_LINE_RE.match(lines[k]):
+                close_idx = k
+                break
+        if close_idx is None:
+            code_lines = lines
+        else:
+            code_lines = lines[:close_idx]
+            rest = lines[close_idx + 1:]
+    parts: list = []
+    if header:
+        parts.append(render_markdown("\n".join(header)))
+    code = "\n".join(code_lines).rstrip("\n")
+    parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start))
+    parts.append("\n")
+    if rest:
+        parts.append(render_markdown("\n".join(rest)))
+    return Content.assemble(*parts)
+
+
 class StreamMarkdown:
     def __init__(self, *, numbered: bool = False, line_number_start: int = 1):
         self._numbered = numbered
@@ -692,3 +788,97 @@ class StreamMarkdown:
         code = "\n".join(self._fence_body)
         del self._lines[self._fence_start:]
         self._lines.extend(_plain_fence_body(code))
+
+
+_INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
+
+
+def _thinking_inline(text: str) -> Content:
+    if not text:
+        return Content("")
+    parts: list = []
+    pos = 0
+    for m in _INLINE_CODE_RE.finditer(text):
+        if m.start() > pos:
+            parts.append((text[pos:m.start()], _THINKING_BODY))
+        parts.append((m.group(0)[1:-1], _INLINE_CODE_FG))
+        pos = m.end()
+    if pos < len(text):
+        parts.append((text[pos:], _THINKING_BODY))
+    return Content.assemble(*parts)
+
+
+def _thinking_line(line: str) -> Content:
+    if _FENCE_RE.match(line) is not None:
+        return Content(line, spans=[Span(0, len(line), _THINKING_BODY)])
+    return _thinking_inline(line)
+
+
+class ThinkingMarkdown:
+    def __init__(self):
+        self._lines: list[Content] = []
+        self._tail = ""
+        self._fence_open = False
+        self._fence_lang: str | None = None
+        self._fence_body: list[str] = []
+        self._fence_start = 0
+
+    def feed(self, text: str) -> None:
+        text = self._tail + text
+        raw = text.split("\n")
+        self._tail = raw.pop()
+        for line in raw:
+            self._line(line)
+
+    def finish(self) -> None:
+        if self._tail:
+            self._line(self._tail)
+            self._tail = ""
+        if self._fence_open:
+            self._close_fence()
+
+    def render(self) -> Content:
+        parts: list = []
+        for line in self._lines:
+            parts.append(line)
+            parts.append("\n")
+        if self._tail:
+            parts.append(_thinking_line(self._tail))
+            parts.append("\n")
+        return Content.assemble(*parts)
+
+    def _line(self, line: str) -> None:
+        if self._fence_open:
+            if _FENCE_RE.match(line) is not None:
+                self._close_fence()
+                self._lines.append(_thinking_line(line))
+            else:
+                self._fence_body.append(line)
+                self._lines.append(_thinking_line(line))
+            return
+        m = _FENCE_RE.match(line)
+        if m is not None:
+            info = m.group(1)
+            lang, _, _ = info.partition("@")
+            self._fence_open = True
+            self._fence_lang = lang or None
+            self._fence_body = []
+            self._fence_start = len(self._lines)
+            self._lines.append(_thinking_line(line))
+            return
+        self._lines.append(_thinking_line(line))
+
+    def _close_fence(self) -> None:
+        code = "\n".join(self._fence_body).rstrip("\n")
+        lines = _highlight_lines_fg(code, self._fence_lang)
+        del self._lines[self._fence_start + 1:]
+        self._lines.extend(lines)
+        self._fence_open = False
+        self._fence_body = []
+
+
+def render_thinking_markdown(source: str) -> Content:
+    md = ThinkingMarkdown()
+    md.feed(source)
+    md.finish()
+    return md.render()
