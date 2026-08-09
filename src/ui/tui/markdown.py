@@ -271,7 +271,7 @@ def _is_diff_code(code: str) -> bool:
     return bool(lines) and all(l.startswith("@@") or l[0] in "+-" for l in lines)
 
 
-def _diff_highlight(code: str, lang: str | None) -> list[Content]:
+def _diff_highlight(code: str, lang: str | None, bg: bool = True) -> list[Content]:
     lines = code.split("\n")
     out: list[Content] = []
     i = 0
@@ -294,24 +294,25 @@ def _diff_highlight(code: str, lang: str | None) -> list[Content]:
         content = "\n".join(
             l[2:] if len(l) > 1 and l[1] == " " else l[1:] for l in group
         )
-        hl = _highlight_lines(content, lang)
+        hl = _highlight_lines(content, lang, bg)
         for j, hl_line in enumerate(hl):
             prefix = group[j][0]
             if prefix == "-":
                 marker_style = _DIFF_DEL_FG
-                bg = _DIFF_DEL_BG
+                row_bg = _DIFF_DEL_BG
             else:
                 marker_style = _DIFF_ADD_FG
-                bg = _DIFF_ADD_BG
-            if hl_line.cell_length == 0:
-                hl_line = Content(" ", spans=[Span(0, 1, f"on {bg}")])
-            else:
-                hl_line = hl_line.stylize(f"on {bg}")
+                row_bg = _DIFF_ADD_BG
+            if bg:
+                if hl_line.cell_length == 0:
+                    hl_line = Content(" ", spans=[Span(0, 1, f"on {row_bg}")])
+                else:
+                    hl_line = hl_line.stylize(f"on {row_bg}")
             out.append(Content.assemble((f"{prefix} ", marker_style), hl_line))
     return out
 
 
-def _numbered_diff_highlight(code: str, lang: str | None) -> list[Content]:
+def _numbered_diff_highlight(code: str, lang: str | None, bg: bool = True) -> list[Content]:
     rows: list[tuple[int, str, str]] = []
     for l in code.split("\n"):
         m = _NUMBERED_DIFF_RE.match(l)
@@ -330,33 +331,37 @@ def _numbered_diff_highlight(code: str, lang: str | None) -> list[Content]:
             group.append(rows[i])
             i += 1
         content = "\n".join(g[2] for g in group)
-        hl = _highlight_lines(content, lang)
+        hl = _highlight_lines(content, lang, bg)
         for g, hl_line in zip(group, hl):
             if kind == " ":
-                parts = [(f"{g[0]:>{maxw}}   ", f"{_LINE_NO_FG} on {_FENCE_BG}")]
-                bg = _FENCE_BG
+                no_style = f"{_LINE_NO_FG} on {_FENCE_BG}" if bg else _LINE_NO_FG
+                parts = [(f"{g[0]:>{maxw}}   ", no_style)]
+                row_bg = _FENCE_BG
             else:
                 if kind == "-":
                     marker_style = _DIFF_DEL_FG
-                    bg = _DIFF_DEL_BG
+                    row_bg = _DIFF_DEL_BG
                 else:
                     marker_style = _DIFF_ADD_FG
-                    bg = _DIFF_ADD_BG
+                    row_bg = _DIFF_ADD_BG
+                no_style = f"{_LINE_NO_FG} on {row_bg}" if bg else _LINE_NO_FG
+                marker_style = f"{marker_style} on {row_bg}" if bg else marker_style
                 parts = [
-                    (f"{g[0]:>{maxw}} ", f"{_LINE_NO_FG} on {bg}"),
-                    (f"{kind} ", f"{marker_style} on {bg}"),
+                    (f"{g[0]:>{maxw}} ", no_style),
+                    (f"{kind} ", marker_style),
                 ]
-            if hl_line.cell_length == 0:
-                hl_line = Content(" ", spans=[Span(0, 1, f"on {bg}")])
-            else:
-                hl_line = hl_line.stylize(f"on {bg}")
+            if bg:
+                if hl_line.cell_length == 0:
+                    hl_line = Content(" ", spans=[Span(0, 1, f"on {row_bg}")])
+                else:
+                    hl_line = hl_line.stylize(f"on {row_bg}")
             parts.append(hl_line)
             out.append(Content.assemble(*parts))
     return out
 
 
-def _highlight_lines(code: str, lang: str | None) -> list[Content]:
-    key = (lang, code)
+def _highlight_lines(code: str, lang: str | None, bg: bool = True) -> list[Content]:
+    key = (lang, code, bg)
     hit = _HIGHLIGHT_CACHE.get(key)
     if hit is not None:
         return hit
@@ -367,7 +372,7 @@ def _highlight_lines(code: str, lang: str | None) -> list[Content]:
         _HIGHLIGHT_CACHE[key] = out
         return out
     if lang != "markdown" and _is_diff_code(code):
-        out = _diff_highlight(code, lang)
+        out = _diff_highlight(code, lang, bg)
         _HIGHLIGHT_CACHE[key] = out
         return out
     if len(code) > _MAX_HIGHLIGHT_BYTES:
@@ -475,11 +480,24 @@ def _line_bg(c: Content) -> str | None:
     return None
 
 
-def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool = False, line_number_start: int = 1) -> Content:
+def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool = False, line_number_start: int = 1, bg: bool = True) -> Content:
     if diff_nums:
-        lines = _numbered_diff_highlight(code, lang)
+        lines = _numbered_diff_highlight(code, lang, bg)
     else:
-        lines = _highlight_lines(code, lang)
+        lines = _highlight_lines(code, lang, bg)
+    if not bg:
+        parts: list = []
+        width = 4
+        if numbered:
+            width = max(2, len(str(max(1, line_number_start + len(lines) - 1))))
+        last = len(lines) - 1
+        for i, line in enumerate(lines):
+            if numbered:
+                parts.append((f"{i + line_number_start:>{width}}   ", _LINE_NO_FG))
+            parts.append(line)
+            if i < last:
+                parts.append("\n")
+        return Content.assemble(*parts)
     max_cells = max((l.cell_length for l in lines), default=0)
     parts: list = []
     width = 4
@@ -489,30 +507,34 @@ def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool 
     for i, line in enumerate(lines):
         if numbered:
             parts.append((f"{i + line_number_start:>{width}}   ", f"{_LINE_NO_FG} on {_FENCE_BG}"))
-        bg = _line_bg(line)
-        if bg is None:
+        bg_color = _line_bg(line)
+        if bg_color is None:
             line = line.stylize(f"on {_FENCE_BG}")
-            bg = _FENCE_BG
+            bg_color = _FENCE_BG
         parts.append(line)
         pad = max_cells - line.cell_length
         if pad > 0:
-            parts.append((" " * pad, f"on {bg}"))
+            parts.append((" " * pad, f"on {bg_color}"))
         if i < last:
             parts.append("\n")
     return Content.assemble(*parts)
 
 
-def _open_fence(code: str) -> Content:
+def _open_fence(code: str, bg: bool = True) -> Content:
     if not code:
         return Content("")
-    return Content.assemble((code, f"{_OPEN_FENCE_FG} on {_FENCE_BG}"))
+    if bg:
+        return Content.assemble((code, f"{_OPEN_FENCE_FG} on {_FENCE_BG}"))
+    return Content.assemble((code, _OPEN_FENCE_FG))
 
 
-def _plain_fence_body(code: str) -> list[Content]:
+def _plain_fence_body(code: str, bg: bool = True) -> list[Content]:
     lines = code.split("\n")
     while lines and not lines[-1]:
         lines.pop()
-    return [Content(line).stylize(f"on {_FENCE_BG}") for line in lines]
+    if bg:
+        return [Content(line).stylize(f"on {_FENCE_BG}") for line in lines]
+    return [Content(line) for line in lines]
 
 
 def _inline(text: str) -> Content:
@@ -572,34 +594,47 @@ def _render_line(line: str) -> Content | None:
     return _inline(line)
 
 
-def render_markdown(source: str, *, numbered: bool = False, line_number_start: int = 1) -> Content:
+def render_markdown(source: str, *, numbered: bool = False, line_number_start: int = 1, bg: bool = True) -> Content:
     parts: list = []
     lines = source.split("\n")
     i = 0
     n = len(lines)
+    pending_blank = False
     while i < n:
         line = lines[i]
         if not line.strip():
+            pending_blank = True
             i += 1
             continue
+        if pending_blank and parts:
+            parts.append("\n")
+        pending_blank = False
         m = _FENCE_RE.match(line)
         if m is not None:
             info = m.group(1)
             lang, _, flags = info.partition("@")
             diff_nums = flags == "n"
+            if not bg:
+                parts.append(Content(m.group(0), spans=[Span(0, len(m.group(0)), _OPEN_FENCE_FG)]))
+                parts.append("\n")
             body: list[str] = []
             i += 1
             closed = False
+            close_line = ""
             while i < n:
                 if _FENCE_RE.match(lines[i]):
                     closed = True
+                    close_line = lines[i]
                     i += 1
                     break
                 body.append(lines[i])
                 i += 1
             code = "\n".join(body).rstrip("\n")
-            parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start))
+            parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start, bg=bg))
             parts.append("\n")
+            if closed and not bg:
+                parts.append(Content(close_line, spans=[Span(0, len(close_line), _OPEN_FENCE_FG)]))
+                parts.append("\n")
             continue
         if _is_table_row(line) and i + 1 < n and _is_table_sep(lines[i + 1]):
             table, i = _table_block(lines, i, n)
@@ -656,9 +691,10 @@ def render_tool_markdown(body: str, *, numbered: bool = False, line_number_start
 
 
 class StreamMarkdown:
-    def __init__(self, *, numbered: bool = False, line_number_start: int = 1):
+    def __init__(self, *, numbered: bool = False, line_number_start: int = 1, bg: bool = True):
         self._numbered = numbered
         self._line_number_start = line_number_start
+        self._bg = bg
         self._lines: list[Content] = []
         self._tail = ""
         self._prev: Content | None = None
@@ -668,6 +704,7 @@ class StreamMarkdown:
         self._fence_diff = False
         self._fence_body: list[str] = []
         self._fence_start = 0
+        self._fence_marker: Content | None = None
         self._table_rows: list[str] | None = None
         self._table_start = 0
 
@@ -683,17 +720,14 @@ class StreamMarkdown:
             self._line(self._tail)
             self._tail = ""
         if self._fence_open:
-            code = "\n".join(self._fence_body).rstrip("\n")
-            block = _fence_body(code, self._fence_lang, numbered=self._numbered, diff_nums=self._fence_diff, line_number_start=self._line_number_start)
-            del self._lines[self._fence_start:]
-            self._lines.extend(block.split("\n", allow_blank=True))
-            self._fence_open = False
-            self._fence_body = []
+            self._close_fence(None)
         if self._table_rows is not None:
             self._rerender_open_table()
             self._table_rows = None
             self._table_start = 0
         self._commit_prev()
+        while self._lines and not self._lines[-1].plain:
+            self._lines.pop()
 
     def render(self) -> Content:
         parts: list = []
@@ -708,7 +742,7 @@ class StreamMarkdown:
             parts.append("\n")
         if self._tail:
             if self._fence_open:
-                parts.append(_open_fence(self._tail))
+                parts.append(_open_fence(self._tail, self._bg))
                 parts.append("\n")
             elif self._table_rows is not None:
                 pass
@@ -731,8 +765,7 @@ class StreamMarkdown:
     def _line(self, line: str) -> None:
         if self._fence_open:
             if _FENCE_RE.match(line) is not None:
-                code = "\n".join(self._fence_body).rstrip("\n")
-                self._close_fence(code)
+                self._close_fence(line)
             else:
                 self._fence_body.append(line)
                 self._rerender_open_fence()
@@ -754,6 +787,16 @@ class StreamMarkdown:
             self._fence_body = []
             self._commit_prev()
             self._fence_start = len(self._lines)
+            if not self._bg:
+                self._fence_marker = Content(line, spans=[Span(0, len(line), _OPEN_FENCE_FG)])
+                self._lines.append(self._fence_marker)
+            else:
+                self._fence_marker = None
+            return
+        if not line.strip():
+            self._commit_prev()
+            if self._lines and self._lines[-1].plain != "":
+                self._lines.append(Content(""))
             return
         if self._prev is not None:
             if _is_table_row(self._prev_text) and _is_table_sep(line):
@@ -775,19 +818,24 @@ class StreamMarkdown:
         del self._lines[self._table_start:]
         self._lines.extend(block.split("\n", allow_blank=True))
 
-    def _close_fence(self, code: str) -> None:
-        lang = self._fence_lang
-        block = _fence_body(code, lang, numbered=self._numbered, diff_nums=self._fence_diff, line_number_start=self._line_number_start)
-        del self._lines[self._fence_start:]
+    def _close_fence(self, close_line: str | None) -> None:
+        code = "\n".join(self._fence_body).rstrip("\n")
+        block = _fence_body(code, self._fence_lang, numbered=self._numbered, diff_nums=self._fence_diff, line_number_start=self._line_number_start, bg=self._bg)
+        offset = 1 if self._fence_marker is not None else 0
+        del self._lines[self._fence_start + offset:]
         self._lines.extend(block.split("\n", allow_blank=True))
+        if self._fence_marker is not None and close_line is not None:
+            self._lines.append(Content(close_line, spans=[Span(0, len(close_line), _OPEN_FENCE_FG)]))
         self._fence_open = False
         self._fence_body = []
         self._fence_start = 0
+        self._fence_marker = None
 
     def _rerender_open_fence(self) -> None:
         code = "\n".join(self._fence_body)
-        del self._lines[self._fence_start:]
-        self._lines.extend(_plain_fence_body(code))
+        offset = 1 if self._fence_marker is not None else 0
+        del self._lines[self._fence_start + offset:]
+        self._lines.extend(_plain_fence_body(code, self._bg))
 
 
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")

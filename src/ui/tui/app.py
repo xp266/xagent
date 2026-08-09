@@ -204,7 +204,7 @@ class XAgentTUI(PickerMixin, App):
         if cur["reply"] is not None and cur.get("reply_text"):
             md = cur.get("_reply_md")
             if md is None:
-                md = StreamMarkdown()
+                md = StreamMarkdown(bg=False)
                 cur["_reply_md"] = md
             prev_len = cur.get("_reply_md_len", 0)
             text = cur["reply_text"]
@@ -1076,7 +1076,7 @@ class XAgentTUI(PickerMixin, App):
                         pad_left=3,
                         pad_right=1,
                     )
-                    block.update(render_markdown(content))
+                    block.update(render_markdown(content, bg=False))
 
                 for tc in tool_calls:
                     fn = tc.get("function", {})
