@@ -119,7 +119,6 @@ class CanvasBlock:
             )
         self.content = content
         self._strips = []
-        self._fill_at = []
         self._key = ()
         self._bump()
     def _bump(self) -> None:
@@ -142,19 +141,37 @@ class CanvasBlock:
 
         content_lines: list[Content] = []
         incremental = False
+        keep = 0
+        tail_start = 0
         if not self.collapsed and self.content is not None:
             plain = self.content.plain
             prev_plain = self._built_plain if self._built_width == width else ""
-            if len(plain) > len(prev_plain) and plain.startswith(prev_plain):
+            cached = self._built_content_raw
+            if cached:
+                stable_end = len(prev_plain.rstrip("\n")) - len(cached[-1].plain)
+            else:
+                stable_end = -1
+            if (
+                len(plain) > len(prev_plain)
+                and stable_end >= 0
+                and plain[:stable_end] == prev_plain[:stable_end]
+            ):
                 incremental = True
-                content_lines = list(self._built_content_raw)
-                tail_plain = plain[len(prev_plain):]
+                keep = len(cached) - 1
+                content_lines = cached
+                if keep < len(content_lines):
+                    del content_lines[keep:]
+                tail_start = stable_end
+                tail_plain = plain[tail_start:]
                 tail_spans = []
-                for s in self.content.spans:
-                    if s.end <= len(prev_plain):
-                        continue
-                    start = s.start if s.start >= len(prev_plain) else len(prev_plain)
-                    tail_spans.append(Span(start - len(prev_plain), s.end - len(prev_plain), s.style))
+                spans = self.content.spans
+                if spans:
+                    start = bisect.bisect_right(spans, tail_start, key=lambda s: s.start)
+                    for s in spans[max(0, start - 1):]:
+                        if s.end <= tail_start:
+                            continue
+                        head = s.start if s.start >= tail_start else tail_start
+                        tail_spans.append(Span(head - tail_start, s.end - tail_start, s.style))
                 tail_lines = Content(tail_plain, spans=tail_spans).split("\n", allow_blank=True)
                 while tail_lines and not tail_lines[-1].plain:
                     tail_lines.pop()
@@ -163,16 +180,11 @@ class CanvasBlock:
                 content_lines = self.content.split("\n", allow_blank=True)
                 while content_lines and not content_lines[-1].plain:
                     content_lines.pop()
+                for a, b in zip(self._built_content_raw, content_lines):
+                    if a.plain != b.plain or a.spans != b.spans:
+                        break
+                    keep += 1
             self._built_plain = plain
-
-        if incremental:
-            keep = len(self._built_content_raw)
-        else:
-            keep = 0
-            for a, b in zip(self._built_content_raw, content_lines):
-                if a.plain != b.plain or a.spans != b.spans:
-                    break
-                keep += 1
 
         new_content: list[Content] = []
         new_spans: list[int] = []
@@ -194,11 +206,22 @@ class CanvasBlock:
                             [*nline.spans, Span(bg_end, len(nline.plain), cbg)],
                         )
                 new_content.append(nline)
-        reuse = sum(self._built_spans[:keep])
-        rendered_content = self._built_content[:reuse] + new_content
+        if incremental:
+            if keep < len(self._built_spans):
+                dropped = sum(self._built_spans[keep:])
+                del self._built_spans[keep:]
+                del self._built_content[len(self._built_content) - dropped:]
+                if len(self._built_padded) >= dropped:
+                    del self._built_padded[len(self._built_padded) - dropped:]
+            reuse = len(self._built_content)
+            self._built_content.extend(new_content)
+            self._built_spans.extend(new_spans)
+        else:
+            reuse = sum(self._built_spans[:keep])
+            self._built_content = self._built_content[:reuse] + new_content
+            self._built_spans = self._built_spans[:keep] + new_spans
         self._built_content_raw = content_lines
-        self._built_spans = self._built_spans[:keep] + new_spans
-        self._built_content = rendered_content
+        rendered_content = self._built_content
 
         lines: list[Content] = []
         if self.pad_top > 0:
@@ -232,12 +255,13 @@ class CanvasBlock:
                 left_pad = Content(" " * self.content_pad_left, spans=[Span(0, self.content_pad_left, cbg)])
             else:
                 left_pad = Content(" " * self.content_pad_left)
-            if reuse and len(self._built_padded) == reuse:
-                padded_lines = self._built_padded[:reuse] + [left_pad + line for line in new_content]
+            if reuse and len(self._built_padded) >= reuse:
+                if len(self._built_padded) > reuse:
+                    del self._built_padded[reuse:]
+                self._built_padded.extend(left_pad + line for line in new_content)
             else:
-                padded_lines = [left_pad + line for line in rendered_content]
-            self._built_padded = padded_lines
-            lines.extend(padded_lines)
+                self._built_padded = [left_pad + line for line in rendered_content]
+            lines.extend(self._built_padded)
         self._built_reuse = reuse
         if self.pad_bottom > 0:
             lines.extend(
@@ -253,7 +277,7 @@ class CanvasBlock:
         if width > 0:
             cs = self._built_content_start
             reuse = self._built_reuse
-            if reuse and len(self._lines) >= cs + reuse:
+            if reuse and len(self._lines) >= cs + reuse and len(self._fill_at) >= cs + reuse:
                 padded = []
                 fills = []
                 for line in raw[:cs]:

@@ -73,10 +73,13 @@ class ThinkingMarkdown:
                 self._rendered_cell = block.cell_length
             else:
                 base = self._rendered.plain
+                spans = self._rendered.spans
+                spans.extend(
+                    Span(s.start + len(base), s.end + len(base), s.style) for s in block.spans
+                )
                 self._rendered = Content(
                     base + block.plain,
-                    spans=list(self._rendered.spans)
-                    + [Span(s.start + len(base), s.end + len(base), s.style) for s in block.spans],
+                    spans=spans,
                     cell_length=self._rendered_cell + block.cell_length,
                     strip_control_codes=False,
                 )
@@ -89,10 +92,13 @@ class ThinkingMarkdown:
                 result = Content.assemble(tail_c, "\n")
             else:
                 base = result.plain
+                spans = result.spans
+                spans.extend(
+                    Span(s.start + len(base), s.end + len(base), s.style) for s in tail_c.spans
+                )
                 result = Content(
                     base + tail_c.plain + "\n",
-                    spans=list(result.spans)
-                    + [Span(s.start + len(base), s.end + len(base), s.style) for s in tail_c.spans],
+                    spans=spans,
                     cell_length=result.cell_length + tail_c.cell_length + 1,
                     strip_control_codes=False,
                 )

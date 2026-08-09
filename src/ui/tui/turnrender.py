@@ -21,6 +21,7 @@ from src.utils.config import get_config
 _RENDER_COOLDOWN = 0.016
 _TOOL_RENDER_COOLDOWN = 0.08
 _THINKING_RENDER_INTERVAL = 0.1
+_REPLY_RENDER_INTERVAL = 0.1
 
 
 def new_turn_state() -> dict:
@@ -76,7 +77,11 @@ class TurnRenderMixin:
             if len(text) > prev_len:
                 md.feed(text[prev_len:])
                 cur["_reply_md_len"] = len(text)
-            cur["reply"].update(md.render())
+                if force or now - cur.get("_reply_render", 0.0) >= _REPLY_RENDER_INTERVAL:
+                    cur["_reply_render"] = now
+                    cur["reply"].update(md.render())
+            elif force:
+                cur["reply"].update(md.render())
 
         pending_tool = False
         for tc_id, tool in cur["tools"].items():
@@ -146,6 +151,7 @@ class TurnRenderMixin:
         self._hide_waiting()
         cur.pop("_reply_md", None)
         cur["_reply_md_len"] = 0
+        cur.pop("_reply_render", None)
 
     def _show_retry(self, error: str, delay: float, attempt: int) -> None:
         cur = self._current
@@ -437,6 +443,7 @@ class TurnRenderMixin:
             cur["reply_text"] = ""
             cur.pop("_reply_md", None)
             cur["_reply_md_len"] = 0
+            cur.pop("_reply_render", None)
             self._ensure_reply()
         elif t == "text-delta":
             cur["reply_text"] += event.data
