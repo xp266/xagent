@@ -19,6 +19,7 @@ class AppConfig(BaseModel):
     providers: dict[str, dict] = Field(default_factory=dict)
     mcp_servers: dict[str, dict] = Field(default_factory=dict)
     model_contexts: dict[str, int] = Field(default_factory=dict)
+    compact_model: str = ""
 
 
 class Config(BaseModel):

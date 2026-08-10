@@ -4,7 +4,7 @@ import json
 import os
 
 from src.agent import name_session_from_first_message
-from src.ui.tui.colors import _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
+from src.ui.tui.colors import _COMPACTING, _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
 from src.ui.tui.markdown import render_markdown_lines
 from src.ui.tui.render import (
     block_tool, clean_result, fmt_duration, is_error_result, read_line_start,
@@ -87,12 +87,9 @@ class ChatMixin:
         if os.path.isdir(target):
             os.chdir(target)
             self._project = os.getcwd()
-        self._ctx_usage_tokens = 0
-        for msg in reversed(s.messages):
-            meta = msg.get("_meta")
-            if meta and meta.get("prompt_tokens"):
-                self._ctx_usage_tokens = meta["prompt_tokens"]
-                break
+        from src.agent.compact import estimate_context_usage
+
+        self._ctx_usage_tokens = estimate_context_usage(s)
         self._render_messages()
         self._update_status()
         self._input().focus()
@@ -144,6 +141,21 @@ class ChatMixin:
                 if role == "system":
                     continue
                 if role == "user":
+                    meta = msg.get("_meta") or {}
+                    if meta.get("compacted"):
+                        content = msg.get("content", "") or ""
+                        content = content.replace("<conversation_summary>", "").replace("</conversation_summary>", "").strip()
+                        block = self._append_block(
+                            kind="compact-summary",
+                            title="Compression complete",
+                            title_style=f"bold {_COMPACTING}",
+                            expandable=True,
+                            collapsed=False,
+                            hide_arrow=True,
+                            pad_bottom=0,
+                        )
+                        block.update_lines(render_markdown_lines(content, bg=False))
+                        continue
                     block = self._append_block(kind="user", bg=_USER_BG)
                     block.update(msg.get("content", ""))
                     continue

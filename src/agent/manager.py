@@ -100,8 +100,30 @@ class MessageManager:
     def get_messages(self) -> list:
         return self._messages
 
+    def _context_messages(self) -> list:
+        msgs = self._messages
+        last = None
+        tail_start = None
+        for i, m in enumerate(msgs):
+            if isinstance(m, dict) and (m.get("_meta") or {}).get("compacted"):
+                last = i
+                ts = (m.get("_meta") or {}).get("tail_start")
+                if isinstance(ts, int) and 0 <= ts < i:
+                    tail_start = ts
+        if last is None:
+            return list(msgs)
+        out = [
+            m for m in msgs
+            if isinstance(m, SystemMessage) or (isinstance(m, dict) and m.get("role") == "system")
+        ]
+        out.append(msgs[last])
+        if tail_start is not None:
+            out.extend(msgs[tail_start:last])
+        out.extend(msgs[last + 1:])
+        return out
+
     def get_api_messages(self) -> list[dict]:
-        return _messages_to_api(self._messages)
+        return _messages_to_api(self._context_messages())
 
     def save(self) -> None:
         if self._session:

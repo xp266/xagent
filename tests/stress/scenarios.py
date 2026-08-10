@@ -210,10 +210,45 @@ def _mixed_loop(key: str, model: str, messages: list) -> Iterator[dict]:
     yield from _finish(state["prompt"], len(think) + len(reply), finish="tool_calls")
 
 
+def _compact_loop(key: str, model: str, messages: list) -> Iterator[dict]:
+    state = _STATE.setdefault(key, {"prompt": 100_000, "step": 0})
+    system = ""
+    for m in messages:
+        if isinstance(m, dict) and m.get("role") == "system":
+            system += m.get("content") or ""
+    if "summarization" in system:
+        text = content.compact_summary()
+        for delta in _text_deltas(text, 200, _rate_sleep()):
+            yield _chunk({"content": delta}, created=int(time.time()))
+        yield from _finish(state["prompt"], len(text))
+        return
+    created = int(time.time())
+    for delta in _text_deltas(content.mixed_think_block(), 64, _rate_sleep()):
+        yield _chunk({"reasoning_content": delta}, created=created)
+    reply = content.mixed_reply_block()
+    for delta in _text_deltas(reply, 64, _rate_sleep()):
+        yield _chunk({"content": delta}, created=created)
+    state["prompt"] = min(210_000, state["prompt"] + 15_000)
+    if state["step"] % 2 == 0:
+        name, args = _tool_sequence(state["step"] // 2)
+        tc_id = f"call_compact_{state['step']}"
+        yield from _tool_call_deltas(name, args, tc_id, created)
+        yield from _finish(state["prompt"], len(reply), finish="tool_calls")
+    else:
+        yield from _finish(state["prompt"], len(reply))
+    state["step"] += 1
+
+
 def iter_chunks(request: dict) -> Iterator[dict]:
     messages = request.get("messages", []) or []
     key = classify(messages)
     model = request.get("model", _MODEL)
+    system = ""
+    for m in messages:
+        if isinstance(m, dict) and m.get("role") == "system":
+            system += m.get("content") or ""
+    if "summarization" in system:
+        return _compact_loop("compact", model, messages)
     if key in ("thinking", "reasoning"):
         return _thinking_loop(key, model)
     if key in ("reply", "answer"):
@@ -226,4 +261,6 @@ def iter_chunks(request: dict) -> Iterator[dict]:
         return _tool_loop(key, model, messages)
     if key in ("mixed", "mixstorm"):
         return _mixed_loop(key, model, messages)
+    if key in ("compact", "compactor"):
+        return _compact_loop(key, model, messages)
     return _normal(key, model)

@@ -7,7 +7,7 @@ from src.agent import run_session_turn
 from src.agent.turn import RETRY_LIMIT
 from src.types.events import StreamEvent
 from src.ui.tui.canvas import CanvasBlock
-from src.ui.tui.colors import _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
+from src.ui.tui.colors import _COMPACTING, _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
 from src.ui.tui.lazy import LazyText
 from src.ui.tui.markdown import StreamMarkdown
 from src.ui.tui.render import (
@@ -504,6 +504,56 @@ class TurnRenderMixin:
                 float(data.get("delay", 5)),
                 int(data.get("attempt", 1)),
             )
+        elif t == "compacting":
+            self._hide_waiting()
+            self._remove_empty_thinking()
+            block = self._ensure_block(
+                "compact",
+                kind="compact",
+                title="Compressing context...",
+                title_style=f"bold {_COMPACTING}",
+                expandable=True,
+                collapsed=False,
+                hide_arrow=True,
+                pad_bottom=0,
+            )
+            self._start_spinner(block, "Compressing context...")
+            cur["compact_text"] = ""
+            cur.pop("_compact_md", None)
+            cur["last_compact_render"] = 0.0
+            self._scroll_end()
+        elif t == "compact-delta":
+            cur["compact_text"] = cur.get("compact_text", "") + event.data
+            md = cur.get("_compact_md")
+            if md is None:
+                md = StreamMarkdown(bg=False)
+                cur["_compact_md"] = md
+            md.feed(event.data)
+            now = time.monotonic()
+            if now - cur.get("last_compact_render", 0.0) >= 0.08:
+                cur["last_compact_render"] = now
+                block = cur.get("compact")
+                if block is not None:
+                    block.update(md.render())
+                    self._scroll_end()
+        elif t == "compacted":
+            md = cur.get("_compact_md")
+            block = cur.get("compact")
+            if md is not None:
+                md.finish()
+                if block is not None:
+                    block.update(md.render())
+            if block is not None:
+                self._stop_spinner(block, "Compression complete")
+                block.set_title("Compression complete")
+            self._scroll_end()
+        elif t == "compact-error":
+            block = cur.get("compact")
+            if block is not None:
+                self._stop_spinner(block, "Compression failed")
+                block.set_title("Compression failed")
+                block.update("Compression failed, context unchanged")
+            self._scroll_end()
 
     async def _turn_worker(self, text: str) -> None:
         from src.agent.cancel import set_turn_task

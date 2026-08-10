@@ -68,6 +68,7 @@ class ProviderStore:
             providers={k: v for k, v in providers.items() if isinstance(v, dict)},
             mcp_servers={k: v for k, v in raw.get("mcp_servers", {}).items() if isinstance(v, dict)},
             model_contexts=contexts,
+            compact_model=str(raw.get("compact_model", "")),
         )
 
     def save(self) -> None:
@@ -78,6 +79,7 @@ class ProviderStore:
             "providers": self._config.providers,
             "mcp_servers": self._config.mcp_servers,
             "model_contexts": self._config.model_contexts,
+            "compact_model": self._config.compact_model,
         }
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         tmp = self.path + ".tmp"
@@ -260,6 +262,14 @@ class ProviderStore:
         if stored is not None and pid.startswith(_CUSTOM_ID_PREFIX):
             stored["models"] = [m for m in models if m]
             self.save()
+
+    @property
+    def compact_model(self) -> str:
+        return str(self._config.compact_model)
+
+    def set_compact_model(self, model: str) -> None:
+        self._config.compact_model = (model or "").strip()
+        self.save()
 
     def get_model_context_override(self, model: str) -> int:
         return self._config.model_contexts.get(model, 0)

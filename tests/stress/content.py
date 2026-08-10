@@ -156,3 +156,43 @@ def glob_args() -> dict:
 
 def bash_args() -> dict:
     return {"command": "seq 1 800"}
+
+
+def compact_summary() -> str:
+    lines = [
+        "<conversation_summary>",
+        "## Objective",
+        "- Analyze and optimize the TUI streaming render pipeline so long replies stay smooth.",
+        "",
+        "## Decisions & Constraints",
+        "- Keep the canvas block model; avoid full re-renders.",
+        "- No comments or docstrings in src/ (repo convention).",
+        "",
+        "## Progress",
+        "### Completed",
+        "- Incremental `StreamMarkdown` feed with open-fence re-render.",
+        "- Throttled flush cooldowns (16ms reply / 80ms tools).",
+        "- `ChatCanvas` strip cache keyed by render generation.",
+        "",
+        "### In Progress",
+        "- Measuring per-tick cost of `Content.assemble` under 30fps.",
+        "",
+        "### Blocked",
+        "- (none)",
+        "",
+        "## Files & Key Context",
+        "- src/ui/tui/markdown.py: `StreamMarkdown.feed/render`",
+        "- src/ui/tui/canvas.py: `CanvasBlock._build`, strip cache",
+        "- src/ui/tui/turnrender.py: `_flush_streaming_content`",
+        "- `wc -l src/ui/tui/*.py`",
+        "",
+        "## User Messages",
+        "- \"帮我看看这个贪吃蛇的运行效果\"",
+        "- \"压缩一下上下文，重点保留渲染管线的优化方案\"",
+        "",
+        "## Next Move",
+        "1. Run the stress harness and check `build_avg_ms` and `md_avg_ms`.",
+        "2. If `md_avg_ms` stays high, cache the assembled `Content` per line count.",
+        "</conversation_summary>",
+    ]
+    return "\n".join(lines)

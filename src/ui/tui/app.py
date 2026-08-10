@@ -138,6 +138,63 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         block.update(text)
         self._scroll_end()
 
+    def _run_manual_compact(self, focus: str = "") -> None:
+        if self._busy:
+            self._deferred = lambda: self._run_manual_compact(focus)
+            self._append_error("Agent is busy, compaction queued after the turn")
+            return
+        from src.agent.cancel import reset, set_turn_task
+
+        reset()
+        self._input().busy = True
+        self._busy = True
+        self._waves.clear()
+        self._current = new_turn_state()
+        self._ensure_waiting()
+        self._scroll_end()
+        task = asyncio.create_task(self._compact_worker(focus), name="xagent-compact")
+        set_turn_task(task)
+
+    async def _compact_worker(self, focus: str) -> None:
+        from src.agent.cancel import set_turn_task
+        from src.agent.compact import compact_session_stream
+
+        try:
+            async for event in compact_session_stream(self._session, focus=focus):
+                if self._exit or self._closing:
+                    break
+                self._handle_event(event)
+            self._update_status()
+        except asyncio.CancelledError:
+            if self._exit or self._closing:
+                raise
+            block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
+            block.update("Compaction interrupted")
+            self._scroll_end()
+        except Exception as e:
+            if self._exit or self._closing:
+                return
+            self._append_error(f"{type(e).__name__}: {e}")
+        finally:
+            if not (self._exit or self._closing):
+                self._hide_waiting()
+                self._stop_all_spinners()
+                self._waves.clear()
+                self._busy = False
+                self._input().busy = False
+                self._current = None
+                self._update_status()
+                self._scroll_end()
+            set_turn_task(None)
+        if self._exit or self._closing:
+            return
+        deferred = self._deferred
+        self._deferred = None
+        if deferred is not None:
+            deferred()
+            return
+        self._input().focus()
+
     def _trim_canvas_blocks(self) -> None:
         canvas = self._canvas()
         if len(canvas._blocks) <= MAX_CANVAS_BLOCKS + TRIM_SLACK:

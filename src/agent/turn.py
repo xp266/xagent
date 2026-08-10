@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
+from src.agent.compact import compact_session_stream, estimate_context_usage, should_compact, USER_THRESHOLD, WORK_THRESHOLD
 from src.agent.loop import agent_stream
 from src.agent.session import Session, get_session_manager
 from src.types.events import (
@@ -12,6 +13,7 @@ from src.types.events import (
     ToolCallData, ToolResultData, ToolErrorData, ProviderErrorData, RetryScheduleData,
 )
 from src.types.messages import AssistantMessage
+from src.utils.providers import get_store
 
 INTERRUPTED_TOOL_RESULT = "Tool call interrupted by user."
 
@@ -125,7 +127,21 @@ def _persist(session: Session) -> None:
     get_session_manager().save(session)
 
 
+async def _compact_if_needed(session: Session, threshold: float, usage_override: int = 0):
+    usage = usage_override if usage_override > 0 else estimate_context_usage(session)
+    try:
+        limit = get_store().get_effective_context_limit(session.provider.model)
+    except Exception:
+        return
+    if not should_compact(usage, limit, threshold):
+        return
+    async for ev in compact_session_stream(session):
+        yield ev
+
+
 async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[StreamEvent]:
+    async for ev in _compact_if_needed(session, USER_THRESHOLD):
+        yield ev
     session.msgs.add_user(user_input)
     start = time.monotonic()
 
@@ -253,6 +269,10 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                 )
             session.msgs.finalize_tool_results()
             _persist(session)
+
+            if response.finish_reason == "tool_calls":
+                async for ev in _compact_if_needed(session, WORK_THRESHOLD, last_prompt_tokens):
+                    yield ev
 
             if response.finish_reason != "tool_calls":
                 break

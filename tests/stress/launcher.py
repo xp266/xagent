@@ -37,6 +37,7 @@ _METRICS = [
     ("status_avg_ms", "_update_status avg ms"),
     ("istatus_avg_ms", "_update_input_status avg ms"),
     ("hunk_avg_ms", "_edit_hunk avg ms"),
+    ("compact_avg_ms", "compact avg ms"),
     ("rss_mb", "rss mb"),
 ]
 
@@ -47,6 +48,7 @@ def _write_config(port: int) -> None:
         "active_provider": "custom:stress",
         "active_model": MODEL,
         "reasoning_effort": {},
+        "model_contexts": {MODEL: 150000},
         "providers": {
             "custom:stress": {
                 "name": "Stress Mock",
@@ -157,7 +159,7 @@ def main() -> int:
     print(f"[stress] mock provider  ->  http://127.0.0.1:{port}/v1")
     print(f"[stress] metrics log    ->  {log_path}")
     print(f"[stress] isolated data  ->  {DATA_DIR}")
-    print("[stress] scenarios: thinking | reply | replong | storm | tools | mixed | retry | error | <anything>")
+    print("[stress] scenarios: thinking | reply | replong | storm | tools | mixed | retry | error | compact | <anything>")
     try:
         from src.ui.tui.app import run_tui
         run_tui()

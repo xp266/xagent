@@ -45,6 +45,7 @@ class Metrics:
         self._app = None
         self._seq = 0
         self._closed = False
+        self._compact_start: float | None = None
 
     def _add(self, key: str, ms: float) -> None:
         e = self._window.setdefault(key, [0, 0.0])
@@ -133,7 +134,7 @@ class Metrics:
             "lines": lines,
             "reply_chars": reply_chars,
         }
-        for key in ("event", "flush", "md", "think", "build", "rebuild", "strip", "pad", "wrap", "line", "status", "istatus", "hunk"):
+        for key in ("event", "flush", "md", "think", "build", "rebuild", "strip", "pad", "wrap", "line", "status", "istatus", "hunk", "compact"):
             calls, total = self._window.get(key, [0, 0.0])
             rec[f"{key}_calls"] = calls
             rec[f"{key}_total_ms"] = round(total, 3)
@@ -212,6 +213,12 @@ def install(log_path: str) -> Metrics:
             return orig_event(self, event, *a, **kw)
         finally:
             m.event((time.perf_counter() - t0) * 1000.0)
+            etype = getattr(event, "type", None)
+            if etype == "compacting":
+                m._compact_start = time.monotonic()
+            elif etype == "compacted" and m._compact_start is not None:
+                m._add("compact", (time.monotonic() - m._compact_start) * 1000.0)
+                m._compact_start = None
 
     TurnRenderMixin._handle_event = event_wrapper
 
