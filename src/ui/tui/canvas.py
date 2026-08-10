@@ -39,11 +39,13 @@ class CanvasBlock:
         content_pad_left: int | None = None,
         expandable: bool = False,
         hide_arrow: bool = False,
+        action: Callable | None = None,
     ) -> None:
         self.kind = kind
         self.collapsed = collapsed
         self.expandable = expandable
         self.hide_arrow = hide_arrow
+        self.action = action
         self.title = title
         self.label = title
         self.title_style = title_style
@@ -518,7 +520,12 @@ class ChatCanvas(Static):
         if widget is not self or offset is None:
             return
         block, by = self._block_at(offset.y)
-        if block is None or not block.expandable:
+        if block is None:
+            return
+        if block.action is not None:
+            block.action()
+            return
+        if not block.expandable:
             return
         if by != block.pad_top:
             return

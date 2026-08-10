@@ -148,6 +148,15 @@ class ChatInput(TextArea):
                     self._arm()
                 return
             self._disarm()
+        if event.key in ("ctrl+u", "ctrl+d"):
+            event.stop()
+            event.prevent_default()
+            chat = self.app._chat()
+            if event.key == "ctrl+u":
+                chat.scroll_page_up(animate=False)
+            else:
+                chat.scroll_page_down(animate=False)
+            return
         await super()._on_key(event)
 
 class CommandPalette(Vertical):

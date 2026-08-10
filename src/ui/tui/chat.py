@@ -13,6 +13,28 @@ from src.ui.tui.render import (
 from src.ui.tui.thinking import render_thinking_markdown_lines
 from src.utils.config import get_config
 
+MAX_VISIBLE_MESSAGES = 100
+MAX_RENDER_LINES = 6000
+MAX_CANVAS_BLOCKS = 200
+TRIM_SLACK = 20
+
+
+def _msg_render_lines(msg: dict) -> int:
+    total = 0
+    if msg.get("role") == "assistant":
+        for key in ("content", "reasoning_content"):
+            text = msg.get(key) or ""
+            total += len(text) // 80 + text.count("\n") + 1
+        for tc in msg.get("tool_calls") or []:
+            fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+            args = fn.get("arguments") or ""
+            total += len(args) // 80 + 1
+    else:
+        text = msg.get("content")
+        if isinstance(text, str):
+            total += len(text) // 80 + text.count("\n") + 1
+    return total
+
 
 class ChatMixin:
     def _apply_name(self, s: object, name: str) -> None:
@@ -75,19 +97,48 @@ class ChatMixin:
         self._update_status()
         self._input().focus()
 
-    def _render_messages(self) -> None:
+    def _render_messages(self, max_messages: int = 0, max_lines: int = 0, scroll_to_end: bool = True) -> None:
         self._clear_chat_messages()
+        all_messages = self._session.messages
         tool_results = {}
         tool_errors = {}
-        for msg in self._session.messages:
+        for msg in all_messages:
             if msg.get("role") == "tool":
                 tool_results[msg["tool_call_id"]] = msg["content"]
                 tool_errors[msg["tool_call_id"]] = bool(msg.get("is_error"))
 
-        messages = self._session.messages
+        renderable = [m for m in all_messages if m.get("role") != "system"]
+        max_messages = min(max_messages or MAX_VISIBLE_MESSAGES, len(renderable))
+        max_lines = max_lines or MAX_RENDER_LINES
+
+        window = []
+        cost = 0
+        for msg in reversed(renderable):
+            if len(window) >= max_messages:
+                break
+            window.append(msg)
+            cost += _msg_render_lines(msg)
+            if cost > max_lines:
+                break
+        messages = window[::-1]
+        hidden = len(renderable) - len(messages)
+
         canvas = self._canvas()
         canvas._begin_bulk()
         try:
+            if hidden > 0:
+                div_block = self._append_block(
+                    kind="divider",
+                    title=f"↕ {hidden} earlier messages hidden (click to expand)",
+                    title_style="#888888",
+                    expandable=True,
+                    hide_arrow=True,
+                    pad_top=1,
+                    pad_left=3,
+                    pad_right=1,
+                )
+                div_block.action = lambda: self._render_messages(max_messages * 2, max_lines * 2, scroll_to_end=False)
+
             for idx, msg in enumerate(messages):
                 role = msg.get("role", "")
                 if role == "system":
@@ -194,12 +245,13 @@ class ChatMixin:
         finally:
             canvas._end_bulk()
 
-        if not any(m.get("role") != "system" for m in self._session.messages):
+        if not renderable:
             self._show_logo()
         else:
             self._hide_logo()
 
-        self.call_after_refresh(lambda: self._scroll_end(force=True))
+        if scroll_to_end:
+            self.call_after_refresh(lambda: self._scroll_end(force=True))
 
     @staticmethod
     def _is_turn_end(messages: list, idx: int) -> bool:

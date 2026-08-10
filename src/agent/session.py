@@ -248,10 +248,14 @@ class SessionManager:
 
     def list(self) -> list[Session]:
         result = []
-        for sid in self._index:
-            s = self.get(sid)
-            if s:
-                result.append(s)
+        for sid, entry in self._index.items():
+            result.append(Session(
+                id=sid,
+                name=entry.get("name", ""),
+                path=entry.get("path", ""),
+                created_at=entry.get("created_at", ""),
+                updated_at=entry.get("updated_at", ""),
+            ))
         return result
 
     def get(self, session_id: str) -> Session | None:

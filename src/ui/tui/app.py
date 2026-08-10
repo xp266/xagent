@@ -11,7 +11,7 @@ from src.agent import get_session_manager
 from src.mcp.manager import get_mcp_manager
 from src.ui.tui.animations import SpinnerMixin
 from src.ui.tui.canvas import CanvasBlock, ChatCanvas
-from src.ui.tui.chat import ChatMixin
+from src.ui.tui.chat import MAX_CANVAS_BLOCKS, TRIM_SLACK, ChatMixin
 from src.ui.tui.colors import _USER_BG
 from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.css import CSS
@@ -138,11 +138,30 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         block.update(text)
         self._scroll_end()
 
+    def _trim_canvas_blocks(self) -> None:
+        canvas = self._canvas()
+        if len(canvas._blocks) <= MAX_CANVAS_BLOCKS + TRIM_SLACK:
+            return
+        chat = self._chat()
+        removed_lines = 0
+        excess = len(canvas._blocks) - MAX_CANVAS_BLOCKS
+        canvas._begin_bulk()
+        try:
+            while excess > 0 and canvas._blocks and canvas._blocks[0].kind != "divider":
+                removed_lines += len(canvas._blocks[0]._lines)
+                canvas.remove(canvas._blocks[0])
+                excess -= 1
+        finally:
+            canvas._end_bulk()
+        if removed_lines:
+            chat.scroll_to(max(0, chat.scroll_offset.y - removed_lines), animate=False)
+
     def _tick_animations(self) -> None:
         try:
             self._canvas()._settle_resize()
         except Exception:
             pass
+        self._trim_canvas_blocks()
         if self._busy:
             self._tick_spinners()
             self._tick_status_wave()
