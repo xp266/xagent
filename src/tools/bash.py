@@ -1,5 +1,6 @@
 import os
 import platform
+import re
 import time
 import signal
 import subprocess
@@ -14,6 +15,24 @@ MAX_OUTPUT_BYTES = 1_048_576
 
 _OS_NAME = platform.system() or "unknown"
 _SHELL = "cmd" if os.name == "nt" else "bash"
+
+_ANSI_RE = re.compile(
+    r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]"
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+    r"|\x1b[()#][\x30-\x7e]"
+    r"|\x1b[\x40-\x5f]"
+    r"|\x9b[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]"
+    r"|\x1b"
+)
+_C0_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _strip_ansi(text: str) -> str:
+    if not text:
+        return text
+    text = text.replace("\r\n", "\n").replace("\r", "")
+    text = _ANSI_RE.sub("", text)
+    return _C0_RE.sub("", text)
 
 _active_pids: set = set()
 _pid_lock = threading.Lock()
@@ -129,6 +148,7 @@ def execute(command: str, workdir: str = "", timeout: int = 0, **kwargs) -> dict
         truncated = True
 
     output_text = stdout_bytes.decode("utf-8", errors="replace") or "(no output)"
+    output_text = _strip_ansi(output_text)
     if truncated:
         output_text += "\n\n[output capture truncated at the in-memory safety limit]"
 

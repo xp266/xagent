@@ -106,6 +106,24 @@ class ChatInput(TextArea):
         if self.placeholder == self._ARM_PLACEHOLDER:
             self.placeholder = ""
 
+    def action_undo(self) -> None:
+        try:
+            super().action_undo()
+        except Exception:
+            try:
+                self.history.clear()
+            except Exception:
+                pass
+
+    def action_redo(self) -> None:
+        try:
+            super().action_redo()
+        except Exception:
+            try:
+                self.history.clear()
+            except Exception:
+                pass
+
     async def _on_key(self, event: events.Key) -> None:
         if event.key in ("ctrl+j", "newline"):
             event.stop()
@@ -124,6 +142,10 @@ class ChatInput(TextArea):
             if text:
                 self._push_history(text)
                 self.clear()
+                try:
+                    self.history.clear()
+                except Exception:
+                    pass
                 self.post_message(self.Submitted(text))
             return
         if event.key in ("up", "down"):

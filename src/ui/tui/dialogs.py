@@ -250,11 +250,13 @@ class PickerMixin:
         if provider is None or not provider.base_url:
             return
         try:
-            from src.utils.providers import fetch_models
-            models = fetch_models(provider.base_url, provider.api_key)
+            from src.utils.providers import fetch_models_with_context
+            models, contexts = fetch_models_with_context(provider.base_url, provider.api_key)
         except Exception:
-            models = []
+            models, contexts = [], {}
         store.set_custom_models(pid, models)
+        for model, ctx in contexts.items():
+            store.set_model_context_override(model, ctx)
         self.call_from_thread(self._custom_models_refreshed, pid, models, open_picker)
 
     def _custom_models_refreshed(self, pid: str, models: list[str], open_picker: bool = False) -> None:
@@ -284,6 +286,8 @@ class PickerMixin:
         if provider is not None:
             store.set_active_provider(provider.id)
             store.add_selected_model(provider.id, message.model)
+            if provider.is_custom:
+                store.seed_model_context(message.model)
         self._session.reset_provider()
         self._ctx_usage_tokens = 0
         self._update_status()

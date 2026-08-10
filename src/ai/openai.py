@@ -88,10 +88,20 @@ async def _stream_openai_events(stream, capabilities) -> AsyncIterator[StreamEve
     async for chunk in stream:
         if hasattr(chunk, "usage") and chunk.usage:
             raw = chunk.usage
+            cached = 0
+            details = getattr(raw, "prompt_tokens_details", None)
+            if details is not None:
+                cached = getattr(details, "cached_tokens", 0) or 0
+            reasoning = 0
+            cdetails = getattr(raw, "completion_tokens_details", None)
+            if cdetails is not None:
+                reasoning = getattr(cdetails, "reasoning_tokens", 0) or 0
             usage = TokenUsage(
                 prompt_tokens=getattr(raw, "prompt_tokens", 0),
                 completion_tokens=getattr(raw, "completion_tokens", 0),
                 total_tokens=getattr(raw, "total_tokens", 0),
+                cached_tokens=cached,
+                reasoning_tokens=reasoning,
             )
 
         if not chunk.choices:

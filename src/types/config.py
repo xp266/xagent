@@ -18,6 +18,7 @@ class AppConfig(BaseModel):
     reasoning_effort: dict[str, str] = Field(default_factory=dict)
     providers: dict[str, dict] = Field(default_factory=dict)
     mcp_servers: dict[str, dict] = Field(default_factory=dict)
+    model_contexts: dict[str, int] = Field(default_factory=dict)
 
 
 class Config(BaseModel):

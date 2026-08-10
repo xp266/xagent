@@ -25,6 +25,13 @@ FALLBACK_BASE_URL: dict[str, str] = {
 
 _CUSTOM_ID_PREFIX = "custom:"
 
+DEFAULT_CONTEXT = 200_000
+
+_CONTEXT_FIELDS = (
+    "context_length", "context_window", "max_context",
+    "context_window_tokens", "max_input_tokens",
+)
+
 
 class ProviderStore:
     def __init__(self, path: str | None = None) -> None:
@@ -49,12 +56,18 @@ class ProviderStore:
             efforts = {str(raw.get("active_model", "")): str(raw_effort)} if raw.get("active_model") else {}
         else:
             efforts = {}
+        raw_contexts = raw.get("model_contexts", {}) or {}
+        contexts = {
+            str(k): int(v) for k, v in raw_contexts.items()
+            if isinstance(v, (int, float)) and int(v) > 0
+        }
         return AppConfig(
             active_provider=str(raw.get("active_provider", "")),
             active_model=str(raw.get("active_model", "")),
             reasoning_effort=efforts,
             providers={k: v for k, v in providers.items() if isinstance(v, dict)},
             mcp_servers={k: v for k, v in raw.get("mcp_servers", {}).items() if isinstance(v, dict)},
+            model_contexts=contexts,
         )
 
     def save(self) -> None:
@@ -64,6 +77,7 @@ class ProviderStore:
             "reasoning_effort": self._config.reasoning_effort,
             "providers": self._config.providers,
             "mcp_servers": self._config.mcp_servers,
+            "model_contexts": self._config.model_contexts,
         }
         os.makedirs(os.path.dirname(self.path), exist_ok=True)
         tmp = self.path + ".tmp"
@@ -247,6 +261,39 @@ class ProviderStore:
             stored["models"] = [m for m in models if m]
             self.save()
 
+    def get_model_context_override(self, model: str) -> int:
+        return self._config.model_contexts.get(model, 0)
+
+    def set_model_context_override(self, model: str, context: int) -> None:
+        model = (model or "").strip()
+        context = int(context) if context and int(context) > 0 else 0
+        if not model:
+            return
+        if context > 0:
+            self._config.model_contexts[model] = context
+        else:
+            self._config.model_contexts.pop(model, None)
+        self.save()
+
+    def seed_model_context(self, model: str) -> None:
+        from src.utils.models import get_model_context_limit
+
+        if not model or model in self._config.model_contexts:
+            return
+        if get_model_context_limit(model) > 0:
+            return
+        self._config.model_contexts[model] = DEFAULT_CONTEXT
+        self.save()
+
+    def get_effective_context_limit(self, model: str) -> int:
+        override = self._config.model_contexts.get(model, 0)
+        if override > 0:
+            return override
+        from src.utils.models import get_model_context_limit
+
+        limit = get_model_context_limit(model)
+        return limit if limit > 0 else DEFAULT_CONTEXT
+
 
 def is_anthropic_provider(provider: ProviderInfo | None) -> bool:
     if provider is None:
@@ -254,7 +301,24 @@ def is_anthropic_provider(provider: ProviderInfo | None) -> bool:
     return "anthropic" in (provider.base_url or "").lower()
 
 
+def _item_context(item: dict) -> int:
+    for key in _CONTEXT_FIELDS:
+        val = item.get(key)
+        if isinstance(val, (int, float)) and int(val) > 0:
+            return int(val)
+        if isinstance(val, dict):
+            for v in val.values():
+                if isinstance(v, (int, float)) and int(v) > 0:
+                    return int(v)
+    return 0
+
+
 def fetch_models(base_url: str, api_key: str) -> list[str]:
+    ids, _ = fetch_models_with_context(base_url, api_key)
+    return ids
+
+
+def fetch_models_with_context(base_url: str, api_key: str) -> tuple[list[str], dict[str, int]]:
     import urllib.request
 
     url = base_url.rstrip("/") + "/models"
@@ -263,10 +327,15 @@ def fetch_models(base_url: str, api_key: str) -> list[str]:
         payload = json.loads(resp.read().decode("utf-8"))
     data = payload.get("data", []) if isinstance(payload, dict) else payload
     ids = []
+    contexts: dict[str, int] = {}
     for item in data:
         if isinstance(item, dict) and item.get("id"):
-            ids.append(str(item["id"]))
-    return ids
+            mid = str(item["id"])
+            ids.append(mid)
+            ctx = _item_context(item)
+            if ctx:
+                contexts[mid] = ctx
+    return ids, contexts
 
 
 _store: ProviderStore | None = None

@@ -161,7 +161,10 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
             self._canvas()._settle_resize()
         except Exception:
             pass
-        self._trim_canvas_blocks()
+        try:
+            self._trim_canvas_blocks()
+        except Exception:
+            pass
         if self._busy:
             self._tick_spinners()
             self._tick_status_wave()

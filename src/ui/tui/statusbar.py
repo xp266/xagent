@@ -9,9 +9,7 @@ from textual.widgets import Static
 
 from src.mcp.manager import get_mcp_manager
 from src.ui.tui.colors import _BLUE_WAVE, _lerp_hex, _MCP_DOT
-from src.ui.tui.render import fmt_pct
 from src.utils.config import get_config
-from src.utils.models import get_model_context_limit
 from src.utils.providers import get_store
 
 _WAVE_SPEED = 10.0
@@ -47,11 +45,19 @@ class StatusMixin:
         else:
             model = cfg.model
             if cfg.reasoning_effort:
-                model = f"{model} · {cfg.reasoning_effort}"
-        total = self._session.token_usage.total_tokens
-        limit = get_model_context_limit(cfg.model) if cfg.model else 0
+                model = f"{model}[{cfg.reasoning_effort}]"
+        if not cfg.model:
+            return model
+        limit = get_store().get_effective_context_limit(cfg.model)
         pct = self._context_pct(limit)
-        return f"{model}  {total:,} tokens  {fmt_pct(pct)}"
+        usage = self._session.token_usage
+        status = (
+            f"{model}({pct:.0f}% used) "
+            f"[{usage.prompt_tokens:,}→{usage.completion_tokens:,}]"
+        )
+        if usage.cached_tokens > 0 and usage.prompt_tokens > 0:
+            status += f"({usage.cached_tokens / usage.prompt_tokens * 100:.0f}% hit)"
+        return status
 
     def _status_string(self) -> str:
         return f"xAgent - {self._project} - {self._session.name}"

@@ -225,6 +225,8 @@ async def _stream_anthropic_events(resp: httpx.Response) -> AsyncIterator[Stream
     stop_reason = ""
     input_tokens = 0
     output_tokens = 0
+    cache_read_tokens = 0
+    cache_write_tokens = 0
 
     async for name, data in _iter_sse_events(resp):
         try:
@@ -239,7 +241,10 @@ async def _stream_anthropic_events(resp: httpx.Response) -> AsyncIterator[Stream
 
         if name == "message_start":
             step_started = True
-            input_tokens = payload.get("message", {}).get("usage", {}).get("input_tokens", 0)
+            usage = payload.get("message", {}).get("usage", {})
+            input_tokens = usage.get("input_tokens", 0)
+            cache_read_tokens = usage.get("cache_read_input_tokens", 0) or 0
+            cache_write_tokens = usage.get("cache_creation_input_tokens", 0) or 0
             yield StreamEvent(type="step-start")
             continue
 
@@ -317,6 +322,8 @@ async def _stream_anthropic_events(resp: httpx.Response) -> AsyncIterator[Stream
                 prompt_tokens=input_tokens,
                 completion_tokens=output_tokens,
                 total_tokens=input_tokens + output_tokens,
+                cached_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
             )
             usage_data = usage.model_dump()
             if step_started:
