@@ -123,20 +123,20 @@ class ChatMixin:
                         )
                         block.update_lines(render_markdown_lines(content, bg=False))
 
-                        for tc in tool_calls:
-                            fn = tc.get("function", {})
-                            name = fn.get("name", "")
-                            try:
-                                args = json.loads(fn.get("arguments", "{}"))
-                            except Exception:
-                                args = {}
-                            result = clean_result(name, tool_results.get(tc.get("id", ""), ""))
-                            tc_id = tc.get("id", "")
-                            is_error = (
-                                tool_errors[tc_id]
-                                if tc_id in tool_errors
-                                else is_error_result(name, result)
-                            )
+                    for tc in tool_calls:
+                        fn = tc.get("function", {})
+                        name = fn.get("name", "")
+                        try:
+                            args = json.loads(fn.get("arguments", "{}"))
+                        except Exception:
+                            args = {}
+                        result = clean_result(name, tool_results.get(tc.get("id", ""), ""))
+                        tc_id = tc.get("id", "")
+                        is_error = (
+                            tool_errors[tc_id]
+                            if tc_id in tool_errors
+                            else is_error_result(name, result)
+                        )
                         if block_tool(name):
                             title, body = tool_block(name, args, result, is_error)
                             block = self._append_block(
@@ -176,21 +176,21 @@ class ChatMixin:
                         else:
                             block.update(content_widget)
 
-                        if content:
-                            if self._is_turn_end(messages, idx):
-                                cfg = get_config()
-                                meta = msg.get("_meta") or {}
-                                model = meta.get("model") or (cfg.model or "?")
-                                summary = model
-                                if meta.get("elapsed") is not None:
-                                    summary += f" - {fmt_duration(meta['elapsed'])}"
-                                block = self._append_block(
-                                    kind="summary",
-                                    pad_top=1,
-                                    pad_left=3,
-                                    pad_right=1,
-                                )
-                                block.update(summary)
+                    if content:
+                        if self._is_turn_end(messages, idx):
+                            cfg = get_config()
+                            meta = msg.get("_meta") or {}
+                            model = meta.get("model") or (cfg.model or "?")
+                            summary = model
+                            if meta.get("elapsed") is not None:
+                                summary += f" - {fmt_duration(meta['elapsed'])}"
+                            block = self._append_block(
+                                kind="summary",
+                                pad_top=1,
+                                pad_left=3,
+                                pad_right=1,
+                            )
+                            block.update(summary)
         finally:
             canvas._end_bulk()
 

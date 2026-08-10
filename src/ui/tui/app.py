@@ -4,7 +4,7 @@ import sys
 import time
 
 from textual.app import App, ComposeResult
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Static
 
 from src.agent import get_session_manager
@@ -248,6 +248,9 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         cancel()
         self._update_input_status("Interrupting...")
 
+    def on_resize(self, event) -> None:
+        self.call_after_refresh(self._update_status)
+
     def compose(self) -> ComposeResult:
         with VerticalScroll(id="chat-box"):
             yield ChatCanvas(id="chat-canvas")
@@ -256,7 +259,9 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
 
         with Vertical(id="input-box"):
             yield ChatInput(soft_wrap=True, id="input")
-            yield Static("", id="input-status")
+            with Horizontal(id="input-status-row"):
+                yield Static("", id="input-status")
+                yield Static("", id="input-mcp")
 
         with Vertical(id="status-box"):
             yield Static("", id="status")

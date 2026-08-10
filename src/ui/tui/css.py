@@ -180,9 +180,19 @@ CSS = """
         border: solid #334466;
         padding: 0;
     }
-    #input-status {
+    #input-status-row {
         height: 1;
         padding: 0 1;
+    }
+    #input-status {
+        height: 1;
+        width: 1fr;
+        overflow: hidden;
+    }
+    #input-mcp {
+        height: 1;
+        dock: right;
+        width: auto;
     }
     TextArea .text-area--cursor-line {
         background: transparent;

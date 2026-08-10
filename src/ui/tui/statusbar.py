@@ -97,6 +97,16 @@ class StatusMixin:
             return _BLUE_WAVE[-1]
         return _lerp_hex(_BLUE_WAVE[i], _BLUE_WAVE[i + 1], frac)
 
+    def _update_mcp(self, mcp: Text | None) -> None:
+        key = mcp.plain if mcp is not None else ""
+        if key == getattr(self, "_imcp_key", None):
+            return
+        self._imcp_key = key
+        try:
+            self.query_one("#input-mcp", Static).update(mcp if mcp is not None else "")
+        except Exception:
+            pass
+
     def _update_input_status(self, status: str | None = None) -> None:
         if status is None:
             status = self._info_string()
@@ -115,12 +125,8 @@ class StatusMixin:
             key = None
         else:
             text.append(status)
-            key = (status, mcp.plain if mcp is not None else "")
-        pad = avail - cell_len(status)
-        if pad > 0:
-            text.append(" " * pad)
-        if mcp is not None:
-            text.append(mcp)
+            key = status
+        self._update_mcp(mcp)
         if key is not None and key == getattr(self, "_istatus_key", None):
             return
         if key is not None:
