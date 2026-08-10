@@ -86,6 +86,26 @@ REPLY_CHUNKS = [
     "流式渲染是全链路最热的路径：30fps 定时器驱动 `_flush_streaming_content`，每次调用都会重建完整的 markdown `Content` 对象，其中包含所有行文本与 span 元数据，产生大量对象分配与 GC 压力。\n",
 ]
 
+def _cycle_blocks(chunks: list[str], target: int) -> str:
+    parts = []
+    total = 0
+    while total < target:
+        for chunk in chunks:
+            parts.append(chunk)
+            total += len(chunk)
+            if total >= target:
+                break
+    return "".join(parts)
+
+
+def mixed_think_block() -> str:
+    return _cycle_blocks(THINKING_CHUNKS, int(os.environ.get("XAGENT_MIX_THINK_CHARS", "16384")))
+
+
+def mixed_reply_block() -> str:
+    return _cycle_blocks(REPLY_CHUNKS, int(os.environ.get("XAGENT_MIX_REPLY_CHARS", "32768")))
+
+
 _BIG_PARA = (
     "This is a stress paragraph used to build a very large reply. "
     "It contains `inline code`, **bold text**, *italic text*, and a [link](https://example.com). "

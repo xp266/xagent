@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import time
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, VerticalScroll
@@ -47,6 +48,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._last_spinner_time = 0.0
         self._spinners = {}
         self._waves = []
+        self._idle_tick_time = 0.0
         self._add_model_provider_flow = False
         self._pending_model_provider = None
         self._deferred = None
@@ -137,12 +139,19 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._scroll_end()
 
     def _tick_animations(self) -> None:
+        try:
+            self._canvas()._settle_resize()
+        except Exception:
+            pass
         if self._busy:
             self._tick_spinners()
             self._tick_status_wave()
         else:
-            self._update_status()
-            self._refresh_mcp_picker()
+            now = time.monotonic()
+            if now - self._idle_tick_time >= 0.5:
+                self._idle_tick_time = now
+                self._update_status()
+                self._refresh_mcp_picker()
         if self._current is not None:
             self._flush_streaming_content()
             self._tick_retry()

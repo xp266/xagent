@@ -159,13 +159,8 @@ def _tool_sequence(step: int) -> tuple[str, dict]:
     return sequence[step % len(sequence)]
 
 
-def _tool_loop(key: str, model: str, messages: list) -> Iterator[dict]:
-    state = _STATE.setdefault(key, {"step": 0, "prompt": 1000})
-    step = state["step"]
-    name, args = _tool_sequence(step)
-    tc_id = f"call_{key.replace(' ', '_')}_{step}"
+def _tool_call_deltas(name: str, args: dict, tc_id: str, created: int) -> Iterator[dict]:
     raw = json.dumps(args)
-    created = int(time.time())
     frag = 96
     first = True
     for i in range(0, len(raw), frag):
@@ -183,9 +178,36 @@ def _tool_loop(key: str, model: str, messages: list) -> Iterator[dict]:
         yield _chunk(delta, created=created)
         first = False
         time.sleep(_rate_sleep())
+
+
+def _tool_loop(key: str, model: str, messages: list) -> Iterator[dict]:
+    state = _STATE.setdefault(key, {"step": 0, "prompt": 1000})
+    step = state["step"]
+    name, args = _tool_sequence(step)
+    tc_id = f"call_{key.replace(' ', '_')}_{step}"
+    created = int(time.time())
+    yield from _tool_call_deltas(name, args, tc_id, created)
     state["step"] += 1
     state["prompt"] += 900
     yield from _finish(state["prompt"], 80, finish="tool_calls")
+
+
+def _mixed_loop(key: str, model: str, messages: list) -> Iterator[dict]:
+    state = _STATE.setdefault(key, {"step": 0, "prompt": 1000})
+    think = content.mixed_think_block()
+    reply = content.mixed_reply_block()
+    created = int(time.time())
+    for delta in _text_deltas(think, 40, _rate_sleep()):
+        yield _chunk({"reasoning_content": delta}, created=created)
+    for delta in _text_deltas(reply, 40, _rate_sleep()):
+        yield _chunk({"content": delta}, created=created)
+    step = state["step"]
+    name, args = _tool_sequence(step)
+    tc_id = f"call_mixed_{step}"
+    yield from _tool_call_deltas(name, args, tc_id, created)
+    state["step"] += 1
+    state["prompt"] += 900
+    yield from _finish(state["prompt"], len(think) + len(reply), finish="tool_calls")
 
 
 def iter_chunks(request: dict) -> Iterator[dict]:
@@ -202,4 +224,6 @@ def iter_chunks(request: dict) -> Iterator[dict]:
         return _storm(key, model)
     if key in ("tools", "toolstorm"):
         return _tool_loop(key, model, messages)
+    if key in ("mixed", "mixstorm"):
+        return _mixed_loop(key, model, messages)
     return _normal(key, model)

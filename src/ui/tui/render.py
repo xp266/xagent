@@ -6,7 +6,7 @@ from textual.content import Content
 from textual.highlight import guess_language
 
 from src.mcp import is_mcp_tool
-from src.ui.tui.markdown import _fence_body, render_markdown
+from src.ui.tui.markdown import _fence_body, render_markdown_lines
 
 _READ_HEADER_RE = re.compile(r"^\([^,]+(?:, \d+ lines|, lines [\d-]+/\d+)\)$")
 _READ_LINE_RE = re.compile(r"^(\d+):(.*)$")
@@ -290,6 +290,17 @@ _FENCE_LINE_RE = re.compile(r"^```([A-Za-z0-9_+.\-@]*)\s*$")
 
 
 def render_tool_markdown(body: str, *, numbered: bool = False, line_number_start: int = 1, open: bool = False) -> Content:
+    lines = render_tool_markdown_lines(body, numbered=numbered, line_number_start=line_number_start, open=open)
+    if not lines:
+        return Content("")
+    parts: list = []
+    for line in lines:
+        parts.append(line)
+        parts.append("\n")
+    return Content.assemble(*parts)
+
+
+def render_tool_markdown_lines(body: str, *, numbered: bool = False, line_number_start: int = 1, open: bool = False) -> list[Content]:
     lines = body.split("\n")
     i = 0
     header: list[str] = []
@@ -297,7 +308,7 @@ def render_tool_markdown(body: str, *, numbered: bool = False, line_number_start
         header.append(lines[i])
         i += 1
     if i >= len(lines):
-        return render_markdown(body)
+        return render_markdown_lines(body)
     info = lines[i][3:].strip()
     lang, _, flags = info.partition("@")
     diff_nums = flags == "n"
@@ -316,14 +327,19 @@ def render_tool_markdown(body: str, *, numbered: bool = False, line_number_start
         else:
             code_lines = lines[:close_idx]
             rest = lines[close_idx + 1:]
-    parts: list = []
+    out: list[Content] = []
     if header:
-        parts.append(render_markdown("\n".join(header)))
+        out.extend(render_markdown_lines("\n".join(header)))
     code = "\n".join(code_lines).rstrip("\n")
-    parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start))
-    parts.append("\n")
+    fence = _fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start)
+    fence_lines = fence.split("\n", allow_blank=True)
+    while fence_lines and not fence_lines[-1].plain:
+        fence_lines.pop()
+    out.extend(fence_lines)
     if rest:
-        parts.append(render_markdown("\n".join(rest)))
-    return Content.assemble(*parts)
+        out.extend(render_markdown_lines("\n".join(rest)))
+    while out and not out[-1].plain:
+        out.pop()
+    return out
 
 

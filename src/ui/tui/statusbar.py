@@ -112,13 +112,19 @@ class StatusMixin:
             for ch in status:
                 text.append(ch, style=self._wave_color_at(cell, now))
                 cell += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+            key = None
         else:
             text.append(status)
+            key = (status, mcp.plain if mcp is not None else "")
         pad = avail - cell_len(status)
         if pad > 0:
             text.append(" " * pad)
         if mcp is not None:
             text.append(mcp)
+        if key is not None and key == getattr(self, "_istatus_key", None):
+            return
+        if key is not None:
+            self._istatus_key = key
         try:
             self.query_one("#input-status", Static).update(text)
         except Exception:
@@ -129,6 +135,9 @@ class StatusMixin:
         status = f" {self._status_string()}"
         width = self.size.width if self.size and self.size.width else 80
         status = _truncate_cells(status, max(0, width - 1))
+        if status == getattr(self, "_status_key", None):
+            return
+        self._status_key = status
         try:
             self.query_one("#status", Static).update(Text(status, style="#666666"))
         except Exception:

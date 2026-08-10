@@ -142,3 +142,13 @@ def render_thinking_markdown(source: str) -> Content:
     md.finish()
     return md.render()
 
+
+def render_thinking_markdown_lines(source: str) -> list[Content]:
+    md = ThinkingMarkdown()
+    md.feed(source)
+    md.finish()
+    lines = md._lines
+    while lines and not lines[-1].plain:
+        lines.pop()
+    return list(lines)
+

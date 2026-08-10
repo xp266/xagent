@@ -228,7 +228,8 @@ def install(log_path: str) -> Metrics:
 
     for mod in (lazy, canvas_mod):
         _wrap_func(mod, "_build_strip", "strip")
-        _wrap_func(mod, "_pad_line", "pad")
         _wrap_func(mod, "_wrap_continuation", "wrap")
+    _wrap_func(lazy, "_pad_line", "pad")
+    _wrap_func(lazy, "_line_fill", "pad")
     _wrap_func(render_mod, "_edit_hunk", "hunk")
     return m

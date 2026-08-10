@@ -157,7 +157,7 @@ def main() -> int:
     print(f"[stress] mock provider  ->  http://127.0.0.1:{port}/v1")
     print(f"[stress] metrics log    ->  {log_path}")
     print(f"[stress] isolated data  ->  {DATA_DIR}")
-    print("[stress] scenarios: thinking | reply | replong | storm | tools | retry | error | <anything>")
+    print("[stress] scenarios: thinking | reply | replong | storm | tools | mixed | retry | error | <anything>")
     try:
         from src.ui.tui.app import run_tui
         run_tui()

@@ -17,24 +17,28 @@ def _parse_rich_style(style):
     return getattr(style, "rich_style", style)
 
 
-def _pad_line(line: Content, width: int) -> tuple[Content, int | None]:
-    spans = list(line.spans)
+def _line_fill(line: Content) -> tuple[int | None, str | None]:
+    spans = line.spans
     if not spans:
-        return line, None
+        return None, None
     last = spans[-1]
     if last.end != len(line.plain):
-        return line, None
+        return None, None
     style = _parse_rich_style(last.style)
     if style is None or style.bgcolor is None:
+        return None, None
+    fill_at = last.end if line.plain[last.start:].strip(" ") else last.start
+    r, g, b = style.bgcolor.get_truecolor(None)
+    return fill_at, f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _pad_line(line: Content, width: int) -> tuple[Content, int | None]:
+    fill_at, bg = _line_fill(line)
+    if bg is None:
         return line, None
-    if line.plain[last.start:].strip(" "):
-        fill_at = last.end
-    else:
-        fill_at = last.start
     pad = width - line.cell_length
     if pad > 0:
-        r, g, b = style.bgcolor.get_truecolor(None)
-        line = line.append_text(" " * pad, f"on #{r:02x}{g:02x}{b:02x}")
+        line = line.append_text(" " * pad, f"on {bg}")
     return line, fill_at
 
 

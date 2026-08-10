@@ -295,8 +295,15 @@ def _render_line(line: str) -> Content | None:
     return _inline(line)
 
 
-def render_markdown(source: str, *, numbered: bool = False, line_number_start: int = 1, bg: bool = True) -> Content:
-    parts: list = []
+def _split_content_lines(content: Content) -> list[Content]:
+    result = content.split("\n", allow_blank=True)
+    while result and not result[-1].plain:
+        result.pop()
+    return result
+
+
+def render_markdown_lines(source: str, *, numbered: bool = False, line_number_start: int = 1, bg: bool = True) -> list[Content]:
+    out: list[Content] = []
     lines = source.split("\n")
     i = 0
     n = len(lines)
@@ -307,8 +314,8 @@ def render_markdown(source: str, *, numbered: bool = False, line_number_start: i
             pending_blank = True
             i += 1
             continue
-        if pending_blank and parts:
-            parts.append("\n")
+        if pending_blank and out:
+            out.append(Content(""))
         pending_blank = False
         m = _FENCE_RE.match(line)
         if m is not None:
@@ -316,8 +323,7 @@ def render_markdown(source: str, *, numbered: bool = False, line_number_start: i
             lang, _, flags = info.partition("@")
             diff_nums = flags == "n"
             if not bg:
-                parts.append(Content(m.group(0), spans=[Span(0, len(m.group(0)), _OPEN_FENCE_FG)]))
-                parts.append("\n")
+                out.append(Content(m.group(0), spans=[Span(0, len(m.group(0)), _OPEN_FENCE_FG)]))
             body: list[str] = []
             i += 1
             closed = False
@@ -331,22 +337,31 @@ def render_markdown(source: str, *, numbered: bool = False, line_number_start: i
                 body.append(lines[i])
                 i += 1
             code = "\n".join(body).rstrip("\n")
-            parts.append(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start, bg=bg))
-            parts.append("\n")
+            out.extend(_split_content_lines(_fence_body(code, lang or None, numbered=numbered, diff_nums=diff_nums, line_number_start=line_number_start, bg=bg)))
             if closed and not bg:
-                parts.append(Content(close_line, spans=[Span(0, len(close_line), _OPEN_FENCE_FG)]))
-                parts.append("\n")
+                out.append(Content(close_line, spans=[Span(0, len(close_line), _OPEN_FENCE_FG)]))
             continue
         if _is_table_row(line) and i + 1 < n and _is_table_sep(lines[i + 1]):
             table, i = _table_block(lines, i, n)
-            parts.append(table)
-            parts.append("\n")
+            out.extend(_split_content_lines(table))
             continue
         rendered = _render_line(line)
         if rendered is not None:
-            parts.append(rendered)
-            parts.append("\n")
+            out.append(rendered)
         i += 1
+    while out and not out[-1].plain:
+        out.pop()
+    return out
+
+
+def render_markdown(source: str, *, numbered: bool = False, line_number_start: int = 1, bg: bool = True) -> Content:
+    lines = render_markdown_lines(source, numbered=numbered, line_number_start=line_number_start, bg=bg)
+    if not lines:
+        return Content("")
+    parts: list = []
+    for line in lines:
+        parts.append(line)
+        parts.append("\n")
     return Content.assemble(*parts)
 
 class StreamMarkdown:
