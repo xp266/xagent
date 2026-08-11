@@ -102,7 +102,6 @@ class ChatMixin:
         self._project = self._launch_dir
         self._session = self._sm.create(path=self._project, persist=False)
         self._ctx_usage_tokens = 0
-        self._last_usage = None
         self._win_msgs = MAX_VISIBLE_MESSAGES
         self._win_lines = MAX_RENDER_LINES
         self._hidden_msgs = 0
@@ -129,7 +128,6 @@ class ChatMixin:
         from src.agent.compact import estimate_context_usage
 
         self._ctx_usage_tokens = estimate_context_usage(s)
-        self._last_usage = None
         self._win_msgs = MAX_VISIBLE_MESSAGES
         self._win_lines = MAX_RENDER_LINES
         self._hidden_msgs = 0

@@ -251,16 +251,12 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                                 prompt_tokens=turn_usage.prompt_tokens + usage.get("prompt_tokens", 0),
                                 completion_tokens=turn_usage.completion_tokens + usage.get("completion_tokens", 0),
                                 total_tokens=turn_usage.total_tokens + usage.get("total_tokens", 0),
-                                cached_tokens=turn_usage.cached_tokens + usage.get("cached_tokens", 0),
-                                cache_write_tokens=turn_usage.cache_write_tokens + usage.get("cache_write_tokens", 0),
                                 reasoning_tokens=turn_usage.reasoning_tokens + usage.get("reasoning_tokens", 0),
                             )
                             session.token_usage = TokenUsage(
                                 prompt_tokens=session.token_usage.prompt_tokens + usage.get("prompt_tokens", 0),
                                 completion_tokens=session.token_usage.completion_tokens + usage.get("completion_tokens", 0),
                                 total_tokens=session.token_usage.total_tokens + usage.get("total_tokens", 0),
-                                cached_tokens=session.token_usage.cached_tokens + usage.get("cached_tokens", 0),
-                                cache_write_tokens=session.token_usage.cache_write_tokens + usage.get("cache_write_tokens", 0),
                                 reasoning_tokens=session.token_usage.reasoning_tokens + usage.get("reasoning_tokens", 0),
                             )
                     elif event.type == "provider-error":

@@ -43,7 +43,6 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._project = self._launch_dir
         self._session = self._sm.create(path=self._project, persist=False)
         self._ctx_usage_tokens = 0
-        self._last_usage = None
         self._win_msgs = MAX_VISIBLE_MESSAGES
         self._win_lines = MAX_RENDER_LINES
         self._hidden_msgs = 0
@@ -52,7 +51,6 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._spinner_idx = 0
         self._last_spinner_time = 0.0
         self._spinners = {}
-        self._waves = []
         self._idle_tick_time = 0.0
         self._render_cache: dict = {}
         self._add_model_provider_flow = False
@@ -140,7 +138,6 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         reset()
         self._input().busy = True
         self._busy = True
-        self._waves.clear()
         self._current = new_turn_state()
         self._ensure_waiting()
         self._scroll_end()
@@ -172,7 +169,6 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
             if not (self._exit or self._closing):
                 self._hide_waiting()
                 self._stop_all_spinners()
-                self._waves.clear()
                 self._busy = False
                 self._input().busy = False
                 self._current = None
@@ -285,7 +281,6 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
             pass
         if self._busy:
             self._tick_spinners()
-            self._tick_status_wave()
         else:
             now = time.monotonic()
             if now - self._idle_tick_time >= 0.5:
@@ -365,9 +360,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         reset()
         self._input().busy = True
         self._busy = True
-        self._waves.clear()
         self._current = new_turn_state()
-        self._append_user(text)
         self._ensure_waiting()
         self._scroll_end()
         if self._session.name == "New Session":

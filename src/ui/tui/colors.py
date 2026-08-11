@@ -24,21 +24,6 @@ _DIFF_ADD_FG = "#9FD28A"
 _DIFF_ADD_BG = "#1D271D"
 _TABLE_BORDER = "#666666"
 
-_BLUE_WAVE = (
-    "#1E3A8A",
-    "#1D4ED8",
-    "#2563EB",
-    "#3B82F6",
-    "#60A5FA",
-    "#93C5FD",
-    "#A5B8FB",
-    "#C0CDFC",
-    "#D6E0FD",
-    "#E6EBFE",
-    "#F1F4FF",
-    "#F8FAFF",
-)
-
 _MCP_DOT = "●"
 
 _LOGO_LAYER_COLORS = {

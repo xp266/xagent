@@ -455,7 +455,6 @@ class TurnRenderMixin:
             usage = event.data.get("usage", {}) or {}
             cur["steps"] += 1
             if usage:
-                self._last_usage = usage
                 pt = usage.get("prompt_tokens", 0)
                 if pt > 0:
                     self._ctx_usage_tokens = pt
@@ -561,7 +560,6 @@ class TurnRenderMixin:
         self._remove_empty_thinking()
         self._hide_waiting()
         self._stop_all_spinners()
-        self._waves.clear()
         self._busy = False
         self._input().busy = False
         self._current = None

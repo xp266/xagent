@@ -3,16 +3,13 @@ from __future__ import annotations
 import time
 import unicodedata
 
-from rich.cells import cell_len
 from rich.text import Text
 from textual.widgets import Static
 
 from src.mcp.manager import get_mcp_manager
-from src.ui.tui.colors import _BLUE_WAVE, _lerp_hex, _MCP_DOT
+from src.ui.tui.colors import _MCP_DOT
 from src.utils.config import get_config
 from src.utils.providers import get_store
-
-_WAVE_SPEED = 10.0
 
 
 def _truncate_cells(text: str, max_cells: int) -> str:
@@ -39,7 +36,6 @@ class StatusMixin:
     def _info_string(self) -> str:
         cfg = get_config()
         usage = self._session.token_usage
-        last = getattr(self, "_last_usage", None)
         key = (
             cfg.base_url,
             cfg.model,
@@ -47,9 +43,6 @@ class StatusMixin:
             self._ctx_usage_tokens,
             usage.prompt_tokens,
             usage.completion_tokens,
-            usage.cached_tokens,
-            last.get("cached_tokens", 0) if last else 0,
-            last.get("prompt_tokens", 0) if last else 0,
         )
         if key != getattr(self, "_info_key", None):
             self._info_key = key
@@ -72,17 +65,9 @@ class StatusMixin:
         pct = self._context_pct(limit)
         usage = self._session.token_usage
         status = (
-            f"{model}({pct:.1f}% used) "
-            f"[{usage.prompt_tokens:,}→{usage.completion_tokens:,}]"
+            f"{model}[{usage.prompt_tokens:,}→{usage.completion_tokens:,}]"
+            f"[{pct:.1f}% used]"
         )
-        last = getattr(self, "_last_usage", None)
-        if last:
-            cached = last.get("cached_tokens", 0)
-            prompt = last.get("prompt_tokens", 0)
-            if cached > 0 and prompt > 0:
-                status += f"({cached / prompt * 100:.1f}% hit)"
-        elif usage.cached_tokens > 0 and usage.prompt_tokens > 0:
-            status += f"({usage.cached_tokens / usage.prompt_tokens * 100:.1f}% hit)"
         return status
 
     def _status_string(self) -> str:
@@ -114,21 +99,6 @@ class StatusMixin:
                 text.append(" ")
         return text
 
-    def _wave_color_at(self, index: int, now: float):
-        best = None
-        for t0 in self._waves:
-            distance = (now - t0) * _WAVE_SPEED - index
-            if 0 <= distance < len(_BLUE_WAVE):
-                if best is None or distance < best:
-                    best = distance
-        if best is None:
-            return None
-        i = int(best)
-        frac = best - i
-        if i >= len(_BLUE_WAVE) - 1:
-            return _BLUE_WAVE[-1]
-        return _lerp_hex(_BLUE_WAVE[i], _BLUE_WAVE[i + 1], frac)
-
     def _update_mcp(self, mcp: Text | None) -> None:
         key = mcp.plain if mcp is not None else ""
         if key == getattr(self, "_imcp_key", None):
@@ -147,17 +117,8 @@ class StatusMixin:
         mcp_len = mcp.cell_len if mcp is not None else 0
         avail = max(0, width - 4 - mcp_len)
         status = _truncate_cells(status, avail)
-        text = Text()
-        if self._busy and self._waves:
-            now = time.monotonic()
-            cell = 0
-            for ch in status:
-                text.append(ch, style=self._wave_color_at(cell, now))
-                cell += 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
-            key = None
-        else:
-            text.append(status)
-            key = status
+        text = Text(status)
+        key = status
         self._update_mcp(mcp)
         if key is not None and key == getattr(self, "_istatus_key", None):
             return
@@ -180,25 +141,3 @@ class StatusMixin:
             self.query_one("#status", Static).update(Text(status, style="#666666"))
         except Exception:
             pass
-
-    def _tick_status_wave(self) -> None:
-        if not self._busy:
-            if self._waves:
-                self._waves.clear()
-                self._update_status()
-            return
-        frame = getattr(self, "_wave_frame", 0) + 1
-        self._wave_frame = frame
-        if frame % 4 != 0:
-            return
-        now = time.monotonic()
-        status = self._info_string()
-        n = cell_len(status)
-        if self._waves:
-            head = (now - self._waves[0]) * _WAVE_SPEED
-            if head >= (n - 1) + (len(_BLUE_WAVE) - 1):
-                self._waves = []
-        if not self._waves:
-            self._waves.append(now)
-        self._waves = [t0 for t0 in self._waves if (now - t0) * _WAVE_SPEED < n + len(_BLUE_WAVE)]
-        self._update_input_status(status=status)
