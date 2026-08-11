@@ -13,6 +13,7 @@ if _ROOT not in sys.path:
 
 os.environ.setdefault("TEXTUAL_COLOR_SYSTEM", "truecolor")
 os.environ["XAGENT_DATA_DIR"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+os.environ.setdefault("XAGENT_NO_CATALOG_REFRESH", "1")
 
 from tests.stress import content, fake_provider, metrics as metrics_mod
 from tests.stress.content import DATA_DIR, LOG_DIR, SCRATCH_DIR

@@ -1,7 +1,6 @@
-import os
-import json
-
 from pydantic import BaseModel
+
+from src.utils.catalog import catalog_mtime, load_catalog
 
 
 class Capabilities(BaseModel):
@@ -10,27 +9,19 @@ class Capabilities(BaseModel):
     reasoning_field: str = "reasoning_content"
 
 
-_MODELS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "models.json")
-_CATALOG: dict | None = None
-_MODELS_DB: dict | None = None
+_INDEX_DB: dict | None = None
+_INDEX_DB_MTIME: float | None = None
 
 
 def load_models_catalog() -> dict:
-    global _CATALOG
-    if _CATALOG is None:
-        if os.path.isfile(_MODELS_PATH):
-            try:
-                with open(_MODELS_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                _CATALOG = data if isinstance(data, dict) else {}
-            except (json.JSONDecodeError, OSError):
-                _CATALOG = {}
-        else:
-            _CATALOG = {}
-    return _CATALOG
+    return load_catalog()
 
 
 def _load_models_db() -> dict:
+    global _INDEX_DB, _INDEX_DB_MTIME
+    mtime = catalog_mtime()
+    if mtime is not None and mtime == _INDEX_DB_MTIME and _INDEX_DB is not None:
+        return _INDEX_DB
     index = {}
     for provider in load_models_catalog().values():
         for mname, m in provider.get("models", {}).items():
@@ -49,6 +40,8 @@ def _load_models_db() -> dict:
             inter = m.get("interleaved")
             if isinstance(inter, dict) and inter.get("field"):
                 index[mname]["reasoning_field"] = inter["field"]
+    _INDEX_DB = index
+    _INDEX_DB_MTIME = mtime
     return index
 
 
@@ -121,54 +114,48 @@ def _caps_from_raw(entry: dict) -> Capabilities:
 
 
 def detect_capabilities(model_name: str, provider_meta: dict | None = None) -> Capabilities:
-    global _MODELS_DB
-    if _MODELS_DB is None:
-        _MODELS_DB = _load_models_db()
     raw = _raw_entry(model_name, provider_meta)
     if raw is not None:
         return _caps_from_raw(raw)
-    entry = _MODELS_DB.get(model_name)
+    db = _load_models_db()
+    entry = db.get(model_name)
     if entry is not None:
         return Capabilities(image=entry["image"], pdf=entry["pdf"], reasoning_field=entry["reasoning_field"])
-    for short, meta in _MODELS_DB.items():
+    for short, meta in db.items():
         if model_name in short or short in model_name:
             return Capabilities(image=meta["image"], pdf=meta["pdf"], reasoning_field=meta["reasoning_field"])
     return Capabilities()
 
 
 def get_model_context_limit(model_name: str, provider_meta: dict | None = None) -> int:
-    global _MODELS_DB
-    if _MODELS_DB is None:
-        _MODELS_DB = _load_models_db()
     raw = _raw_entry(model_name, provider_meta)
     if raw is not None:
         ctx = raw.get("limit", {}).get("context", 0)
         if ctx:
             return ctx
-    entry = _MODELS_DB.get(model_name)
+    db = _load_models_db()
+    entry = db.get(model_name)
     if entry and entry.get("context"):
         return entry["context"]
     best = 0
-    for mname, m in _MODELS_DB.items():
+    for mname, m in db.items():
         if model_name in mname and m.get("context", 0) > best:
             best = m["context"]
     return best
 
 
 def get_model_output_limit(model_name: str, provider_meta: dict | None = None) -> int:
-    global _MODELS_DB
-    if _MODELS_DB is None:
-        _MODELS_DB = _load_models_db()
     raw = _raw_entry(model_name, provider_meta)
     if raw is not None:
         out = raw.get("limit", {}).get("output", 0)
         if out:
             return out
-    entry = _MODELS_DB.get(model_name)
+    db = _load_models_db()
+    entry = db.get(model_name)
     if entry and entry.get("output"):
         return entry["output"]
     best = 0
-    for mname, m in _MODELS_DB.items():
+    for mname, m in db.items():
         if model_name in mname and m.get("output", 0) > best:
             best = m["output"]
     return best

@@ -437,6 +437,9 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
     def _prewarm_providers(self) -> None:
         import src.ai.openai
         import src.ai.anthropic
+        from src.utils.catalog import ensure_catalog
+
+        ensure_catalog()
         try:
             import openai.resources
         except Exception:

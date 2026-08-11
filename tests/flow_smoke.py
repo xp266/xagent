@@ -13,6 +13,7 @@ if _ROOT not in sys.path:
 
 _DATA = tempfile.mkdtemp(prefix="xagent-flow-data-")
 os.environ["XAGENT_DATA_DIR"] = _DATA
+os.environ["XAGENT_NO_CATALOG_REFRESH"] = "1"
 os.environ.setdefault("XAGENT_RATE_MS", "0")
 os.environ.setdefault("TEXTUAL_COLOR_SYSTEM", "truecolor")
 

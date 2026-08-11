@@ -25,7 +25,6 @@ where = ["."]
 include = ["src", "src.*"]
 
 [tool.setuptools.package-data]
-"src.data" = ["models.json"]
 "src.prompts" = ["*.md"]
 
 [build-system]
