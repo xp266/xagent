@@ -38,6 +38,26 @@ class StatusMixin:
 
     def _info_string(self) -> str:
         cfg = get_config()
+        usage = self._session.token_usage
+        last = getattr(self, "_last_usage", None)
+        key = (
+            cfg.base_url,
+            cfg.model,
+            cfg.reasoning_effort,
+            self._ctx_usage_tokens,
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.cached_tokens,
+            last.get("cached_tokens", 0) if last else 0,
+            last.get("prompt_tokens", 0) if last else 0,
+        )
+        if key != getattr(self, "_info_key", None):
+            self._info_key = key
+            self._info_cache = self._build_info_string()
+        return self._info_cache
+
+    def _build_info_string(self) -> str:
+        cfg = get_config()
         if not cfg.base_url:
             model = "Type /provider to connect a provider"
         elif not cfg.model:
@@ -166,6 +186,10 @@ class StatusMixin:
             if self._waves:
                 self._waves.clear()
                 self._update_status()
+            return
+        frame = getattr(self, "_wave_frame", 0) + 1
+        self._wave_frame = frame
+        if frame % 4 != 0:
             return
         now = time.monotonic()
         status = self._info_string()

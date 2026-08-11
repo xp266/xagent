@@ -13,8 +13,12 @@ from src.ui.tui.colors import (
 )
 
 _HIGHLIGHT_CACHE: dict[tuple, list[Content]] = {}
-_HIGHLIGHT_CACHE_MAX = 100
+_HIGHLIGHT_CACHE_MAX = 2000
+_HIGHLIGHT_CACHE_DROP = 100
 _MAX_HIGHLIGHT_BYTES = 200_000
+
+_LEXER_CACHE: dict[str, object] = {}
+_LEXER_CACHE_MAX = 128
 
 _TOKEN_STYLES = {
     Token.Comment: "italic #6A9955",
@@ -64,12 +68,27 @@ def _token_style(tok_type) -> str | None:
     return None
 
 
+def _cache_put(key, value) -> None:
+    if len(_HIGHLIGHT_CACHE) >= _HIGHLIGHT_CACHE_MAX:
+        for k in list(_HIGHLIGHT_CACHE)[:_HIGHLIGHT_CACHE_DROP]:
+            del _HIGHLIGHT_CACHE[k]
+    _HIGHLIGHT_CACHE[key] = value
+
+
 def _get_lexer(lang: str | None, code: str):
     if lang:
-        try:
-            return get_lexer_by_name(lang, stripnl=False, ensurenl=False)
-        except ClassNotFound:
-            pass
+        lexer = _LEXER_CACHE.get(lang)
+        if lexer is None:
+            try:
+                lexer = get_lexer_by_name(lang, stripnl=False, ensurenl=False)
+            except ClassNotFound:
+                lexer = None
+            if lexer is not None:
+                if len(_LEXER_CACHE) >= _LEXER_CACHE_MAX:
+                    _LEXER_CACHE.pop(next(iter(_LEXER_CACHE)))
+                _LEXER_CACHE[lang] = lexer
+        if lexer is not None:
+            return lexer
     else:
         try:
             name = guess_language(code, None)
@@ -181,19 +200,17 @@ def _highlight_lines(code: str, lang: str | None, bg: bool = True) -> list[Conte
     hit = _HIGHLIGHT_CACHE.get(key)
     if hit is not None:
         return hit
-    if len(_HIGHLIGHT_CACHE) >= _HIGHLIGHT_CACHE_MAX:
-        _HIGHLIGHT_CACHE.clear()
     if not code:
         out = [Content("")]
-        _HIGHLIGHT_CACHE[key] = out
+        _cache_put(key, out)
         return out
     if lang != "markdown" and _is_diff_code(code):
         out = _diff_highlight(code, lang, bg)
-        _HIGHLIGHT_CACHE[key] = out
+        _cache_put(key, out)
         return out
     if len(code) > _MAX_HIGHLIGHT_BYTES:
         out = [Content(line) for line in code.split("\n")]
-        _HIGHLIGHT_CACHE[key] = out
+        _cache_put(key, out)
         return out
     lines: list[str] = []
     spans_by_line: list[list[Span]] = []
@@ -228,7 +245,7 @@ def _highlight_lines(code: str, lang: str | None, bg: bool = True) -> list[Conte
     lines.append("".join(text_parts))
     spans_by_line.append(spans)
     out = [Content(text, spans=sp) for text, sp in zip(lines, spans_by_line)]
-    _HIGHLIGHT_CACHE[key] = out
+    _cache_put(key, out)
     return out
 
 
@@ -237,13 +254,16 @@ def _highlight_lines_fg(code: str, lang: str | None) -> list[Content]:
     hit = _HIGHLIGHT_CACHE.get(key)
     if hit is not None:
         return hit
-    if len(_HIGHLIGHT_CACHE) >= _HIGHLIGHT_CACHE_MAX:
-        _HIGHLIGHT_CACHE.clear()
     if lang:
-        try:
-            lexer = get_lexer_by_name(lang, stripnl=False, ensurenl=False)
-        except ClassNotFound:
-            lexer = get_lexer_by_name("text", stripnl=False, ensurenl=False)
+        lexer = _LEXER_CACHE.get(lang)
+        if lexer is None:
+            try:
+                lexer = get_lexer_by_name(lang, stripnl=False, ensurenl=False)
+            except ClassNotFound:
+                lexer = get_lexer_by_name("text", stripnl=False, ensurenl=False)
+            if len(_LEXER_CACHE) >= _LEXER_CACHE_MAX:
+                _LEXER_CACHE.pop(next(iter(_LEXER_CACHE)))
+            _LEXER_CACHE[lang] = lexer
     else:
         lexer = get_lexer_by_name("text", stripnl=False, ensurenl=False)
     lines: list[str] = []
@@ -279,5 +299,5 @@ def _highlight_lines_fg(code: str, lang: str | None) -> list[Content]:
     lines.append("".join(text_parts))
     spans_by_line.append(spans)
     out = [Content(text, spans=sp) for text, sp in zip(lines, spans_by_line)]
-    _HIGHLIGHT_CACHE[key] = out
+    _cache_put(key, out)
     return out

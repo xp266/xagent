@@ -11,7 +11,7 @@ from textual.content import Content, Span
 from textual.strip import Strip
 from textual.widgets import Static
 
-from src.ui.tui.lazy import _apply_selection, _build_strip, _line_fill, _wrap_continuation, clip_selection_start, selection_slice
+from src.ui.tui.lazy import _apply_selection, _build_segments, _line_fill, _wrap_continuation, clip_selection_start, selection_slice
 
 
 def _qwidth(width: int) -> int:
@@ -98,7 +98,7 @@ class CanvasBlock:
             self.body_style,
         )
 
-    def set_title(self, title: str) -> None:
+    def set_title(self, title: str, refresh: bool = True) -> None:
         if title != self.title:
             self.title = title
             self._strips = []
@@ -106,10 +106,11 @@ class CanvasBlock:
             self._key = ()
             owner = self.owner
             if owner is not None and owner.is_mounted:
-                owner._invalidate_render()
-                owner.refresh()
+                owner._invalidate_block(self)
+                if refresh:
+                    owner.refresh()
 
-    def set_marker(self, marker: str | None) -> None:
+    def set_marker(self, marker: str | None, refresh: bool = True) -> None:
         if marker != self.marker:
             self.marker = marker
             self._strips = []
@@ -117,8 +118,9 @@ class CanvasBlock:
             self._key = ()
             owner = self.owner
             if owner is not None and owner.is_mounted:
-                owner._invalidate_render()
-                owner.refresh()
+                owner._invalidate_block(self)
+                if refresh:
+                    owner.refresh()
 
     def update(self, content: Content | str | RichText) -> None:
         if isinstance(content, str):
@@ -145,14 +147,20 @@ class CanvasBlock:
         self._strips = []
         self._key = ()
         self._bump()
+
     def _bump(self) -> None:
         owner = self.owner
         if owner is None or not owner.is_mounted:
             return
         if owner._bulk:
             return
+        old_height = len(self._lines)
+        owner._invalidate_block(self)
         owner._rebuild_offsets()
-        owner.refresh(layout=True)
+        if len(self._lines) != old_height:
+            owner.refresh(layout=True)
+        else:
+            owner.refresh()
 
     def _build(self, width: int) -> list[Content]:
         bg = f"on {self.bg}" if self.bg else ""
@@ -260,7 +268,6 @@ class CanvasBlock:
         if strip is None:
             line = self._lines[y]
             oy = self.offset + y
-            strip = _build_strip(line, oy)
             cs, ce = self._content_range
             is_content = cs <= y < ce
             cbg = f"on {self.content_bg}" if self.content_bg else (f"on {self.bg}" if self.bg else "")
@@ -268,40 +275,28 @@ class CanvasBlock:
             pl = self.content_pad_left if is_content else 0
             segments = []
             if pl > 0:
-                segments.append(Segment(" " * pl, cbg_style + RichStyle(meta={"offset": (0, oy)}) if cbg_style is not None else RichStyle(meta={"offset": (0, oy)})))
-            for seg in strip:
+                segments.append(Segment(" " * pl, cbg_style))
+            for seg in _build_segments(line, oy):
                 if not seg.text:
                     continue
                 seg_style = seg.style
-                if seg_style is not None and seg_style.meta is not None:
-                    meta = seg_style.meta
-                    if "offset" in meta:
-                        ox, _ = meta["offset"]
-                        seg_style = seg_style + RichStyle(meta={"offset": (ox + pl, oy)})
                 if cbg_style is not None and (seg_style is None or seg_style.bgcolor is None):
                     seg_style = seg_style + cbg_style if seg_style is not None else cbg_style
                 segments.append(Segment(seg.text, seg_style, control=seg.control))
-            strip = Strip(segments)
             fill_at, fill_bg = _line_fill(line)
             if fill_bg is None and cbg_style is not None:
                 fill_bg = self.content_bg or self.bg
             if fill_bg is not None:
-                pad = width - strip.cell_length
+                pad = width - sum(s.cell_length for s in segments)
                 if pad > 0:
-                    fill_style = RichStyle.parse(f"on {fill_bg}") + RichStyle(meta={"offset": (pl + line.cell_length, oy)})
-                    segments = list(strip)
-                    segments.append(Segment(" " * pad, fill_style))
-                    strip = Strip(segments)
+                    segments.append(Segment(" " * pad, RichStyle.parse(f"on {fill_bg}")))
             if self.body_style:
                 style = RichStyle.parse(self.body_style)
-                segments = []
-                for seg in strip:
+                for i, seg in enumerate(segments):
                     if seg.style is None or seg.style.color is None:
                         new_style = seg.style + style if seg.style is not None else style
-                        segments.append(Segment(seg.text, new_style, control=seg.control))
-                    else:
-                        segments.append(seg)
-                strip = Strip(segments)
+                        segments[i] = Segment(seg.text, new_style, control=seg.control)
+            strip = Strip(segments)
             self._strips[y] = strip
         return strip
 
@@ -376,6 +371,9 @@ class ChatCanvas(Static):
         self._render_gen += 1
         self._strip_cache.clear()
 
+    def _invalidate_block(self, block: "CanvasBlock") -> None:
+        self._strip_cache.pop(id(block), None)
+
     def _rebuild_offsets(self, width: int | None = None) -> None:
         if width is None:
             size = self.size
@@ -387,12 +385,12 @@ class ChatCanvas(Static):
             if block.offset != total:
                 block.offset = total
                 block._strips = [None] * len(block._lines)
+                self._invalidate_block(block)
             offsets.append(total)
             total += len(block._lines)
         self._offsets = offsets
         self._built_width = width
         self._pending_width = None
-        self._invalidate_render()
 
     def _total_lines(self) -> int:
         total = 0
@@ -447,6 +445,7 @@ class ChatCanvas(Static):
     def remove(self, block: CanvasBlock) -> None:
         if block in self._blocks:
             block.owner = None
+            self._invalidate_block(block)
             self._blocks.remove(block)
             if not self._bulk:
                 self._rebuild_offsets()
@@ -476,12 +475,13 @@ class ChatCanvas(Static):
             width = _qwidth(size.width) if size is not None and size.width > 0 else 80
         selection = self.text_selection
         cached = selection is None or selection.start is None
-        if cached:
-            key = (self._render_gen, y, width)
-            strip = self._strip_cache.get(key)
-            if strip is not None:
-                return strip
         block, by = self._block_at(y)
+        if cached and block is not None:
+            bcache = self._strip_cache.get(id(block))
+            if bcache is not None:
+                strip = bcache.get((by, width))
+                if strip is not None:
+                    return strip
         if block is None:
             strip = Strip.blank(width)
         else:
@@ -503,9 +503,16 @@ class ChatCanvas(Static):
                         style = self.screen.get_component_styles("screen--selection")
                         strip = _apply_selection(strip, start, end, style)
         if cached:
-            if len(self._strip_cache) >= 1024:
-                self._strip_cache.clear()
-            self._strip_cache[key] = strip
+            bkey = id(block) if block is not None else -1
+            bcache = self._strip_cache.get(bkey)
+            if bcache is None:
+                if len(self._strip_cache) >= 64:
+                    self._strip_cache.clear()
+                bcache = {}
+                self._strip_cache[bkey] = bcache
+            if len(bcache) >= 512:
+                bcache.clear()
+            bcache[(by, width)] = strip
         return strip
 
     def on_click(self, event) -> None:

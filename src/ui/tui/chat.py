@@ -36,6 +36,41 @@ def _msg_render_lines(msg: dict) -> int:
     return total
 
 
+def _message_fingerprint(messages: list) -> tuple:
+    fp = []
+    for m in messages:
+        c = m.get("content")
+        if isinstance(c, str):
+            cl = len(c)
+        elif isinstance(c, list):
+            cl = tuple(
+                len(p.get("text", "")) if isinstance(p, dict) else len(str(p))
+                for p in c
+            )
+        else:
+            cl = 0
+        tcs = m.get("tool_calls") or []
+        tc = tuple(
+            (
+                t.get("function", {}).get("name", "") if isinstance(t, dict) else "",
+                len(t.get("function", {}).get("arguments", "") or "") if isinstance(t, dict) else 0,
+            )
+            for t in tcs
+        )
+        meta = m.get("_meta") or {}
+        fp.append(
+            (
+                m.get("role"),
+                cl,
+                len(m.get("reasoning_content") or ""),
+                tc,
+                bool(meta.get("compacted")),
+                bool(m.get("is_error")),
+            )
+        )
+    return tuple(fp)
+
+
 class ChatMixin:
     def _apply_name(self, s: object, name: str) -> None:
         if not name or name == "New Session":
@@ -102,7 +137,36 @@ class ChatMixin:
         self._update_status()
         self._input().focus()
 
+    def _restore_cached_blocks(self, cache) -> None:
+        _, blocks, hidden = cache
+        canvas = self._canvas()
+        canvas._blocks = list(blocks)
+        for b in canvas._blocks:
+            b.owner = canvas
+        canvas._rebuild_offsets()
+        canvas.refresh(layout=True)
+        self._hidden_msgs = hidden
+        if blocks:
+            self._hide_logo()
+        else:
+            self._show_logo()
+
+    def _sync_render_cache(self, canvas) -> None:
+        cache = self._render_cache.get(self._session.id)
+        if cache is not None:
+            cache[1] = list(canvas._blocks)
+            cache[2] = self._hidden_msgs
+
     def _render_messages(self, max_messages: int = 0, max_lines: int = 0, scroll_to_end: bool = True) -> None:
+        is_default = max_messages == 0 and max_lines == 0
+        if is_default:
+            fp = _message_fingerprint(self._session.messages)
+            cache = self._render_cache.get(self._session.id)
+            if cache is not None and cache[0] == fp:
+                self._restore_cached_blocks(cache)
+                if scroll_to_end:
+                    self.call_after_refresh(lambda: self._scroll_end(force=True))
+                return
         self._clear_chat_messages()
         all_messages = self._session.messages
         tool_results = {}
@@ -231,6 +295,12 @@ class ChatMixin:
         else:
             self._hide_logo()
 
+        if is_default:
+            fp = _message_fingerprint(self._session.messages)
+            self._render_cache[self._session.id] = [fp, list(canvas._blocks), self._hidden_msgs]
+            if len(self._render_cache) > 4:
+                self._render_cache.pop(next(iter(self._render_cache)))
+
         if scroll_to_end:
             self.call_after_refresh(lambda: self._scroll_end(force=True))
 
@@ -241,6 +311,7 @@ class ChatMixin:
         self._win_msgs *= 2
         self._win_lines *= 2
         self._hidden_msgs = 0
+        self._render_cache.pop(self._session.id, None)
         self._render_messages(self._win_msgs, self._win_lines, scroll_to_end=False)
 
     @staticmethod

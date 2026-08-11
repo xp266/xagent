@@ -54,6 +54,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._spinners = {}
         self._waves = []
         self._idle_tick_time = 0.0
+        self._render_cache: dict = {}
         self._add_model_provider_flow = False
         self._pending_model_provider = None
         self._deferred = None
@@ -202,6 +203,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
                 excess -= 1
         finally:
             canvas._end_bulk()
+        self._sync_render_cache(canvas)
         if removed_lines:
             chat.scroll_to(max(0, chat.scroll_offset.y - removed_lines), animate=False)
 
@@ -239,6 +241,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
             canvas._end_bulk()
         self._hidden_msgs += drop
         self._update_window_divider()
+        self._sync_render_cache(canvas)
         if removed:
             chat = self._chat()
             chat.scroll_to(max(0, chat.scroll_offset.y - removed), animate=False)

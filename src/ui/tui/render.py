@@ -15,11 +15,23 @@ _CODE_TOOLS = {"write", "edit", "read"}
 _BLOCK_TOOLS = {"write", "edit"}
 _STREAM_PREVIEW_MAX = 20
 
+_LANG_CACHE: dict[str, str] = {}
+_LANG_CACHE_MAX = 500
+_HUNK_CACHE: dict[tuple, list | None] = {}
+_HUNK_CACHE_MAX = 200
+_HUNK_MISS = object()
+
 
 def _lang_for(path: str) -> str:
     if not path:
         return "text"
-    return guess_language(path, path)
+    lang = _LANG_CACHE.get(path)
+    if lang is None:
+        lang = guess_language(path, path)
+        if len(_LANG_CACHE) >= _LANG_CACHE_MAX:
+            _LANG_CACHE.clear()
+        _LANG_CACHE[path] = lang
+    return lang
 
 
 def _code_block(lang: str, code: str) -> str:
@@ -145,41 +157,51 @@ def tool_render(name, args, result, is_error, preview=False):
 def _edit_hunk(file_path: str, old_str: str, new_str: str, ctx: int = 3):
     if not file_path or not old_str:
         return None
+    key = (os.path.abspath(file_path), old_str, new_str, ctx)
+    hit = _HUNK_CACHE.get(key, _HUNK_MISS)
+    if hit is not _HUNK_MISS:
+        return hit
     try:
         with open(os.path.abspath(os.path.expanduser(file_path)), "r", encoding="utf-8") as f:
             content = f.read()
     except (OSError, UnicodeDecodeError):
-        return None
-    content = content.replace("\r\n", "\n")
-    lines = content.split("\n")
-    if lines and lines[-1] == "":
-        lines.pop()
-    old_lines = old_str.rstrip("\n").split("\n")
-    new_lines = new_str.rstrip("\n").split("\n")
-    delta = len(new_lines) - len(old_lines)
-
-    if new_str and (idx := content.find(new_str)) >= 0:
-        start = content[:idx].count("\n") + 1
-        in_block = len(new_lines)
-        after_offset = 0
-    elif (idx := content.find(old_str)) >= 0:
-        start = content[:idx].count("\n") + 1
-        in_block = len(old_lines)
-        after_offset = delta
+        rows = None
     else:
-        return None
+        content = content.replace("\r\n", "\n")
+        lines = content.split("\n")
+        if lines and lines[-1] == "":
+            lines.pop()
+        old_lines = old_str.rstrip("\n").split("\n")
+        new_lines = new_str.rstrip("\n").split("\n")
+        delta = len(new_lines) - len(old_lines)
 
-    rows: list = []
-    for i in range(max(0, start - 1 - ctx), start - 1):
-        rows.append((i + 1, " ", lines[i]))
-    for i, text in enumerate(old_lines):
-        rows.append((start + i, "-", text))
-    if new_str:
-        for i, text in enumerate(new_lines):
-            rows.append((start + i, "+", text))
-    after_begin = start - 1 + in_block
-    for i in range(after_begin, min(len(lines), after_begin + ctx)):
-        rows.append((i + 1 + after_offset, " ", lines[i]))
+        if new_str and (idx := content.find(new_str)) >= 0:
+            start = content[:idx].count("\n") + 1
+            in_block = len(new_lines)
+            after_offset = 0
+        elif (idx := content.find(old_str)) >= 0:
+            start = content[:idx].count("\n") + 1
+            in_block = len(old_lines)
+            after_offset = delta
+        else:
+            rows = None
+
+        if "rows" not in locals():
+            rows = []
+            for i in range(max(0, start - 1 - ctx), start - 1):
+                rows.append((i + 1, " ", lines[i]))
+            for i, text in enumerate(old_lines):
+                rows.append((start + i, "-", text))
+            if new_str:
+                for i, text in enumerate(new_lines):
+                    rows.append((start + i, "+", text))
+            after_begin = start - 1 + in_block
+            for i in range(after_begin, min(len(lines), after_begin + ctx)):
+                rows.append((i + 1 + after_offset, " ", lines[i]))
+    if len(_HUNK_CACHE) >= _HUNK_CACHE_MAX:
+        for k in list(_HUNK_CACHE)[:20]:
+            del _HUNK_CACHE[k]
+    _HUNK_CACHE[key] = rows
     return rows
 
 

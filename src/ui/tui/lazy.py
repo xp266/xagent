@@ -149,11 +149,11 @@ def clip_selection_start(line: Content, start: int, pl: int = 0) -> int:
     return start
 
 
-def _build_strip(line: Content, offset_y: int) -> Strip:
+def _build_segments(line: Content, offset_y: int) -> list[Segment]:
     plain = line.plain
     spans = list(line.spans)
     if not spans:
-        return Strip([Segment(plain, Style(meta={"offset": (0, offset_y)}))])
+        return [Segment(plain, Style(meta={"offset": (0, offset_y)}))]
     events: list[tuple[int, int, Style]] = []
     for span in spans:
         start, end = span.start, span.end
@@ -181,18 +181,13 @@ def _build_strip(line: Content, offset_y: int) -> Strip:
     segments: list[Segment] = []
     active: list[Style] = []
     pos = 0
-    x = 0
     for boundary, delta, seg_style in events:
         if boundary > pos:
             if active:
                 seg = Style.combine(active)
             else:
                 seg = None
-            if seg is not None:
-                segments.append(Segment(plain[pos:boundary], seg + Style(meta={"offset": (x, offset_y)})))
-            else:
-                segments.append(Segment(plain[pos:boundary], Style(meta={"offset": (x, offset_y)})))
-            x += boundary - pos
+            segments.append(Segment(plain[pos:boundary], seg))
             pos = boundary
         if delta > 0:
             active.append(seg_style)
@@ -200,11 +195,23 @@ def _build_strip(line: Content, offset_y: int) -> Strip:
             active.remove(seg_style)
     if pos < len(plain):
         if active:
-            seg = Style.combine(active) + Style(meta={"offset": (x, offset_y)})
+            seg = Style.combine(active)
         else:
-            seg = Style(meta={"offset": (x, offset_y)})
+            seg = None
         segments.append(Segment(plain[pos:], seg))
-    return Strip(segments)
+    if segments:
+        first = segments[0]
+        fs = first.style
+        if fs is None:
+            fs = Style(meta={"offset": (0, offset_y)})
+        else:
+            fs = fs + Style(meta={"offset": (0, offset_y)})
+        segments[0] = Segment(first.text, fs, control=first.control)
+    return segments
+
+
+def _build_strip(line: Content, offset_y: int) -> Strip:
+    return Strip(_build_segments(line, offset_y))
 
 
 def _apply_selection(strip: Strip, start: int, end: int, style) -> Strip:

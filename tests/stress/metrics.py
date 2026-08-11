@@ -234,7 +234,9 @@ def install(log_path: str) -> Metrics:
     from src.ui.tui import canvas as canvas_mod
 
     for mod in (lazy, canvas_mod):
-        _wrap_func(mod, "_build_strip", "strip")
+        for name in ("_build_strip", "_build_segments"):
+            if hasattr(mod, name):
+                _wrap_func(mod, name, "strip")
         _wrap_func(mod, "_wrap_continuation", "wrap")
     _wrap_func(lazy, "_pad_line", "pad")
     _wrap_func(lazy, "_line_fill", "pad")

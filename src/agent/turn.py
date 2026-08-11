@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 from collections.abc import AsyncIterator
+from datetime import datetime
 
 import httpx
 
@@ -122,9 +123,57 @@ def _commit_response(session: Session, response: LLMResponse, tool_results: list
                 session.msgs.add_tool(tc["id"], INTERRUPTED_TOOL_RESULT)
 
 
-def _persist(session: Session) -> None:
+_PERSIST_INTERVAL = 0.5
+_persist_pending: Session | None = None
+_persist_lock_until = 0.0
+
+
+def _write_session_files(data: dict) -> None:
+    from src.agent.session import _write_session, get_session_manager
+
+    _write_session(data)
+    mgr = get_session_manager()
+    entry = mgr._index.get(data["id"])
+    if entry:
+        entry["name"] = data["name"]
+        entry["path"] = data["path"]
+        entry["updated_at"] = data["updated_at"]
+    else:
+        mgr._index[data["id"]] = {
+            "id": data["id"],
+            "name": data["name"],
+            "path": data["path"],
+            "created_at": data["created_at"],
+            "updated_at": data["updated_at"],
+        }
+    mgr._save_index()
+
+
+async def _flush_persist(session: Session) -> None:
+    session.updated_at = datetime.now().isoformat()
+    data = session.to_dict()
+    await asyncio.to_thread(_write_session_files, data)
+
+
+async def _persist(session: Session, *, force: bool = False) -> None:
     session.sync_messages()
-    get_session_manager().save(session)
+    global _persist_pending, _persist_lock_until
+    _persist_pending = session
+    now = time.monotonic()
+    if not force and now < _persist_lock_until:
+        return
+    _persist_lock_until = now + _PERSIST_INTERVAL
+    target, _persist_pending = _persist_pending, None
+    if target is None:
+        return
+    await _flush_persist(target)
+
+
+async def _flush_persist_pending() -> None:
+    global _persist_pending
+    target, _persist_pending = _persist_pending, None
+    if target is not None:
+        await _flush_persist(target)
 
 
 async def _compact_if_needed(session: Session, threshold: float, usage_override: int = 0):
@@ -239,7 +288,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                                 is_error=bool(tr.get("is_error") or tr.get("error")),
                             )
                         session.msgs.finalize_tool_results()
-                        _persist(session)
+                        await _persist(session)
                     delay = _retry_delay(retry_count)
                     retry_data: RetryScheduleData = {
                         "error": str(e),
@@ -273,7 +322,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                     is_error=bool(tr.get("is_error") or tr.get("error")),
                 )
             session.msgs.finalize_tool_results()
-            _persist(session)
+            await _persist(session)
 
             if response.finish_reason == "tool_calls":
                 async for ev in _compact_if_needed(session, WORK_THRESHOLD, last_prompt_tokens):
@@ -302,7 +351,8 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
             session.msgs.finalize_tool_results()
 
         _attach_turn_meta(session, provider.model, turn_usage, last_prompt_tokens, time.monotonic() - start)
-        _persist(session)
+        await _flush_persist_pending()
+        await _persist(session, force=True)
 
         if cancelled:
             session.reset_provider()

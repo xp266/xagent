@@ -15,13 +15,13 @@ class SpinnerMixin:
         self._spinners[id(block)] = (block, label)
         self._render_spinner(block, label)
 
-    def _render_spinner(self, block, label) -> None:
+    def _render_spinner(self, block, label, *, refresh: bool = True) -> None:
         if id(block) not in self._spinners:
             return
         label = label() if callable(label) else label
         block.arrow_hidden = True
-        block.set_title(label)
-        block.set_marker(self._spinner_frame())
+        block.set_title(label, refresh=refresh)
+        block.set_marker(self._spinner_frame(), refresh=refresh)
 
     def _stop_spinner(self, block, label, *, restore_arrow: bool = True) -> None:
         if block is None:
@@ -62,4 +62,8 @@ class SpinnerMixin:
         self._last_spinner_time = now
         self._spinner_idx += 1
         for block, label in list(self._spinners.values()):
-            self._render_spinner(block, label)
+            self._render_spinner(block, label, refresh=False)
+        try:
+            self._canvas().refresh()
+        except Exception:
+            pass
