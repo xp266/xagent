@@ -92,6 +92,8 @@ async def _stream_openai_events(stream, capabilities) -> AsyncIterator[StreamEve
             details = getattr(raw, "prompt_tokens_details", None)
             if details is not None:
                 cached = getattr(details, "cached_tokens", 0) or 0
+            if not cached:
+                cached = getattr(raw, "prompt_cache_hit_tokens", 0) or 0
             reasoning = 0
             cdetails = getattr(raw, "completion_tokens_details", None)
             if cdetails is not None:

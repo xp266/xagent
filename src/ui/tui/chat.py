@@ -67,6 +67,10 @@ class ChatMixin:
         self._project = self._launch_dir
         self._session = self._sm.create(path=self._project, persist=False)
         self._ctx_usage_tokens = 0
+        self._last_usage = None
+        self._win_msgs = MAX_VISIBLE_MESSAGES
+        self._win_lines = MAX_RENDER_LINES
+        self._hidden_msgs = 0
         self._clear_chat_messages()
         self._show_logo()
         self._update_status()
@@ -90,6 +94,10 @@ class ChatMixin:
         from src.agent.compact import estimate_context_usage
 
         self._ctx_usage_tokens = estimate_context_usage(s)
+        self._last_usage = None
+        self._win_msgs = MAX_VISIBLE_MESSAGES
+        self._win_lines = MAX_RENDER_LINES
+        self._hidden_msgs = 0
         self._render_messages()
         self._update_status()
         self._input().focus()
@@ -134,7 +142,7 @@ class ChatMixin:
                     pad_left=3,
                     pad_right=1,
                 )
-                div_block.action = lambda: self._render_messages(max_messages * 2, max_lines * 2, scroll_to_end=False)
+                div_block.action = self._expand_window
 
             for idx, msg in enumerate(messages):
                 role = msg.get("role", "")
@@ -187,7 +195,9 @@ class ChatMixin:
                         block.update_lines(render_markdown_lines(content, bg=False))
 
                     for tc in tool_calls:
-                        fn = tc.get("function", {})
+                        fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                        if not isinstance(fn, dict):
+                            fn = {}
                         name = fn.get("name", "")
                         try:
                             args = json.loads(fn.get("arguments", "{}"))
@@ -264,6 +274,15 @@ class ChatMixin:
 
         if scroll_to_end:
             self.call_after_refresh(lambda: self._scroll_end(force=True))
+
+    def _expand_window(self) -> None:
+        if self._busy:
+            self._append_error("Agent is busy, please wait.")
+            return
+        self._win_msgs *= 2
+        self._win_lines *= 2
+        self._hidden_msgs = 0
+        self._render_messages(self._win_msgs, self._win_lines, scroll_to_end=False)
 
     @staticmethod
     def _is_turn_end(messages: list, idx: int) -> bool:

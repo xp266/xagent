@@ -487,7 +487,11 @@ class TurnRenderMixin:
         elif t == "step-finish":
             usage = event.data.get("usage", {}) or {}
             cur["steps"] += 1
-            self._ctx_usage_tokens = usage.get("prompt_tokens", 0)
+            if usage:
+                self._last_usage = usage
+                pt = usage.get("prompt_tokens", 0)
+                if pt > 0:
+                    self._ctx_usage_tokens = pt
             self._update_status()
         elif t == "provider-error":
             error = event.data.get("error", "Unknown error")
@@ -578,6 +582,7 @@ class TurnRenderMixin:
         except Exception as e:
             if self._exit or self._closing:
                 return
+            self._log_error()
             self._append_error(f"{type(e).__name__}: {e}")
         finally:
             elapsed = time.monotonic() - start

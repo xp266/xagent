@@ -17,9 +17,11 @@ class ToolCall(BaseModel):
 
     @classmethod
     def from_api(cls, d: dict) -> "ToolCall":
-        fn = d.get("function", {})
+        fn = d.get("function", {}) if isinstance(d, dict) else {}
+        if not isinstance(fn, dict):
+            fn = {}
         return cls(
-            id=d.get("id", ""),
+            id=d.get("id", "") if isinstance(d, dict) else "",
             name=fn.get("name", ""),
             arguments=fn.get("arguments", ""),
         )

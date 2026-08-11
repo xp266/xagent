@@ -1,3 +1,4 @@
+import locale
 import os
 import platform
 import re
@@ -147,7 +148,7 @@ def execute(command: str, workdir: str = "", timeout: int = 0, **kwargs) -> dict
         stdout_bytes = stdout_bytes[:MAX_OUTPUT_BYTES]
         truncated = True
 
-    output_text = stdout_bytes.decode("utf-8", errors="replace") or "(no output)"
+    output_text = _decode_output(stdout_bytes) or "(no output)"
     output_text = _strip_ansi(output_text)
     if truncated:
         output_text += "\n\n[output capture truncated at the in-memory safety limit]"
@@ -157,6 +158,23 @@ def execute(command: str, workdir: str = "", timeout: int = 0, **kwargs) -> dict
         "output": output_text,
         "metadata": {"exit": proc.returncode, "truncated": truncated},
     }
+
+
+def _decode_output(data: bytes) -> str:
+    if not data:
+        return ""
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        pass
+    if os.name == "nt":
+        for enc in (locale.getpreferredencoding(False) or "", "mbcs"):
+            if enc:
+                try:
+                    return data.decode(enc, errors="replace")
+                except (LookupError, ValueError):
+                    continue
+    return data.decode("utf-8", errors="replace")
 
 
 def to_model_output(data: dict) -> str:

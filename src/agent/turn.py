@@ -135,8 +135,13 @@ async def _compact_if_needed(session: Session, threshold: float, usage_override:
         return
     if not should_compact(usage, limit, threshold):
         return
-    async for ev in compact_session_stream(session):
-        yield ev
+    try:
+        async for ev in compact_session_stream(session):
+            yield ev
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        yield StreamEvent(type="compact-error")
 
 
 async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[StreamEvent]:

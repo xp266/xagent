@@ -289,14 +289,16 @@ async def compact_session_stream(session: Session, focus: str = "") -> AsyncIter
         "content": f"{_WRAP_OPEN}\n{summary}\n{_WRAP_CLOSE}",
         "_meta": {"compacted": True},
     }
-    tail_msgs = messages[len(messages) - len(tail):]
-    for m in tail_msgs:
-        meta = m.get("_meta")
-        if isinstance(meta, dict):
-            meta.pop("prompt_tokens", None)
+    prev_prompt = 0
+    for m in reversed(messages):
+        if m.get("role") != "assistant":
+            continue
+        prev_prompt = (m.get("_meta") or {}).get("prompt_tokens") or 0
+        break
     tail_start = len(messages) - len(tail)
+    tail_msgs = messages[tail_start:]
     summary_msg["_meta"]["tail_start"] = tail_start
-    summary_msg["_meta"]["prompt_tokens"] = _chars_estimate([summary_msg] + tail_msgs)
+    summary_msg["_meta"]["prompt_tokens"] = prev_prompt or _chars_estimate([summary_msg] + tail_msgs)
 
     session.messages = messages + [summary_msg]
     session._msgs = None

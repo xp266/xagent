@@ -27,12 +27,17 @@ async def agent_stream(
                 )
                 result = result_data.get("output", "")
                 attachments = result_data.get("attachments", [])
+                if not isinstance(attachments, list):
+                    attachments = []
+                meta = result_data.get("metadata")
+                if not isinstance(meta, dict):
+                    meta = {}
                 tool_result_data: ToolResultData = {
                     "id": call["id"],
                     "name": call["name"],
                     "result": result,
                     "attachments": attachments,
-                    "is_error": bool(result_data.get("metadata", {}).get("error")),
+                    "is_error": bool(meta.get("error")),
                 }
                 yield StreamEvent(type="tool-result", data=tool_result_data)
             except asyncio.CancelledError:

@@ -2,6 +2,7 @@ import asyncio
 import os
 import sys
 import time
+from datetime import datetime
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -11,7 +12,7 @@ from src.agent import get_session_manager
 from src.mcp.manager import get_mcp_manager
 from src.ui.tui.animations import SpinnerMixin
 from src.ui.tui.canvas import CanvasBlock, ChatCanvas
-from src.ui.tui.chat import MAX_CANVAS_BLOCKS, TRIM_SLACK, ChatMixin
+from src.ui.tui.chat import MAX_CANVAS_BLOCKS, MAX_RENDER_LINES, MAX_VISIBLE_MESSAGES, TRIM_SLACK, ChatMixin
 from src.ui.tui.colors import _USER_BG
 from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.css import CSS
@@ -42,6 +43,10 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._project = self._launch_dir
         self._session = self._sm.create(path=self._project, persist=False)
         self._ctx_usage_tokens = 0
+        self._last_usage = None
+        self._win_msgs = MAX_VISIBLE_MESSAGES
+        self._win_lines = MAX_RENDER_LINES
+        self._hidden_msgs = 0
         self._busy = False
         self._current = None
         self._spinner_idx = 0
@@ -138,6 +143,18 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         block.update(text)
         self._scroll_end()
 
+    def _log_error(self) -> None:
+        import traceback
+
+        from src.utils.paths import data_dir
+
+        try:
+            path = os.path.join(data_dir(), "errors.log")
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().isoformat()}]\n{traceback.format_exc()}\n")
+        except OSError:
+            pass
+
     def _run_manual_compact(self, focus: str = "") -> None:
         if self._busy:
             self._deferred = lambda: self._run_manual_compact(focus)
@@ -174,6 +191,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         except Exception as e:
             if self._exit or self._closing:
                 return
+            self._log_error()
             self._append_error(f"{type(e).__name__}: {e}")
         finally:
             if not (self._exit or self._closing):
@@ -213,9 +231,84 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         if removed_lines:
             chat.scroll_to(max(0, chat.scroll_offset.y - removed_lines), animate=False)
 
+    def _trim_message_window(self) -> None:
+        canvas = self._canvas()
+        blocks = canvas._blocks
+        user_idx = [i for i, b in enumerate(blocks) if b.kind == "user"]
+        if len(user_idx) < 2:
+            return
+        groups = []
+        for n, idx in enumerate(user_idx):
+            end = user_idx[n + 1] if n + 1 < len(user_idx) else len(blocks)
+            groups.append(blocks[idx:end])
+        complete = groups[:-1]
+        if not complete:
+            return
+        total_lines = sum(len(b._lines) for g in complete for b in g)
+        if len(complete) <= self._win_msgs and total_lines <= self._win_lines:
+            return
+        drop = 0
+        while drop < len(complete):
+            if len(complete) - drop <= self._win_msgs:
+                lines_after = sum(len(b._lines) for g in complete[drop:] for b in g)
+                if lines_after <= self._win_lines:
+                    break
+            drop += 1
+        removed = 0
+        canvas._begin_bulk()
+        try:
+            for g in complete[:drop]:
+                for b in g:
+                    removed += len(b._lines)
+                    canvas.remove(b)
+        finally:
+            canvas._end_bulk()
+        self._hidden_msgs += drop
+        self._update_window_divider()
+        if removed:
+            chat = self._chat()
+            chat.scroll_to(max(0, chat.scroll_offset.y - removed), animate=False)
+
+    def _update_window_divider(self) -> None:
+        canvas = self._canvas()
+        div = next((b for b in canvas._blocks if b.kind == "divider"), None)
+        title = f"↕ {self._hidden_msgs} earlier messages hidden (click to expand)"
+        if div is None:
+            if not canvas._blocks:
+                return
+            div = self._append_block(
+                kind="divider",
+                title=title,
+                title_style="#888888",
+                expandable=True,
+                hide_arrow=True,
+                pad_top=1,
+                pad_left=3,
+                pad_right=1,
+            )
+            div.action = self._expand_window
+            canvas._blocks.remove(div)
+            canvas._blocks.insert(0, div)
+            div.owner = canvas
+            canvas._rebuild_offsets()
+            canvas.refresh(layout=True)
+            return
+        if div.title == title:
+            return
+        div.title = title
+        div._strips = []
+        div._fill_at = []
+        div._key = ()
+        canvas._rebuild_offsets()
+        canvas.refresh(layout=True)
+
     def _tick_animations(self) -> None:
         try:
             self._canvas()._settle_resize()
+        except Exception:
+            pass
+        try:
+            self._trim_message_window()
         except Exception:
             pass
         try:

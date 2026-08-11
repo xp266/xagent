@@ -128,15 +128,19 @@ def _wrap_continuation(line: Content, width: int) -> list[Content]:
 
 def selection_slice(line: Content, fill_at: int | None, x0: int, x1: int, pl: int) -> str:
     plain = line.plain
-    s = x0
-    e = x1 if x1 >= 0 else -1
     no_w = _line_no_end(line, pl) + _diff_marker_end(line, pl)
-    if s < pl + no_w:
-        s = pl + no_w
+    s = x0 - pl
+    if s < no_w:
+        s = no_w
+    e = x1 - pl if x1 >= 0 else -1
+    if x1 >= 0 and x1 - pl <= no_w:
+        return ""
     if e < 0 or (fill_at is not None and e > fill_at):
         e = fill_at if fill_at is not None else len(plain)
+    if e > len(plain):
+        e = len(plain)
     if fill_at is not None and s >= fill_at:
-        s = pl + no_w
+        return ""
     return plain[s:e] if s < e else ""
 
 

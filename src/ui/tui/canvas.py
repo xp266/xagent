@@ -361,7 +361,8 @@ class ChatCanvas(Static):
                 parts.append("")
                 continue
             line = block._lines[by]
-            pl = 0 if block.title_line is not None and by == block.pad_top else block.content_pad_left
+            cs, ce = block._content_range
+            pl = block.content_pad_left if cs <= by < ce else 0
             s = x0 if y == y0 else 0
             e = x1 if y == y1 else -1
             fill_at = block._fill_at[by] if by < len(block._fill_at) else None
@@ -495,7 +496,8 @@ class ChatCanvas(Static):
                 if start < end:
                     if block is not None and by < len(block._lines):
                         line = block._lines[by]
-                        pl = 0 if block.title_line is not None and by == block.pad_top else block.content_pad_left
+                        cs, ce = block._content_range
+                        pl = block.content_pad_left if cs <= by < ce else 0
                         start = clip_selection_start(line, start, pl)
                     if start < end:
                         style = self.screen.get_component_styles("screen--selection")

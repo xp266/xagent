@@ -290,6 +290,7 @@ class PickerMixin:
                 store.seed_model_context(message.model)
         self._session.reset_provider()
         self._ctx_usage_tokens = 0
+        self._last_usage = None
         self._update_status()
         self._input().focus()
 
@@ -308,6 +309,7 @@ class PickerMixin:
             store.set_active_provider(pid)
         self._session.reset_provider()
         self._ctx_usage_tokens = 0
+        self._last_usage = None
         self._update_status()
 
     def on_key(self, event) -> None:

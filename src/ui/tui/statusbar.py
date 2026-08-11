@@ -52,11 +52,17 @@ class StatusMixin:
         pct = self._context_pct(limit)
         usage = self._session.token_usage
         status = (
-            f"{model}({pct:.0f}% used) "
+            f"{model}({pct:.1f}% used) "
             f"[{usage.prompt_tokens:,}→{usage.completion_tokens:,}]"
         )
-        if usage.cached_tokens > 0 and usage.prompt_tokens > 0:
-            status += f"({usage.cached_tokens / usage.prompt_tokens * 100:.0f}% hit)"
+        last = getattr(self, "_last_usage", None)
+        if last:
+            cached = last.get("cached_tokens", 0)
+            prompt = last.get("prompt_tokens", 0)
+            if cached > 0 and prompt > 0:
+                status += f"({cached / prompt * 100:.1f}% hit)"
+        elif usage.cached_tokens > 0 and usage.prompt_tokens > 0:
+            status += f"({usage.cached_tokens / usage.prompt_tokens * 100:.1f}% hit)"
         return status
 
     def _status_string(self) -> str:

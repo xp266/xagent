@@ -70,11 +70,20 @@ class ToolRegistry:
             return {"title": name, "output": f"Tool execution error: {e}", "metadata": {"error": True}}
 
         if isinstance(raw, dict):
+            meta = raw.get("metadata")
+            if not isinstance(meta, dict):
+                meta = {}
+            atts = raw.get("attachments")
+            if not isinstance(atts, list):
+                atts = []
+            out = raw.get("output", str(raw))
+            if not isinstance(out, str):
+                out = str(out)
             result_dict = {
                 "title": raw.get("title", name),
-                "output": raw.get("output", str(raw)),
-                "metadata": raw.get("metadata", {}),
-                "attachments": raw.get("attachments", []),
+                "output": out,
+                "metadata": meta,
+                "attachments": atts,
             }
         else:
             result_dict = {"title": name, "output": str(raw), "metadata": {}, "attachments": []}
