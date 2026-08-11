@@ -8,6 +8,8 @@ from src.ui.tui.colors import _INLINE_CODE_FG
 from src.ui.tui.highlight import _highlight_lines_fg
 from src.ui.tui.markdown import _FENCE_RE
 
+_TAB_WIDTH = 4
+
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 
 
@@ -87,7 +89,7 @@ class ThinkingMarkdown:
             self._rendered_n = len(self._lines)
         result = self._rendered
         if self._tail:
-            tail_c = _thinking_line(self._tail)
+            tail_c = _thinking_line(self._tail.expandtabs(_TAB_WIDTH))
             if result is None:
                 result = Content.assemble(tail_c, "\n")
             else:
@@ -105,6 +107,7 @@ class ThinkingMarkdown:
         return result if result is not None else Content("")
 
     def _line(self, line: str) -> None:
+        line = line.expandtabs(_TAB_WIDTH)
         if self._fence_open:
             if _FENCE_RE.match(line) is not None:
                 self._close_fence()

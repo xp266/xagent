@@ -24,6 +24,8 @@ _INLINE_RE = re.compile(
 )
 _ESCAPE_RE = re.compile(r"\\([\\`*_~\[\]])")
 
+_TAB_WIDTH = 4
+
 _TABLE_CELL_MAX = 40
 _TABLE_WIDTH_MAX = 100
 
@@ -182,6 +184,7 @@ def _single_row_table(line: str) -> Content:
 
 
 def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool = False, line_number_start: int = 1, bg: bool = True) -> Content:
+    code = code.expandtabs(_TAB_WIDTH)
     if diff_nums:
         lines = _numbered_diff_highlight(code, lang, bg)
     else:
@@ -222,6 +225,7 @@ def _fence_body(code: str, lang: str | None, *, numbered: bool, diff_nums: bool 
 
 
 def _open_fence(code: str, bg: bool = True) -> Content:
+    code = code.expandtabs(_TAB_WIDTH)
     if not code:
         return Content("")
     if bg:
@@ -230,7 +234,7 @@ def _open_fence(code: str, bg: bool = True) -> Content:
 
 
 def _plain_fence_body(code: str, bg: bool = True) -> list[Content]:
-    lines = code.split("\n")
+    lines = code.expandtabs(_TAB_WIDTH).split("\n")
     while lines and not lines[-1]:
         lines.pop()
     if bg:
@@ -309,7 +313,7 @@ def render_markdown_lines(source: str, *, numbered: bool = False, line_number_st
     n = len(lines)
     pending_blank = False
     while i < n:
-        line = lines[i]
+        line = lines[i].expandtabs(_TAB_WIDTH)
         if not line.strip():
             pending_blank = True
             i += 1
@@ -386,6 +390,9 @@ class StreamMarkdown:
         self._table_widths: list[int] | None = None
         self._table_aligns: list[str] | None = None
         self._table_bot: Content | None = None
+        self._rendered: Content | None = None
+        self._rendered_n = 0
+        self._rendered_cell = 0
 
     def feed(self, text: str) -> None:
         text = self._tail + text
@@ -407,12 +414,32 @@ class StreamMarkdown:
         self._commit_prev()
         while self._lines and not self._lines[-1].plain:
             self._lines.pop()
+        self._reset_incremental()
 
     def render(self) -> Content:
         parts: list = []
-        for line in self._lines:
-            parts.append(line)
-            parts.append("\n")
+        if self._rendered_n < len(self._lines):
+            block = Content.assemble(
+                *[x for line in self._lines[self._rendered_n:] for x in (line, "\n")]
+            )
+            if self._rendered is None:
+                self._rendered = block
+                self._rendered_cell = block.cell_length
+            else:
+                base = self._rendered.plain
+                spans = self._rendered.spans
+                spans.extend(
+                    Span(s.start + len(base), s.end + len(base), s.style) for s in block.spans
+                )
+                self._rendered = Content(
+                    base + block.plain,
+                    spans=spans,
+                    cell_length=self._rendered_cell + block.cell_length,
+                    strip_control_codes=False,
+                )
+                self._rendered_cell += block.cell_length
+            self._rendered_n = len(self._lines)
+        result = self._rendered
         if self._prev is not None:
             if _is_table_row(self._prev_text):
                 parts.append(_single_row_table(self._prev_text))
@@ -421,19 +448,37 @@ class StreamMarkdown:
             parts.append("\n")
         if self._tail:
             if self._fence_open:
-                parts.append(_open_fence(self._tail, self._bg))
+                parts.append(_open_fence(self._tail.expandtabs(_TAB_WIDTH), self._bg))
                 parts.append("\n")
             elif self._table_rows is not None:
                 pass
-            elif _is_table_row(self._tail):
-                parts.append(_single_row_table(self._tail))
+            elif _is_table_row(self._tail.expandtabs(_TAB_WIDTH)):
+                parts.append(_single_row_table(self._tail.expandtabs(_TAB_WIDTH)))
                 parts.append("\n")
             else:
-                tail_line = _render_line(self._tail)
+                tail_line = _render_line(self._tail.expandtabs(_TAB_WIDTH))
                 if tail_line is not None:
                     parts.append(tail_line)
                     parts.append("\n")
+        if result is None:
+            return Content.assemble(*parts) if parts else Content("")
+        if not parts:
+            return result
+        parts.insert(0, result)
+        parts.insert(1, "\n")
         return Content.assemble(*parts)
+
+    def _reset_table_geometry(self) -> None:
+        self._table_n = None
+        self._table_raw_max = []
+        self._table_widths = None
+        self._table_aligns = None
+        self._table_bot = None
+
+    def _reset_incremental(self) -> None:
+        self._rendered = None
+        self._rendered_n = 0
+        self._rendered_cell = 0
 
     def _commit_prev(self) -> None:
         if self._prev is not None:
@@ -442,6 +487,7 @@ class StreamMarkdown:
             self._prev_text = ""
 
     def _line(self, line: str) -> None:
+        line = line.expandtabs(_TAB_WIDTH)
         if self._fence_open:
             if _FENCE_RE.match(line) is not None:
                 self._close_fence(line)
@@ -457,6 +503,7 @@ class StreamMarkdown:
                 return
             self._table_rows = None
             self._table_start = 0
+            self._reset_table_geometry()
         m = _FENCE_RE.match(line)
         if m is not None:
             info = m.group(1)
@@ -482,6 +529,7 @@ class StreamMarkdown:
             if _is_table_row(self._prev_text) and _is_table_sep(line):
                 self._table_rows = [self._prev_text, line]
                 self._table_start = len(self._lines)
+                self._reset_table_geometry()
                 self._prev = None
                 self._prev_text = ""
                 self._rerender_open_table()
@@ -508,6 +556,7 @@ class StreamMarkdown:
         if self._table_n is None:
             self._table_render_full()
             return
+        self._reset_incremental()
         if len(rows) == self._table_n:
             return
         new_widths = self._table_row_raw_widths(rows[-1])
@@ -529,6 +578,7 @@ class StreamMarkdown:
         rows = self._table_rows
         if not rows:
             return
+        self._reset_incremental()
         block, _ = _table_block(rows, 0, len(rows))
         del self._lines[self._table_start:]
         lines = block.split("\n", allow_blank=True)
@@ -560,6 +610,7 @@ class StreamMarkdown:
         self._fence_body = []
         self._fence_start = 0
         self._fence_marker = None
+        self._reset_incremental()
 
 
 
