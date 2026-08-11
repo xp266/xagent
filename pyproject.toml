@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings",
     "platformdirs",
     "textual",
+    "requests>=2.34.2",
 ]
 
 [project.optional-dependencies]
