@@ -381,6 +381,11 @@ class StreamMarkdown:
         self._fence_marker: Content | None = None
         self._table_rows: list[str] | None = None
         self._table_start = 0
+        self._table_n: int | None = None
+        self._table_raw_max: list[int] = []
+        self._table_widths: list[int] | None = None
+        self._table_aligns: list[str] | None = None
+        self._table_bot: Content | None = None
 
     def feed(self, text: str) -> None:
         text = self._tail + text
@@ -396,7 +401,7 @@ class StreamMarkdown:
         if self._fence_open:
             self._close_fence(None)
         if self._table_rows is not None:
-            self._rerender_open_table()
+            self._table_render_full()
             self._table_rows = None
             self._table_start = 0
         self._commit_prev()
@@ -442,7 +447,8 @@ class StreamMarkdown:
                 self._close_fence(line)
             else:
                 self._fence_body.append(line)
-                self._rerender_open_fence()
+                body = _plain_fence_body(line, self._bg)
+                self._lines.append(body[0] if body else Content(""))
             return
         if self._table_rows is not None:
             if _is_table_row(line):
@@ -484,13 +490,63 @@ class StreamMarkdown:
         self._prev = _render_line(line)
         self._prev_text = line
 
+    def _table_row_raw_widths(self, row: str) -> list[int]:
+        cells = [_inline(c) for c in _split_row(row)]
+        return [min(max(c.cell_length, 3), _TABLE_CELL_MAX) for c in cells]
+
+    def _table_scale(self, widths: list[int]) -> list[int]:
+        total = sum(widths) + 3 * len(widths) + 1
+        if total > _TABLE_WIDTH_MAX:
+            scale = _TABLE_WIDTH_MAX / total
+            widths = [max(3, int(w * scale)) for w in widths]
+        return widths
+
     def _rerender_open_table(self) -> None:
+        rows = self._table_rows
+        if not rows:
+            return
+        if self._table_n is None:
+            self._table_render_full()
+            return
+        if len(rows) == self._table_n:
+            return
+        new_widths = self._table_row_raw_widths(rows[-1])
+        if len(new_widths) > len(self._table_raw_max) or any(
+            w > m for w, m in zip(new_widths, self._table_raw_max)
+        ):
+            self._table_render_full()
+            return
+        row_cells = [_inline(c) for c in _split_row(rows[-1])]
+        row_cells += [Content("")] * (len(self._table_widths) - len(row_cells))
+        row = _table_row(row_cells, self._table_widths, self._table_aligns)
+        bot_idx = self._table_start + self._table_n + 1
+        del self._lines[bot_idx]
+        self._lines.insert(bot_idx, row)
+        self._lines.insert(bot_idx + 1, self._table_bot)
+        self._table_n += 1
+
+    def _table_render_full(self) -> None:
         rows = self._table_rows
         if not rows:
             return
         block, _ = _table_block(rows, 0, len(rows))
         del self._lines[self._table_start:]
-        self._lines.extend(block.split("\n", allow_blank=True))
+        lines = block.split("\n", allow_blank=True)
+        self._lines.extend(lines)
+        self._table_n = len(rows)
+        raw_max: list[int] = []
+        for row in rows:
+            widths = self._table_row_raw_widths(row)
+            if len(widths) > len(raw_max):
+                raw_max.extend([0] * (len(widths) - len(raw_max)))
+            for i, w in enumerate(widths):
+                if w > raw_max[i]:
+                    raw_max[i] = w
+        self._table_raw_max = raw_max
+        self._table_widths = self._table_scale(list(raw_max))
+        aligns = [_table_align(c) for c in _split_row(rows[1])] if len(rows) > 1 else ["l"]
+        self._table_aligns = (aligns + ["l"] * len(self._table_widths))[:len(self._table_widths)]
+        self._table_bot = lines[-1]
 
     def _close_fence(self, close_line: str | None) -> None:
         code = "\n".join(self._fence_body).rstrip("\n")
@@ -504,12 +560,6 @@ class StreamMarkdown:
         self._fence_body = []
         self._fence_start = 0
         self._fence_marker = None
-
-    def _rerender_open_fence(self) -> None:
-        code = "\n".join(self._fence_body)
-        offset = 1 if self._fence_marker is not None else 0
-        del self._lines[self._fence_start + offset:]
-        self._lines.extend(_plain_fence_body(code, self._bg))
 
 
 

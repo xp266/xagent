@@ -11,9 +11,9 @@ from textual.widgets import Static
 from src.agent import get_session_manager
 from src.mcp.manager import get_mcp_manager
 from src.ui.tui.animations import SpinnerMixin
+from src.ui.tui.blocks import BLOCK_SPECS
 from src.ui.tui.canvas import CanvasBlock, ChatCanvas
 from src.ui.tui.chat import MAX_CANVAS_BLOCKS, MAX_RENDER_LINES, MAX_VISIBLE_MESSAGES, TRIM_SLACK, ChatMixin
-from src.ui.tui.colors import _USER_BG
 from src.ui.tui.commands import get_commands, match_commands
 from src.ui.tui.css import CSS
 from src.ui.tui.dialogs import PickerMixin
@@ -66,43 +66,17 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
     def _canvas(self) -> ChatCanvas:
         return self.query_one("#chat-canvas", ChatCanvas)
 
-    def _append_block(
-        self,
-        *,
-        kind: str = "body",
-        title: str = "",
-        title_style: str = "",
-        body_style: str = "",
-        bg: str | None = None,
-        content_bg: str | None = None,
-        pad_top: int = 1,
-        pad_bottom: int = 1,
-        pad_left: int | None = 3,
-        pad_right: int = 1,
-        content_pad_left: int | None = None,
-        expandable: bool = False,
-        collapsed: bool = False,
-        hide_arrow: bool = False,
-    ) -> CanvasBlock:
+    def _append_block(self, *, kind: str = "body", **kwargs) -> CanvasBlock:
         self._hide_logo()
-        return self._canvas().append(
-            CanvasBlock(
-                kind=kind,
-                title=title,
-                title_style=title_style,
-                body_style=body_style,
-                bg=bg,
-                content_bg=content_bg,
-                pad_top=pad_top,
-                pad_bottom=pad_bottom,
-                pad_left=3 if pad_left is None else pad_left,
-                pad_right=pad_right,
-                content_pad_left=content_pad_left,
-                expandable=expandable,
-                collapsed=collapsed,
-                hide_arrow=hide_arrow,
-            )
-        )
+        if kwargs.get("pad_left") is None:
+            kwargs.pop("pad_left", None)
+        base = dict(BLOCK_SPECS.get(kind, {}))
+        base.update(kwargs)
+        base.setdefault("pad_top", 1)
+        base.setdefault("pad_bottom", 1)
+        base.setdefault("pad_left", 3)
+        base.setdefault("pad_right", 1)
+        return self._canvas().append(CanvasBlock(kind=kind, **base))
 
     def _show_logo(self) -> None:
         logo = self._logo()
@@ -134,12 +108,12 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
             chat.scroll_end(animate=False)
 
     def _append_user(self, text: str) -> None:
-        block = self._append_block(kind="user", bg=_USER_BG)
+        block = self._append_block(kind="user")
         block.update(text)
         self._scroll_end()
 
     def _append_error(self, text: str) -> None:
-        block = self._append_block(kind="error", body_style="bold #FF5555")
+        block = self._append_block(kind="error")
         block.update(text)
         self._scroll_end()
 
@@ -185,7 +159,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         except asyncio.CancelledError:
             if self._exit or self._closing:
                 raise
-            block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
+            block = self._append_block(kind="summary")
             block.update("Compaction interrupted")
             self._scroll_end()
         except Exception as e:
@@ -276,16 +250,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         if div is None:
             if not canvas._blocks:
                 return
-            div = self._append_block(
-                kind="divider",
-                title=title,
-                title_style="#888888",
-                expandable=True,
-                hide_arrow=True,
-                pad_top=1,
-                pad_left=3,
-                pad_right=1,
-            )
+            div = self._append_block(kind="divider", title=title)
             div.action = self._expand_window
             canvas._blocks.remove(div)
             canvas._blocks.insert(0, div)

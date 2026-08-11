@@ -1,0 +1,68 @@
+from src.ui.tui.colors import (
+    _COMPACTING, _ERROR, _THINKING_BODY, _THINKING_TITLE, _TOOL_HEADER, _TOOL_TITLE, _USER_BG,
+)
+
+BLOCK_SPECS = {
+    "user": {"bg": _USER_BG},
+    "error": {"body_style": _ERROR},
+    "summary": {"pad_top": 1, "pad_left": 3, "pad_right": 1},
+    "divider": {
+        "title_style": "#888888",
+        "expandable": True,
+        "hide_arrow": True,
+        "pad_top": 1,
+        "pad_left": 3,
+        "pad_right": 1,
+    },
+    "thinking": {
+        "title": "Thinking",
+        "title_style": _THINKING_TITLE,
+        "body_style": _THINKING_BODY,
+        "expandable": True,
+        "collapsed": False,
+        "pad_bottom": 0,
+    },
+    "waiting": {
+        "title": "Waiting for response...",
+        "title_style": "bold white",
+        "expandable": True,
+        "collapsed": True,
+        "hide_arrow": True,
+        "pad_bottom": 0,
+    },
+    "reply": {"pad_top": 1, "pad_bottom": 0, "pad_left": 3, "pad_right": 1},
+    "tool-block": {
+        "title_style": _TOOL_HEADER,
+        "expandable": True,
+        "collapsed": False,
+        "pad_top": 1,
+        "pad_bottom": 0,
+        "pad_left": 2,
+        "pad_right": 1,
+        "content_pad_left": 0,
+    },
+    "tool": {
+        "title_style": _TOOL_TITLE,
+        "expandable": True,
+        "collapsed": True,
+        "pad_bottom": 0,
+        "pad_left": 3,
+        "pad_right": 1,
+    },
+    "compact": {
+        "title": "Compressing context...",
+        "title_style": f"bold {_COMPACTING}",
+        "expandable": True,
+        "collapsed": False,
+        "hide_arrow": True,
+        "pad_bottom": 0,
+    },
+    "compact-summary": {
+        "title": "Compression complete",
+        "title_style": f"bold {_COMPACTING}",
+        "expandable": True,
+        "collapsed": False,
+        "hide_arrow": True,
+        "pad_bottom": 0,
+    },
+}

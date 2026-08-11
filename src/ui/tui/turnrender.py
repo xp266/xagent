@@ -7,21 +7,21 @@ from src.agent import run_session_turn
 from src.agent.turn import RETRY_LIMIT
 from src.types.events import StreamEvent
 from src.ui.tui.canvas import CanvasBlock
-from src.ui.tui.colors import _COMPACTING, _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
-from src.ui.tui.lazy import LazyText
+from src.ui.tui.colors import _TOOL_ERROR, _USER_BG
 from src.ui.tui.markdown import StreamMarkdown
 from src.ui.tui.render import (
     _cap_tool, block_tool, clean_result, code_tool, fmt_duration, is_error_result,
-    read_line_start, render_tool_markdown, tool_block, tool_markdown, tool_num_width, tool_render,
+    read_line_start, render_tool_markdown, render_tool_markdown_lines, tool_block, tool_markdown, tool_num_width, tool_render,
 )
 from src.ui.tui.thinking import ThinkingMarkdown
-from src.ui.tui.streaming import stream_args
+from src.ui.tui.streaming import StreamArgs
 from src.utils.config import get_config
 
 _RENDER_COOLDOWN = 0.016
 _TOOL_RENDER_COOLDOWN = 0.08
 _THINKING_RENDER_INTERVAL = 0.1
 _REPLY_RENDER_INTERVAL = 0.1
+_COMPACT_RENDER_INTERVAL = 0.08
 
 
 def new_turn_state() -> dict:
@@ -83,6 +83,21 @@ class TurnRenderMixin:
             elif force:
                 cur["reply"].update(md.render())
 
+        compact = cur.get("compact")
+        if compact is not None and cur.get("compact_text"):
+            md = cur.get("_compact_md")
+            if md is None:
+                md = StreamMarkdown(bg=False)
+                cur["_compact_md"] = md
+            prev_len = cur.get("_compact_md_len", 0)
+            text = cur["compact_text"]
+            if len(text) > prev_len:
+                md.feed(text[prev_len:])
+                cur["_compact_md_len"] = len(text)
+            if force or now - cur.get("_compact_render", 0.0) >= _COMPACT_RENDER_INTERVAL:
+                cur["_compact_render"] = now
+                compact.update(md.render())
+
         pending_tool = False
         for tc_id, tool in cur["tools"].items():
             if tool.get("done"):
@@ -110,7 +125,11 @@ class TurnRenderMixin:
             if not force and raw_len == info.get("_last_len", 0):
                 continue
             info["_last_len"] = raw_len
-            args = stream_args(info["raw"], info["name"])
+            sa = info.get("sa")
+            if sa is None:
+                sa = StreamArgs(info["name"])
+                info["sa"] = sa
+            args = sa.feed(info["raw"])
             name = info["name"]
             if block_tool(name):
                 title, body = tool_block(name, args, None, False, preview=True)
@@ -161,7 +180,7 @@ class TurnRenderMixin:
         deadline = time.monotonic() + delay
         retry = cur.get("retry")
         if retry is None:
-            block = self._append_block(kind="error", body_style="bold #FF5555")
+            block = self._append_block(kind="error")
             retry = {"block": block}
             cur["retry"] = retry
         retry["deadline"] = deadline
@@ -211,16 +230,7 @@ class TurnRenderMixin:
         return block
 
     def _ensure_thinking(self) -> CanvasBlock:
-        block = self._ensure_block(
-            "thinking",
-            kind="thinking",
-            title="Thinking",
-            title_style=_THINKING_TITLE,
-            body_style=_THINKING_BODY,
-            expandable=True,
-            collapsed=False,
-            pad_bottom=0,
-        )
+        block = self._ensure_block("thinking", kind="thinking")
         block.arrow_hidden = True
         self._start_spinner(block, "Thinking")
         return block
@@ -228,16 +238,7 @@ class TurnRenderMixin:
     def _ensure_waiting(self) -> None:
         if self._current is None or self._current.get("waiting") is not None:
             return
-        block = self._ensure_block(
-            "waiting",
-            kind="waiting",
-            title="Waiting for response...",
-            title_style="bold white",
-            expandable=True,
-            collapsed=True,
-            hide_arrow=True,
-            pad_bottom=0,
-        )
+        block = self._ensure_block("waiting", kind="waiting")
         self._start_spinner(block, "Waiting for response...")
 
     def _hide_waiting(self) -> None:
@@ -267,14 +268,7 @@ class TurnRenderMixin:
         cur["thinking"] = None
 
     def _ensure_reply(self) -> CanvasBlock:
-        return self._ensure_block(
-            "reply",
-            kind="reply",
-            pad_top=1,
-            pad_bottom=0,
-            pad_left=3,
-            pad_right=1,
-        )
+        return self._ensure_block("reply", kind="reply")
 
     def _add_tool_streaming(self, tc_id: str, name: str) -> None:
         tool = {
@@ -286,28 +280,14 @@ class TurnRenderMixin:
             "block": None,
         }
         if block_tool(name):
-            block = self._append_block(
-                kind="tool-block",
-                title=name,
-                title_style=_TOOL_HEADER,
-                expandable=True,
-                collapsed=False,
-                pad_top=1,
-                pad_bottom=0,
-                pad_left=2,
-                pad_right=1,
-                content_pad_left=0,
-            )
+            block = self._append_block(kind="tool-block", title=name)
             tool["block"] = block
         else:
             title, t = tool_render(name, {}, None, False)
             block = self._append_block(
                 kind="tool",
                 title=title,
-                title_style=_TOOL_TITLE,
-                expandable=True,
-                collapsed=False if name == "bash" else True,
-                pad_bottom=0,
+                collapsed=name != "bash",
                 content_bg=_USER_BG if name == "bash" else None,
                 content_pad_left=0 if name == "read" else None,
             )
@@ -318,19 +298,6 @@ class TurnRenderMixin:
         self._current["tool_buffers"][tc_id] = {"name": name, "raw": ""}
         if not block_tool(name):
             self._start_tool_spinner(tool)
-
-    def _set_tool_content(self, block, widget) -> None:
-        if isinstance(block, CanvasBlock):
-            if isinstance(widget, LazyText):
-                content = widget.visual
-                block.update(content)
-                block._strips = []
-                block._key = ()
-        else:
-            contents = block.query_one("Contents")
-            for child in list(contents.children):
-                child.remove()
-            contents.mount(widget)
 
     def _set_tool_title(self, tool, title: str) -> None:
         if tool["title"] != title:
@@ -385,7 +352,7 @@ class TurnRenderMixin:
                 self._set_tool_title(tool, m_title)
                 tool["block"].pad_left = tool_num_width(name, tool["input"], result, is_error) + 1
                 tool["block"].content_pad_left = 0
-                self._set_tool_content(tool["block"], LazyText(render_tool_markdown(m, numbered=(name == "read"), line_number_start=read_line_start(result, tool["input"]))))
+                tool["block"].update_lines(render_tool_markdown_lines(m, numbered=(name == "read"), line_number_start=read_line_start(result, tool["input"])))
                 if is_error:
                     self._mark_tool_error(tool["block"])
                 tool["done"] = True
@@ -401,7 +368,7 @@ class TurnRenderMixin:
         cfg = get_config()
         model = cfg.model or "?"
         summary = f"{model} - {fmt_duration(elapsed)}"
-        block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
+        block = self._append_block(kind="summary")
         block.update(summary)
         self._scroll_end()
 
@@ -511,36 +478,18 @@ class TurnRenderMixin:
         elif t == "compacting":
             self._hide_waiting()
             self._remove_empty_thinking()
-            block = self._ensure_block(
-                "compact",
-                kind="compact",
-                title="Compressing context...",
-                title_style=f"bold {_COMPACTING}",
-                expandable=True,
-                collapsed=False,
-                hide_arrow=True,
-                pad_bottom=0,
-            )
+            block = self._ensure_block("compact", kind="compact")
             self._start_spinner(block, "Compressing context...")
             cur["compact_text"] = ""
             cur.pop("_compact_md", None)
-            cur["last_compact_render"] = 0.0
+            cur["_compact_md_len"] = 0
+            cur["_compact_render"] = 0.0
             self._scroll_end()
         elif t == "compact-delta":
             cur["compact_text"] = cur.get("compact_text", "") + event.data
-            md = cur.get("_compact_md")
-            if md is None:
-                md = StreamMarkdown(bg=False)
-                cur["_compact_md"] = md
-            md.feed(event.data)
-            now = time.monotonic()
-            if now - cur.get("last_compact_render", 0.0) >= 0.08:
-                cur["last_compact_render"] = now
-                block = cur.get("compact")
-                if block is not None:
-                    block.update(md.render())
-                    self._scroll_end()
+            self._flush_streaming_content()
         elif t == "compacted":
+            self._flush_streaming_content(force=True)
             md = cur.get("_compact_md")
             block = cur.get("compact")
             if md is not None:
@@ -576,7 +525,7 @@ class TurnRenderMixin:
                 self._hide_waiting()
                 cur["interrupted"] = True
                 if self._deferred is None:
-                    block = self._append_block(kind="summary", pad_top=1, pad_left=3, pad_right=1)
+                    block = self._append_block(kind="summary")
                     block.update("Turn interrupted by user")
                     self._scroll_end()
         except Exception as e:
@@ -603,6 +552,9 @@ class TurnRenderMixin:
             md = cur.get("_reply_md")
             if md is not None:
                 md.finish()
+            cmd = cur.get("_compact_md")
+            if cmd is not None:
+                cmd.finish()
         self._flush_streaming_content(force=True)
         if cur and cur["steps"] > 0 and not cur.get("interrupted"):
             self._add_summary(elapsed)

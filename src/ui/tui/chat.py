@@ -4,7 +4,7 @@ import json
 import os
 
 from src.agent import name_session_from_first_message
-from src.ui.tui.colors import _COMPACTING, _THINKING_BODY, _THINKING_TITLE, _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
+from src.ui.tui.colors import _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
 from src.ui.tui.markdown import render_markdown_lines
 from src.ui.tui.render import (
     block_tool, clean_result, fmt_duration, is_error_result, read_line_start,
@@ -135,12 +135,6 @@ class ChatMixin:
                 div_block = self._append_block(
                     kind="divider",
                     title=f"↕ {hidden} earlier messages hidden (click to expand)",
-                    title_style="#888888",
-                    expandable=True,
-                    hide_arrow=True,
-                    pad_top=1,
-                    pad_left=3,
-                    pad_right=1,
                 )
                 div_block.action = self._expand_window
 
@@ -153,18 +147,10 @@ class ChatMixin:
                     if meta.get("compacted"):
                         content = msg.get("content", "") or ""
                         content = content.replace("<conversation_summary>", "").replace("</conversation_summary>", "").strip()
-                        block = self._append_block(
-                            kind="compact-summary",
-                            title="Compression complete",
-                            title_style=f"bold {_COMPACTING}",
-                            expandable=True,
-                            collapsed=False,
-                            hide_arrow=True,
-                            pad_bottom=0,
-                        )
+                        block = self._append_block(kind="compact-summary")
                         block.update_lines(render_markdown_lines(content, bg=False))
                         continue
-                    block = self._append_block(kind="user", bg=_USER_BG)
+                    block = self._append_block(kind="user")
                     block.update(msg.get("content", ""))
                     continue
                 if role == "assistant":
@@ -173,25 +159,11 @@ class ChatMixin:
                     tool_calls = msg.get("tool_calls", []) or []
 
                     if reasoning:
-                        block = self._append_block(
-                            kind="thinking",
-                            title="Thinking",
-                            title_style=_THINKING_TITLE,
-                            body_style=_THINKING_BODY,
-                            expandable=True,
-                            collapsed=False,
-                            pad_bottom=0,
-                        )
+                        block = self._append_block(kind="thinking")
                         block.update_lines(render_thinking_markdown_lines(reasoning))
 
                     if content:
-                        block = self._append_block(
-                            kind="reply",
-                            pad_top=1,
-                            pad_bottom=0,
-                            pad_left=3,
-                            pad_right=1,
-                        )
+                        block = self._append_block(kind="reply")
                         block.update_lines(render_markdown_lines(content, bg=False))
 
                     for tc in tool_calls:
@@ -216,13 +188,7 @@ class ChatMixin:
                                 kind="tool-block",
                                 title=title,
                                 title_style=_TOOL_ERROR if is_error else _TOOL_HEADER,
-                                expandable=True,
-                                collapsed=False,
-                                pad_top=1,
-                                pad_bottom=0,
                                 pad_left=tool_num_width(name, args, result, is_error) + 1,
-                                pad_right=1,
-                                content_pad_left=0,
                             )
                             block.update_lines(render_tool_markdown_lines(body, numbered=(name == "write")))
                             continue
@@ -237,9 +203,7 @@ class ChatMixin:
                             kind="tool",
                             title=title,
                             title_style=_TOOL_ERROR if is_error else _TOOL_TITLE,
-                            expandable=True,
-                            collapsed=False if name == "bash" else True,
-                            pad_bottom=0,
+                            collapsed=name != "bash",
                             content_bg=_USER_BG if name == "bash" else None,
                             pad_left=tool_num_width(name, args, result, is_error) + 1 if name == "read" else None,
                             content_pad_left=0 if name == "read" else None,
@@ -257,12 +221,7 @@ class ChatMixin:
                             summary = model
                             if meta.get("elapsed") is not None:
                                 summary += f" - {fmt_duration(meta['elapsed'])}"
-                            block = self._append_block(
-                                kind="summary",
-                                pad_top=1,
-                                pad_left=3,
-                                pad_right=1,
-                            )
+                            block = self._append_block(kind="summary")
                             block.update(summary)
         finally:
             canvas._end_bulk()

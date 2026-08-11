@@ -190,8 +190,9 @@ def tool_block(name, args, result, is_error, preview=False):
         content = args.get("content", "")
         lines = content.rstrip("\n").split("\n")
         if preview:
-            if len(lines) > _STREAM_PREVIEW_MAX:
-                body = f"( {len(lines)} lines, streaming )\n\n" + "\n".join(lines[-_STREAM_PREVIEW_MAX:])
+            n = args.get("_stream_lines") or len(lines)
+            if n > _STREAM_PREVIEW_MAX:
+                body = f"( {n} lines, streaming )\n\n" + "\n".join(lines[-_STREAM_PREVIEW_MAX:])
             else:
                 body = "\n".join(lines)
             body = f"```text\n{body}"
@@ -221,8 +222,9 @@ def tool_block(name, args, result, is_error, preview=False):
                     num += 1
                     diff.append(f"{num} + {line}")
         if preview:
-            if len(diff) > _STREAM_PREVIEW_MAX:
-                body = f"( {len(diff)} lines, streaming )\n\n" + "```text\n" + "\n".join(diff[-_STREAM_PREVIEW_MAX:])
+            n = args.get("_stream_lines") or len(diff)
+            if n > _STREAM_PREVIEW_MAX:
+                body = f"( {n} lines, streaming )\n\n" + "```text\n" + "\n".join(diff[-_STREAM_PREVIEW_MAX:])
             else:
                 body = "```text\n" + "\n".join(diff)
         else:
