@@ -4,7 +4,7 @@
 </p>
 
 <p align="center">
-  <img src="./assets/logo.png" width="480" alt="xAgent">
+  <img src="./assets/logo.png" width="240" alt="xAgent">
 </p>
 
 
