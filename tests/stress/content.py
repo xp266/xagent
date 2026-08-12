@@ -34,7 +34,7 @@ THINKING_CHUNKS = [
     "Each block keeps its own line cache, but any update invalidates the whole block's strip cache.\n",
     "```bash\nls -la src/ui/tui/\ngrep -n \"_build\" src/ui/tui/canvas.py | head -20\nwc -l src/ui/tui/*.py\n```\n",
     "```json\n{\n  \"provider\": \"mock\",\n  \"model\": \"step-3.7-flash\",\n  \"stream\": true,\n  \"usage\": {\"prompt_tokens\": 1000, \"completion_tokens\": 80},\n  \"flags\": [\"include_usage\", \"stream_options\"]\n}\n```\n",
-    "考虑性能时，最关键的路径是流式渲染：每个 tick 都会重建整个 markdown 输出对象，包含所有行与 span。\n",
+    "When thinking about performance, the hottest path is streaming rendering: every tick rebuilds the whole markdown output object, including every line and span.\n",
     "The `_bump` method triggers `_rebuild_offsets` and a full layout refresh on every update.\n",
     "```typescript\nexport function flushBlock(block: CanvasBlock): void {\n    const width = block.owner?.size.width ?? 80;\n    block.rebuild(width);\n    block.owner?.refresh();\n}\n```\n",
     "```go\nfunc Flush(cur *TurnState) {\n\tif cur.Reply != nil {\n\t\tcur.Reply.Update(cur.Md.Render())\n\t}\n}\n```\n",
@@ -82,8 +82,8 @@ REPLY_CHUNKS = [
     "\n",
     "---\n",
     "\n",
-    "## 中文测试段落\n",
-    "流式渲染是全链路最热的路径：30fps 定时器驱动 `_flush_streaming_content`，每次调用都会重建完整的 markdown `Content` 对象，其中包含所有行文本与 span 元数据，产生大量对象分配与 GC 压力。\n",
+    "## Streaming hot path\n",
+    "Streaming rendering is the hottest path in the whole pipeline: a 30fps timer drives `_flush_streaming_content`, and every call rebuilds the full markdown `Content` object, including all line text and span metadata, causing heavy object allocation and GC pressure.\n",
 ]
 
 def _cycle_blocks(chunks: list[str], target: int) -> str:
@@ -187,8 +187,8 @@ def compact_summary() -> str:
         "- `wc -l src/ui/tui/*.py`",
         "",
         "## User Messages",
-        "- \"帮我看看这个贪吃蛇的运行效果\"",
-        "- \"压缩一下上下文，重点保留渲染管线的优化方案\"",
+        "- \"Let me see how this snake game runs\"",
+        "- \"Compact the context, keeping the rendering pipeline optimization plan\"",
         "",
         "## Next Move",
         "1. Run the stress harness and check `build_avg_ms` and `md_avg_ms`.",

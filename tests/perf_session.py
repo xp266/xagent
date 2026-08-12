@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""真实场景性能基准: 加载 /session 中唯一的会话 json, 测静态渲染 + 滚动消耗。
+"""Real-session performance benchmark: loads the only session json from /session,
+measures static render + scrolling cost.
 
-模拟方式: headless 挂载真实 XAgentTUI, 走真实 _switch_session → _render_messages
-→ ChatCanvas.render_line 渲染管线。报告:
-  1) 会话加载(读盘/估算/全量渲染)
-  2) 静态渲染 (全文档 / 单帧视口)
-  3) 滚动消耗 (缓存热滚动 vs 每帧缓存失效=流式更新最坏情况)
-  4) 60fps tick 各项开销
-  5) 每步持久化 json.dump 全量写盘
-  6) cProfile 归因
-  7) 会话放大 10x/50x 的压力扩展曲线
+How it works: headless mount of a real XAgentTUI, driving the real
+_switch_session -> _render_messages -> ChatCanvas.render_line pipeline. Reports:
+  1) session load (disk read / estimate / full render)
+  2) static render (full document / single viewport frame)
+  3) scroll cost (warm cache scrolling vs per-frame cache invalidation = worst case for streaming)
+  4) per-item cost of the 60fps tick
+  5) per-step persistence (full json.dump to disk)
+  6) cProfile attribution
+  7) stress scaling curve (session x10 / x50)
 """
 import asyncio
 import cProfile
@@ -32,7 +33,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Static
 
 import src.mcp.manager as _mcpman
-_mcpman.McpManager.connect_async = lambda self, servers: None  # 屏蔽 MCP 后台线程干扰
+_mcpman.McpManager.connect_async = lambda self, servers: None  # silence MCP background threads
 
 from src.ui.tui.app import XAgentTUI
 from src.agent.session import get_session_manager, Session
@@ -47,7 +48,7 @@ def us(t: float) -> str:
 
 
 def bench(fn, n=N_RUNS):
-    """返回 (median, all)"""
+    """Return (median, all)"""
     times = []
     last = None
     for _ in range(n):
@@ -71,21 +72,21 @@ def render_viewport(canvas, top, height):
 
 
 async def main() -> None:
-    print(f"=== XAgent 真实会话性能基准  会话: {SID}  终端: {SIZE[0]}x{SIZE[1]} ===")
+    print(f"=== XAgent real-session performance benchmark  session: {SID}  terminal: {SIZE[0]}x{SIZE[1]} ===")
     t0 = time.perf_counter()
     async with XAgentTUI().run_test(size=SIZE) as pilot:
         app = pilot.app
-        print(f"mount 冷启动耗时: {ms(time.perf_counter() - t0)}")
+        print(f"mount cold start: {ms(time.perf_counter() - t0)}")
 
-        # ---------- Phase 0: 纯加载开销 ----------
+        # ---------- Phase 0: pure load cost ----------
         path = os.path.join(os.path.expanduser("~/.local/share/xagent/sessions"), f"{SID}.json")
         b, _, d = bench(lambda: json.load(open(path, encoding="utf-8")))
-        print(f"\n[0] 会话文件读盘+json解析: {ms(b)} (文件 {os.path.getsize(path)}B)")
+        print(f"\n[0] session file disk read + json parse: {ms(b)} (file {os.path.getsize(path)}B)")
         session_file = d
         b, _, _ = bench(lambda: get_session_manager().get(SID))
-        print(f"[0] SessionManager.get() (读盘+对象构造): {ms(b)}")
+        print(f"[0] SessionManager.get() (disk read + object construction): {ms(b)}")
 
-        # ---------- Phase 1: 真实切换会话(分段归因) ----------
+        # ---------- Phase 1: real session switch (per-part attribution) ----------
         from src.agent.compact import estimate_context_usage
 
         def phase_switch():
@@ -110,7 +111,7 @@ async def main() -> None:
             return (t_get, t_est, t_render, t_status, t_focus)
 
         b, _, parts = bench(phase_switch, n=2)
-        print(f"[1] _switch_session 总耗时: {ms(sum(parts))}")
+        print(f"[1] _switch_session total: {ms(sum(parts))}")
         print(f"    ├─ sm.get+estimate: {ms(parts[0] + parts[1])} (estimate≈{est if (est := estimate_context_usage(app._session)) is not None else 0} tokens)")
         print(f"    ├─ _render_messages: {ms(parts[2])}")
         print(f"    ├─ _update_status:   {ms(parts[3])}")
@@ -123,39 +124,39 @@ async def main() -> None:
         total_lines = canvas._total_lines()
         vp_h = max(1, chat.size.height or 24)
         max_scroll = chat.max_scroll_y
-        print(f"[1] 冲刷延迟刷新后: blocks: {len(blocks)}, 总行数: {total_lines}, 可视视口高 {vp_h}, max_scroll_y {max_scroll}")
+        print(f"[1] after deferred refresh: blocks: {len(blocks)}, total_lines: {total_lines}, viewport height {vp_h}, max_scroll_y {max_scroll}")
         hidden_msgs = app._hidden_msgs
-        print(f"    (隐藏消息窗口: msgs={app._win_msgs}, lines={app._win_lines}, hidden={hidden_msgs})")
+        print(f"    (message window: msgs={app._win_msgs}, lines={app._win_lines}, hidden={hidden_msgs})")
 
-        # 布局刷新本身(differ/layout/合成)的一次代价
+        # cost of a single layout refresh (differ/layout/composite)
         def full_frame_flush():
             t0 = time.perf_counter()
             app._canvas().refresh(layout=True)
             return time.perf_counter() - t0
         b, _, _ = bench(full_frame_flush, n=5)
-        print(f"    canvas.refresh(layout=True) 单次调用开销: {us(b)} (实际合成在下一 idle 帧执行)")
+        print(f"    canvas.refresh(layout=True) single call: {us(b)} (actual composite happens on next idle frame)")
 
-        # per-block 明细: 每类 block 行数/条数
+        # per-block breakdown: lines/count per kind
         kinds = {}
         for blk in blocks:
             k = kinds.setdefault(blk.kind, [0, 0])
             k[0] += 1
             k[1] += len(blk._lines)
-        print(f"    blocks 分类(条数/行数): { {k: v for k, v in kinds.items()} }")
+        print(f"    blocks by kind (count/lines): { {k: v for k, v in kinds.items()} }")
 
-        # ---------- Phase 2: 静态全文档渲染 ----------
+        # ---------- Phase 2: static full-document render ----------
         b, _, _ = bench(lambda: render_viewport(canvas, 0, total_lines))
-        print(f"\n[2] 静态渲染-全文档(全部行, 冷strip缓存): {ms(b)} / {total_lines} 行 = {b / total_lines * 1e6:.1f}µs/行 (中位数 n={N_RUNS})")
+        print(f"\n[2] static render - full doc (all lines, cold strip cache): {ms(b)} / {total_lines} lines = {b / total_lines * 1e6:.1f}µs/line (median n={N_RUNS})")
         b, _, _ = bench(lambda: render_viewport(canvas, 0, total_lines))
-        print(f"[2] 静态渲染-全文档(热canvas缓存, 应≈0): {ms(b)}")
+        print(f"[2] static render - full doc (hot canvas cache, should be ≈0): {ms(b)}")
 
         def cold_viewport(top):
-            """模拟无缓存的一帧: 清 strip 缓存后渲染视口"""
+            """Simulate a no-cache frame: clear strip cache then render the viewport"""
             canvas._invalidate_render()
             return render_viewport(canvas, top, vp_h)
 
         b, _, lines_rendered = bench(lambda: cold_viewport(0), n=N_RUNS * 2)
-        # 视口第一屏实际 cell 数(按块顺序累加到 vp_h 行)
+        # actual cell count of the first viewport screen (accumulate block order up to vp_h lines)
         cells = 0
         n_cells_lines = 0
         for blk in blocks:
@@ -166,12 +167,12 @@ async def main() -> None:
                 n_cells_lines += 1
             if n_cells_lines >= vp_h:
                 break
-        print(f"[2] 单帧视口重绘(缓存全失效, 流式更新等价): {ms(b)} / {lines_rendered} 行 = {b / lines_rendered * 1e6:.1f}µs/行")
-        print(f"    └─ 视口帧输出量: ~{cells} cells ≈ {cells * 4 // 1024}KB ANSI(按每cell 4B估) — Windows 逐cell控制台API的额外放大系数在此")
+        print(f"[2] single viewport redraw (full cache miss, streaming-equivalent): {ms(b)} / {lines_rendered} lines = {b / lines_rendered * 1e6:.1f}µs/line")
+        print(f"    └─ viewport frame output: ~{cells} cells ≈ {cells * 4 // 1024}KB ANSI (estimated 4B/cell) - Windows per-cell console API amplification lives here")
 
-        # ---------- Phase 3: 滚动模拟 ----------
-        print("\n[3] 滚动(滑块/翻页)帧消耗 — 从顶滚到底:")
-        # a) 真实滚动: canvas 缓存保持, 只渲染新进入视口的行
+        # ---------- Phase 3: scroll simulation ----------
+        print("\n[3] scroll (trackbar/paging) frame cost - from top to bottom:")
+        # a) real scroll: canvas cache stays, only newly entered lines render
         def scroll_pass_cached():
             rendered = 0
             t0 = time.perf_counter()
@@ -191,10 +192,10 @@ async def main() -> None:
                 top += vp_h
         b, _, (sp_t, sp_n) = bench(scroll_pass_cached)
         frame_worst = max(frames, key=lambda f: f[1])
-        print(f"    缓存热滚动整趟: {ms(b)} ({sp_n} 行触发渲染)")
-        print(f"    每帧均值: {statistics.median(f[1] for f in frames) * 1e6:8.1f}µs   最差帧(top={frame_worst[0]}): {frame_worst[1] * 1e6:8.1f}µs")
+        print(f"    warm-cache full scroll: {ms(b)} ({sp_n} lines rendered)")
+        print(f"    per-frame mean: {statistics.median(f[1] for f in frames) * 1e6:8.1f}µs   worst frame (top={frame_worst[0]}): {frame_worst[1] * 1e6:8.1f}µs")
 
-        # b) 最坏情况: 每帧都失效缓存(模拟流式 delta/转圈动画每帧刷新)
+        # b) worst case: cache invalidated every frame (streaming delta / spinner animation)
         frames_wc = []
         for _ in range(N_RUNS):
             top = 0
@@ -204,31 +205,31 @@ async def main() -> None:
                 n = render_viewport(canvas, top, vp_h)
                 frames_wc.append(time.perf_counter() - t0)
                 top += vp_h
-        print(f"    每帧缓存失效(流式更新等价): 均值 {statistics.median(frames_wc) * 1e6:8.1f}µs/帧  最差 {max(frames_wc) * 1e6:8.1f}µs/帧")
+        print(f"    per-frame cache miss (streaming-equivalent): mean {statistics.median(frames_wc) * 1e6:8.1f}µs/frame  worst {max(frames_wc) * 1e6:8.1f}µs/frame")
         fma = max(frames_wc)
         if fma > 0.016:
-            print(f"    ⚠ 已超过 60fps 帧预算 16.7ms 的 {fma / 0.016:.1f}x")
+            print(f"    ⚠ exceeds the 60fps budget of 16.7ms by {fma / 0.016:.1f}x")
 
-        # ---------- Phase 4: tick 与状态刷新开销 ----------
-        print("\n[4] 60fps tick 各子项开销(每次调用):")
+        # ---------- Phase 4: tick and status refresh cost ----------
+        print("\n[4] 60fps tick per-item cost (per call):")
         b, _, _ = bench(lambda: app._trim_message_window(), n=5)
-        print(f"    _trim_message_window (每帧): {us(b)}, x60fps/帧预算占比 {b / 0.016 * 100:.1f}%")
+        print(f"    _trim_message_window (per frame): {us(b)}, share of 60fps budget {b / 0.016 * 100:.1f}%")
         b, _, _ = bench(lambda: app._canvas()._settle_resize(), n=5)
-        print(f"    _settle_resize (无pending时): {us(b)}")
+        print(f"    _settle_resize (no pending): {us(b)}")
         b, _, _ = bench(lambda: app._trim_canvas_blocks(), n=5)
         print(f"    _trim_canvas_blocks: {us(b)}")
         b, _, _ = bench(lambda: app._info_string(), n=5)
-        print(f"    _info_string (状态栏, 含context limit查询): {us(b)}")
+        print(f"    _info_string (status bar, incl. context limit lookup): {us(b)}")
         b, _, _ = bench(lambda: app._mcp_status_text(), n=5)
         print(f"    _mcp_status_text: {us(b)}")
         b, _, _ = bench(lambda: app._update_status(), n=5)
-        print(f"    _update_status (整组状态栏): {us(b)}")
+        print(f"    _update_status (full status bar group): {us(b)}")
         b, _, _ = bench(lambda: app._refresh_mcp_picker(), n=5)
         print(f"    _refresh_mcp_picker (idle 0.5s): {us(b)}")
         b, _, _ = bench(lambda: app._flush_streaming_content(), n=5)
-        print(f"    _flush_streaming_content (无流时): {us(b)}")
+        print(f"    _flush_streaming_content (no stream): {us(b)}")
 
-        # busy 态: 挂 spinner + wave, 测整帧 tick 组合
+        # busy state: spinner + full-frame tick combination
         cur = app._current = {"steps": 0, "reasoning_text": "", "reply_text": "", "thinking": None, "reply": None, "tools": {}, "tool_buffers": {}, "waiting": None, "retry": None, "last_stream_render": 0.0, "last_tool_render": 0.0, "_thinking_md_len": 0, "_thinking_render": 0.0, "_reply_md_len": 0}
         blk = app._append_block(kind="thinking")
         app._start_spinner(blk, "Thinking")
@@ -236,23 +237,20 @@ async def main() -> None:
         from src.ui.tui.turnrender import new_turn_state
         app._current = new_turn_state()
         app._ensure_thinking()
-        app._waves.append(time.monotonic())
 
         def busy_tick():
             app._spinner_idx += 1
             app._render_spinner(cur["thinking"], "Thinking")
-            app._tick_status_wave()
 
         b, _, _ = bench(busy_tick, n=5)
-        print(f"    busy 帧组合 (spinner重绘+wave动画, 60fps 每帧): {us(b)}")
+        print(f"    busy frame (spinner redraw, per 60fps frame): {us(b)}")
         b, _, _ = bench(lambda: app._tick_animations(), n=5)
-        print(f"    _tick_animations 整帧 (busy, 每帧必跑): {us(b)}")
+        print(f"    _tick_animations full frame (busy, runs every frame): {us(b)}")
         app._stop_all_spinners()
-        app._waves.clear()
         app._busy = False
         app._current = None
 
-        # ---------- Phase 5: 持久化 ----------
+        # ---------- Phase 5: persistence ----------
         tmp = "/tmp/opencode/persist_bench.json"
         os.makedirs("/tmp/opencode", exist_ok=True)
         def persist():
@@ -261,11 +259,11 @@ async def main() -> None:
                 json.dump(app._session.to_dict(), f, ensure_ascii=False, indent=2)
             os.replace(tmp2, tmp)
         b, _, _ = bench(persist, n=10)
-        print(f"\n[5] 每步持久化(全量 json.dump indent=2 + 原子替换, 真实会话大小): {ms(b)}")
-        print(f"    (此操作在事件循环上同步执行, 每 assistant 步/每 tool 步各一次)")
+        print(f"\n[5] per-step persistence (full json.dump indent=2 + atomic replace, real session size): {ms(b)}")
+        print(f"    (runs synchronously on the event loop, once per assistant step / tool step)")
 
-        # ---------- Phase 6: 消息级渲染归因 ----------
-        print("\n[6] cProfile 归因 (载入+全文档渲染+缓存失效滚动一趟+持久化):")
+        # ---------- Phase 6: message-level render attribution ----------
+        print("\n[6] cProfile attribution (load + full-doc render + cache-miss scroll + persistence):")
 
         def profiled_run():
             app._switch_session(SID)
@@ -287,8 +285,8 @@ async def main() -> None:
             if line.strip():
                 print("    " + line)
 
-        # ---------- Phase 7: 压力扩展 (会话 ×10 / ×50, 解除消息窗口上限) ----------
-        print("\n[7] 压力扩展 — 把该会话消息重复 n 次(模拟长会话, 解除100条窗口上限):")
+        # ---------- Phase 7: stress scaling (session x10 / x50, message window lifted) ----------
+        print("\n[7] stress scaling - repeat session messages n times (long-session simulation, 100-msg window lifted):")
         renderable = [m for m in session_file["messages"] if m.get("role") != "system"]
         prev_win = (app._win_msgs, app._win_lines)
         app._win_msgs = 10 ** 9
@@ -318,9 +316,9 @@ async def main() -> None:
                     wc_frames.append(time.perf_counter() - t0)
                     top += min(vp_h, tl2 - top)
                 wf_st, wf_worst = statistics.median(wc_frames), max(wc_frames)
-                print(f"    ×{factor}: 消息{factor * len(renderable)}条 → 渲染后 {len(canvas2._blocks)} blocks/{tl2} 行")
-                print(f"      全量重渲染 _render_messages: {ms(rt)}   全文档渲染: {ms(b2)}")
-                print(f"      流式最坏帧(失效缓存逐帧滚): 中位 {wf_st * 1e6:8.1f}µs  最差 {wf_worst * 1e6:8.1f}µs {'⚠超帧预算' if wf_worst > 0.016 else ''}")
+                print(f"    x{factor}: {factor * len(renderable)} messages -> {len(canvas2._blocks)} blocks/{tl2} lines after render")
+                print(f"      full _render_messages: {ms(rt)}   full-doc render: {ms(b2)}")
+                print(f"      streaming worst frame (cache-miss scroll): median {wf_st * 1e6:8.1f}µs  worst {wf_worst * 1e6:8.1f}µs {'⚠over budget' if wf_worst > 0.016 else ''}")
         finally:
             app._session = prev_app_session
             app._win_msgs, app._win_lines = prev_win

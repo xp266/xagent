@@ -50,11 +50,11 @@ def _seed_session() -> str:
     sm = get_session_manager()
     s = sm.create(name="Flow Seed", path=_ROOT, persist=True)
     s.messages = [
-        {"role": "user", "content": "你好"},
+        {"role": "user", "content": "Hello"},
         {
             "role": "assistant",
             "content": None,
-            "reasoning_content": "思考一下怎么做",
+            "reasoning_content": "Let me think about how to do this",
             "tool_calls": [
                 {
                     "id": "tc_flow_1",
@@ -72,7 +72,7 @@ def _seed_session() -> str:
         },
         {
             "role": "assistant",
-            "content": "读完了",
+            "content": "Done reading",
             "_meta": {"model": "step-3.7-flash", "elapsed": 2.5, "prompt_tokens": 100},
         },
     ]

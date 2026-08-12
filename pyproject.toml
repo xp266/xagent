@@ -1,9 +1,22 @@
 [project]
 name = "xagent"
-version = "0.2.0"
+version = "0.3.0"
 description = "Interactive AI coding agent with a terminal TUI"
-license = { text = "MIT" }
+readme = "README.en.md"
+license = "MIT"
 requires-python = ">=3.11"
+authors = [{ name = "xagent contributors" }]
+keywords = ["ai", "agent", "coding", "terminal", "tui"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development",
+]
 dependencies = [
     "openai",
     "httpx",
@@ -19,6 +32,11 @@ image = ["pillow"]
 
 [project.scripts]
 xagent = "src.main:main"
+
+[project.urls]
+Homepage = "https://github.com/xp266/xagent"
+Repository = "https://github.com/xp266/xagent"
+Issues = "https://github.com/xp266/xagent/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]

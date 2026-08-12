@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""被渲染对象的全部属性清单。
+"""Full attribute inventory of rendered objects.
 
-挂载真实 TUI, 加载真实会话, 对每个类型的渲染块(block)解剖其属性树:
-  CanvasBlock -> Content(行) -> Span(段) -> rich Style
-  CanvasBlock -> Strip -> Segment(段) -> rich Style
-并输出 widget 级样式(CSS 解析后的 textual Style/visual_style)。
+Mounts a real TUI, loads a real session, and dissects the attribute tree of
+every kind of render block:
+  CanvasBlock -> Content(line) -> Span(segment) -> rich Style
+  CanvasBlock -> Strip -> Segment(segment) -> rich Style
+Also dumps widget-level styles (CSS-resolved textual Style/visual_style).
 """
 import asyncio
 import inspect
@@ -28,7 +29,7 @@ BLOCK_KIND_CAPTURE = ("user", "thinking", "reply", "tool", "tool-block", "summar
 
 
 def gather_attrs(obj) -> dict:
-    """返回该对象的属性清单: {(name, value, kind)}"""
+    """Return the attribute inventory of the object: {(name, value, kind)}"""
     out = {}
     for name in dir(obj):
         if name.startswith("__"):
@@ -51,10 +52,10 @@ def short(v, n=60) -> str:
 
 
 def dump_content(content: Content, indent: str = "    ") -> None:
-    print(f"{indent}Content(实例) 类型={type(content).__name__}")
-    print(f"{indent}  ├─ 实例字段 (vars): { {k: short(v) for k, v in vars(content).items()} }")
-    print(f"{indent}  ├─ 公开属性: plain=...({len(content.plain)}ch, cell_length={content.cell_length})")
-    print(f"{indent}  ├─ .spans: {len(content.spans)} 个 (span.style 为 CSS 字符串)")
+    print(f"{indent}Content(instance) type={type(content).__name__}")
+    print(f"{indent}  ├─ instance fields (vars): { {k: short(v) for k, v in vars(content).items()} }")
+    print(f"{indent}  ├─ public attrs: plain=...({len(content.plain)}ch, cell_length={content.cell_length})")
+    print(f"{indent}  ├─ .spans: {len(content.spans)} (span.style is a CSS string)")
     extra = {}
     for name in ("style", "em_width", "half_em", "is_blank", "cell_length", "strip_control_codes"):
         if hasattr(content, name) and name != "plain":
@@ -63,11 +64,11 @@ def dump_content(content: Content, indent: str = "    ") -> None:
             except Exception:
                 pass
     if extra:
-        print(f"{indent}  ├─ 其他属性: { {k: short(v) for k, v in extra.items()} }")
+        print(f"{indent}  ├─ other attrs: { {k: short(v) for k, v in extra.items()} }")
     for i, sp in enumerate(content.spans[:3]):
         dump_span(sp, f"{indent}  ├─ spans[{i}]")
     if content.spans:
-        print(f"{indent}  └─ (span 共 {len(content.spans)} 个, 每行展示前 3 个)")
+        print(f"{indent}  └─ (total {len(content.spans)} spans, showing first 3 per line)")
 
 
 def dump_span(sp: Span, indent: str = "    ") -> None:
@@ -77,9 +78,9 @@ def dump_span(sp: Span, indent: str = "    ") -> None:
 
 def dump_style(st, indent: str = "    ") -> None:
     if st is None or isinstance(st, str):
-        print(f"{indent} style={short(st)} (字符串/CSS)")
+        print(f"{indent} style={short(st)} (string/CSS)")
         return
-    print(f"{indent} Style(rich) 类型={type(st).__name__}")
+    print(f"{indent} Style(rich) type={type(st).__name__}")
     slots = getattr(st, "__slots__", None)
     if slots:
         print(f"{indent}  ├─ __slots__: {list(slots)}")
@@ -88,9 +89,9 @@ def dump_style(st, indent: str = "    ") -> None:
             try:
                 print(f"{indent}  ├─ .{name} = {short(getattr(st, name))}")
             except Exception as e:
-                print(f"{indent}  ├─ .{name} (读取异常: {e})")
+                print(f"{indent}  ├─ .{name} (read error: {e})")
         else:
-            print(f"{indent}  ├─ .{name} (无此属性)")
+            print(f"{indent}  ├─ .{name} (no such attribute)")
     try:
         print(f"{indent}  └─ str() = {st!r}")
     except Exception:
@@ -98,7 +99,7 @@ def dump_style(st, indent: str = "    ") -> None:
 
 
 def dump_strip(strip: Strip, indent: str = "    ") -> None:
-    print(f"{indent}Strip 类型={type(strip).__name__}")
+    print(f"{indent}Strip type={type(strip).__name__}")
     slots = getattr(strip, "__slots__", None)
     if slots:
         print(f"{indent}  ├─ __slots__: {list(slots)}")
@@ -113,7 +114,7 @@ def dump_strip(strip: Strip, indent: str = "    ") -> None:
                 print(f"{indent}  ├─ .{name} = {short(getattr(strip, name))}")
             except Exception:
                 pass
-    print(f"{indent}  └─ segments: {len(strip._segments)} 个")
+    print(f"{indent}  └─ segments: {len(strip._segments)}")
     for i, seg in enumerate(strip._segments[:3]):
         dump_segment(seg, f"{indent}      ├─ segments[{i}]")
 
@@ -126,7 +127,7 @@ def dump_segment(seg: Segment, indent: str = "    ") -> None:
 
 
 def collect_block_line_samples(block, canvas):
-    """取块内 2 条有代表性的行 (第一条非空白行 + 最长非空白行)"""
+    """Take 2 representative lines from the block (first non-blank + longest non-blank)"""
     if not block._lines:
         return []
     lines = [l for l in block._lines if l.plain.strip()]
@@ -148,10 +149,10 @@ async def main() -> None:
         canvas = app._canvas()
         blocks = canvas._blocks
 
-        print(f"=== 被渲染对象属性全清单  会话 {SID}  blocks={len(blocks)} 总行数={canvas._total_lines()} ===")
+        print(f"=== Rendered object attribute inventory  session {SID}  blocks={len(blocks)} total_lines={canvas._total_lines()} ===")
 
-        # ---- block 层 ----
-        print("\n【1】CanvasBlock(渲染块) 全部属性 (来自 __init__ + 运行时)")
+        # ---- block layer ----
+        print("\n[1] CanvasBlock (render block) all attributes (from __init__ + runtime)")
         seen = set()
         for blk in blocks:
             if blk.kind in seen:
@@ -169,10 +170,10 @@ async def main() -> None:
         if sample_block is not None:
             for name, val in gather_attrs(sample_block).items():
                 print(f"    {name:24s} = {short(val, 90)}")
-            print(f"    (以 kind={sample_block.kind} 块为例; 各 kind 差异仅在初始化参数: BLOCK_SPECS, 见 blocks.py)")
+            print(f"    (using kind={sample_block.kind} block as sample; kinds differ only in init params: BLOCK_SPECS, see blocks.py)")
 
-        # ---- 每种 kind 的行数/span 统计 ----
-        print("\n【2】各类块的行/span 统计")
+        # ---- line/span statistics per kind ----
+        print("\n[2] Line/span statistics per block kind")
         stats = {}
         for blk in blocks:
             st = stats.setdefault(blk.kind, [0, 0, 0, 0])
@@ -182,10 +183,10 @@ async def main() -> None:
                 st[2] += len(ln.spans)
                 st[3] = max(st[3], len(ln.spans))
         for k, v in stats.items():
-            print(f"    {k:14s} 块数={v[0]:3d} 行数={v[1]:5d} span总数={v[2]:6d} 单行最多span={v[3]}")
+            print(f"    {k:14s} blocks={v[0]:3d} lines={v[1]:5d} total_spans={v[2]:6d} max_spans_per_line={v[3]}")
 
-        # ---- Content / Span / Style 深解剖(每种 kind 取样本) ----
-        print("\n【3】行数据 Content → Span → rich Style 属性深解剖")
+        # ---- Content / Span / Style deep dissection (sample per kind) ----
+        print("\n[3] Line data Content → Span → rich Style deep dissection")
         done_kinds = set()
         for blk in blocks:
             kind = blk.kind
@@ -194,11 +195,11 @@ async def main() -> None:
             done_kinds.add(kind)
             print(f"\n  == kind={kind}  (title={short(blk.title)}) ==")
             for i, line in enumerate(collect_block_line_samples(blk, canvas)):
-                print(f"  -- 样例行[{i}] (cell_length={line.cell_length}, spans={len(line.spans)}) --")
+                print(f"  -- sample line[{i}] (cell_length={line.cell_length}, spans={len(line.spans)}) --")
                 dump_content(line, "     ")
 
-        # ---- Strip / Segment 深解剖(把首屏行真正渲染成 Strip) ----
-        print("\n【4】渲染结果 Strip → Segment → rich Style 属性深解剖")
+        # ---- Strip / Segment deep dissection (render first-screen lines to real strips) ----
+        print("\n[4] Rendered output Strip → Segment → rich Style deep dissection")
         done_kinds = set()
         total_lines = canvas._total_lines()
         for y in range(min(total_lines, 64)):
@@ -213,8 +214,8 @@ async def main() -> None:
             print(f"\n  == y={y} kind={kind} by={by} ==")
             dump_strip(strip, "     ")
 
-        # ---- widget 级样式 ----
-        print("\n【5】widget 级样式 (CSS 解析后的值)")
+        # ---- widget-level styles ----
+        print("\n[5] Widget-level styles (CSS-resolved values)")
         chat = app._chat()
         for w, label in ((chat, "chat-box(VerticalScroll)"), (canvas, "chat-canvas(Static)"), (app._input(), "input(TextArea)"), (app.query_one("#status", object), "status(Static)")):
             print(f"\n  == {label} ==")
@@ -222,11 +223,11 @@ async def main() -> None:
                 vs = w.visual_style
                 print(f"    visual_style: {vs}")
             except Exception as e:
-                print(f"    visual_style: (无 {e})")
+                print(f"    visual_style: (missing {e})")
             try:
                 sv = w.styles
                 names = [n for n in dir(sv) if not n.startswith("_")]
-                print(f"    styles 对象 {type(sv).__name__}, 可读属性 {len(names)} 个: {names[:40]}{'…' if len(names) > 40 else ''}")
+                print(f"    styles object {type(sv).__name__}, readable attrs {len(names)}: {names[:40]}{'…' if len(names) > 40 else ''}")
                 for n in ("background", "color", "padding", "border", "scrollbar_size", "text_style", "height", "width", "visibility", "display"):
                     if hasattr(sv, n):
                         try:
@@ -236,10 +237,10 @@ async def main() -> None:
             except Exception as e:
                 print(f"    styles: ({e})")
 
-        # ---- 交互渲染附属物 ----
-        print("\n【6】其他参与渲染/刷新的状态属性")
-        print(f"    canvas._strip_cache: {len(canvas._strip_cache)} 条 (key=(gen,y,width)), gen={canvas._render_gen}")
-        print(f"    canvas._offsets: {len(canvas._offsets)} 条")
+        # ---- interactive render side state ----
+        print("\n[6] Other state attributes involved in render/refresh")
+        print(f"    canvas._strip_cache: {len(canvas._strip_cache)} entries (key=(gen,y,width)), gen={canvas._render_gen}")
+        print(f"    canvas._offsets: {len(canvas._offsets)} entries")
         print(f"    canvas._bulk={canvas._bulk} _built_width={canvas._built_width} _pending_width={canvas._pending_width}")
         print(f"    app._win_msgs={app._win_msgs} _win_lines={app._win_lines} _hidden_msgs={app._hidden_msgs} _busy={app._busy}")
         print(f"    app.spinners: { {k: (v[0].kind, v[1]) for k, v in app._spinners.items()} }")
