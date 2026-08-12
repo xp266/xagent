@@ -1,4 +1,6 @@
-![xAgent](./assets/logo.png)
+<p align="center">
+  <img src="./assets/logo.png" alt="xAgent">
+</p>
 
 A simple terminal AI coding agent (TUI) built with Python.
 The project structure is very simple — you can customize the agent by modifying the prompts or adding tools.

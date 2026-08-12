@@ -1,4 +1,6 @@
-![xAgent](./assets/logo.png)
+<p align="center">
+  <img src="./assets/logo.png" alt="xAgent">
+</p>
 
 使用 python 构建的一个简易终端 AI 编程代理(TUI)
 项目结构非常简单，通过修改提示词或添加工具可自定义打造 Agent。
