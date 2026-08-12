@@ -2,10 +2,17 @@
   <img src="./assets/logo.png" alt="xAgent">
 </p>
 
+<p align="center">
+  <a href="./README.md"><img src="https://img.shields.io/badge/English-666666?style=for-the-badge" alt="English"></a>
+  <a href="./README.zh.md"><img src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-0865c2?style=for-the-badge" alt="简体中文"></a>
+</p>
+
 使用 python 构建的一个简易终端 AI 编程代理(TUI)
 项目结构非常简单，通过修改提示词或添加工具可自定义打造 Agent。
 
 TUI 基于 [Textual](https://textual.textualize.io/) 构建
+此项目对 TUI 的渲染进行了多轮优化，提高了兼容性并优化了卡顿问题。
+
 模型数据来源 [models.dev](https://models.dev)
 
 ## 快速启动
@@ -50,8 +57,11 @@ xagent/
 ├── config.json            # 配置文件
 ├── models_catalog.json    # 模型数据
 ├── sessions_index.json    # 会话索引
+├── AGENTS.md              # 全局 md 文档(默认为空)
 └── sessions/              # 会话内容(JSON)
 ```
+
+项目级配置(`AGENTS.md`)：在启动时会自动加载项目下的 `AGENTS.md`。
 
 MCP 服务器配置示例(`config.json`)：
 ```
@@ -66,3 +76,4 @@ MCP 服务器配置示例(`config.json`)：
   }
 ```
 > 除 HTTP(`url` + `headers`)外,同样支持 stdio(`command` + `args` + `env`)。
+
