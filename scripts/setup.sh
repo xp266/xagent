@@ -22,6 +22,6 @@ else
 fi
 
 echo "==> prefetching model catalog"
-uv run --frozen python -c "from src.utils.catalog import fetch_catalog_sync, load_catalog; ok = fetch_catalog_sync(); print(f'OK, {len(load_catalog())} providers' if ok else 'catalog fetch failed')"
+uv run --frozen python scripts/prefetch_catalog.py
 
 echo "==> done"
