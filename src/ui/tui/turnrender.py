@@ -451,6 +451,15 @@ class TurnRenderMixin:
             self._flush_streaming_content(force=True)
             self._stop_all_spinners()
             self._ensure_waiting()
+            usage = (event.data or {}).get("usage") or {}
+            pt = usage.get("prompt_tokens", 0)
+            if pt and pt > 0:
+                self._ctx_usage_tokens = pt
+            else:
+                from src.agent.compact import estimate_context_usage
+
+                self._ctx_usage_tokens = estimate_context_usage(self._session)
+            self._update_status()
         elif t == "step-finish":
             usage = event.data.get("usage", {}) or {}
             cur["steps"] += 1
@@ -496,8 +505,9 @@ class TurnRenderMixin:
                 if block is not None:
                     block.update(md.render())
             if block is not None:
-                self._stop_spinner(block, "Compression complete")
-                block.set_title("Compression complete")
+                title = "Compression complete (interrupted)" if (event.data or {}).get("interrupted") else "Compression complete"
+                self._stop_spinner(block, title)
+                block.set_title(title)
             self._scroll_end()
         elif t == "compact-error":
             block = cur.get("compact")
@@ -509,14 +519,18 @@ class TurnRenderMixin:
 
     async def _turn_worker(self, text: str) -> None:
         from src.agent.cancel import set_turn_task
+        from src.agent.turn import close_turn_stream
+        gen = run_session_turn(self._session, text)
         start = time.monotonic()
         try:
-            async for event in run_session_turn(self._session, text):
+            async for event in gen:
                 if self._exit or self._closing:
+                    await close_turn_stream(gen)
                     break
                 self._handle_event(event)
         except asyncio.CancelledError:
             if self._exit or self._closing:
+                await close_turn_stream(gen)
                 raise
             cur = self._current
             if cur is not None:
@@ -527,9 +541,11 @@ class TurnRenderMixin:
                     block = self._append_block(kind="summary")
                     block.update("Turn interrupted by user")
                     self._scroll_end()
+            await close_turn_stream(gen)
         except Exception as e:
             if self._exit or self._closing:
                 return
+            await close_turn_stream(gen)
             self._log_error()
             self._append_error(f"{type(e).__name__}: {e}")
         finally:

@@ -15,6 +15,7 @@ TAIL_MIN = 2000
 TAIL_MAX = 8000
 
 MAX_SUMMARY_CHARS = 16_384
+MIN_INTERRUPTED_SUMMARY_CHARS = 40
 
 _TRUNC_REASONING = 1000
 _TRUNC_TOOL_ARGS = 1500
@@ -72,19 +73,27 @@ def estimate_context_usage(session: Session) -> int:
             ts = meta.get("tail_start")
             if isinstance(ts, int) and 0 <= ts < i:
                 tail_start = ts
-    start = tail_start if tail_start is not None else (last + 1 if last is not None else 0)
-    for msg in reversed(msgs[start:]):
+    if last is not None:
+        for msg in reversed(msgs[last + 1:]):
+            if msg.get("role") != "assistant":
+                continue
+            pt = (msg.get("_meta") or {}).get("prompt_tokens") or 0
+            if pt > 0:
+                return pt
+            break
+        pt = (msgs[last].get("_meta") or {}).get("prompt_tokens") or 0
+        if pt > 0:
+            return pt
+        start = tail_start if tail_start is not None else last + 1
+        return _chars_estimate(msgs[start:])
+    for msg in reversed(msgs):
         if msg.get("role") != "assistant":
             continue
         pt = (msg.get("_meta") or {}).get("prompt_tokens") or 0
         if pt > 0:
             return pt
         break
-    if last is not None:
-        pt = (msgs[last].get("_meta") or {}).get("prompt_tokens") or 0
-        if pt > 0:
-            return pt
-    return _chars_estimate(msgs[start:])
+    return _chars_estimate(msgs)
 
 
 def should_compact(usage: int, limit: int, threshold: float) -> bool:
@@ -253,6 +262,7 @@ async def compact_session_stream(session: Session, focus: str = "") -> AsyncIter
     ]
 
     buf: list[str] = []
+    interrupted = None
     try:
         async for event in provider.astream(summary_messages, None):
             if event.type == "provider-error":
@@ -271,14 +281,16 @@ async def compact_session_stream(session: Session, focus: str = "") -> AsyncIter
             if event.type == "text-delta" and event.data:
                 buf.append(event.data)
                 yield StreamEvent(type="compact-delta", data=event.data)
-    except asyncio.CancelledError:
-        raise
+    except asyncio.CancelledError as exc:
+        interrupted = exc
     except Exception:
         yield StreamEvent(type="compact-error")
         return
 
     summary = _extract_summary("".join(buf))
-    if not summary:
+    if not summary or (interrupted is not None and len(summary) < MIN_INTERRUPTED_SUMMARY_CHARS):
+        if interrupted is not None:
+            raise interrupted
         yield StreamEvent(type="compact-error")
         return
 
@@ -287,22 +299,18 @@ async def compact_session_stream(session: Session, focus: str = "") -> AsyncIter
         "content": f"{_WRAP_OPEN}\n{summary}\n{_WRAP_CLOSE}",
         "_meta": {"compacted": True},
     }
-    prev_prompt = 0
-    for m in reversed(messages):
-        if m.get("role") != "assistant":
-            continue
-        prev_prompt = (m.get("_meta") or {}).get("prompt_tokens") or 0
-        break
     tail_start = len(messages) - len(tail)
     tail_msgs = messages[tail_start:]
     summary_msg["_meta"]["tail_start"] = tail_start
-    summary_msg["_meta"]["prompt_tokens"] = prev_prompt or _chars_estimate([summary_msg] + tail_msgs)
+    summary_msg["_meta"]["prompt_tokens"] = _chars_estimate([summary_msg] + tail_msgs)
 
     session.messages = messages + [summary_msg]
     session._msgs = None
     session.sync_messages()
     get_session_manager().save(session)
-    yield StreamEvent(type="compacted", data={"removed": len(head)})
+    yield StreamEvent(type="compacted", data={"removed": len(head), "interrupted": interrupted is not None})
+    if interrupted is not None:
+        raise interrupted
 
 
 async def compact_session(session: Session, focus: str = "") -> dict | None:

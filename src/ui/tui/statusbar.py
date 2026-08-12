@@ -28,9 +28,12 @@ class StatusMixin:
     def _context_pct(self, limit: int) -> float:
         if self._ctx_usage_tokens > 0 and limit > 0:
             return min(100.0, self._ctx_usage_tokens / limit * 100)
-        total = self._session.token_usage.total_tokens
-        if limit > 0 and total > 0:
-            return min(100.0, total / limit * 100)
+        if limit > 0:
+            from src.agent.compact import estimate_context_usage
+
+            usage = estimate_context_usage(self._session)
+            if usage > 0:
+                return min(100.0, usage / limit * 100)
         return 0.0
 
     def _info_string(self) -> str:

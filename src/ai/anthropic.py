@@ -269,7 +269,12 @@ async def _stream_anthropic_events(resp: httpx.Response) -> AsyncIterator[Stream
             step_started = True
             usage = payload.get("message", {}).get("usage", {})
             input_tokens = usage.get("input_tokens", 0)
-            yield StreamEvent(type="step-start")
+            start_usage = TokenUsage(
+                prompt_tokens=input_tokens,
+                completion_tokens=0,
+                total_tokens=input_tokens,
+            )
+            yield StreamEvent(type="step-start", data={"usage": start_usage.model_dump()})
             continue
 
         if name == "content_block_start":

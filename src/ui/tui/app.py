@@ -52,6 +52,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._last_spinner_time = 0.0
         self._spinners = {}
         self._idle_tick_time = 0.0
+        self._busy_tick_time = 0.0
         self._render_cache: dict = {}
         self._add_model_provider_flow = False
         self._pending_model_provider = None
@@ -147,19 +148,28 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
     async def _compact_worker(self, focus: str) -> None:
         from src.agent.cancel import set_turn_task
         from src.agent.compact import compact_session_stream
+        from src.agent.turn import close_turn_stream
 
+        gen = compact_session_stream(self._session, focus=focus)
+        saved = False
         try:
-            async for event in compact_session_stream(self._session, focus=focus):
+            async for event in gen:
                 if self._exit or self._closing:
+                    await close_turn_stream(gen)
                     break
+                if event.type == "compacted":
+                    saved = True
                 self._handle_event(event)
             self._update_status()
         except asyncio.CancelledError:
             if self._exit or self._closing:
+                await close_turn_stream(gen)
                 raise
-            block = self._append_block(kind="summary")
-            block.update("Compaction interrupted")
-            self._scroll_end()
+            if not saved:
+                block = self._append_block(kind="summary")
+                block.update("Compaction interrupted")
+                self._scroll_end()
+            await close_turn_stream(gen)
         except Exception as e:
             if self._exit or self._closing:
                 return
@@ -286,6 +296,10 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
             pass
         if self._busy:
             self._tick_spinners()
+            now = time.monotonic()
+            if now - self._busy_tick_time >= 0.5:
+                self._busy_tick_time = now
+                self._update_status()
         else:
             now = time.monotonic()
             if now - self._idle_tick_time >= 0.5:

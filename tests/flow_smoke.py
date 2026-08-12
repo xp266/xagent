@@ -175,6 +175,52 @@ async def main() -> int:
         await _wait_busy(app)
         await _pause(pilot, app, 3)
 
+        os.environ["XAGENT_RATE_MS"] = "150"
+        _submit(app, "reply")
+        t0 = time.monotonic()
+        while not app._busy and time.monotonic() - t0 < 5:
+            await asyncio.sleep(0.02)
+        assert app._busy, "reply turn should be streaming"
+        await asyncio.sleep(1.0)
+        app._input().post_message(ChatInput.InterruptConfirmed())
+        await _wait_busy(app)
+        await _pause(pilot, app, 3)
+        assistant_msgs = [
+            m for m in app._session.messages
+            if m.get("role") == "assistant" and m.get("content")
+        ]
+        assert assistant_msgs, "interrupted partial reply should be stored"
+        partial = assistant_msgs[-1].get("content") or ""
+        assert 0 < len(partial) < 4000, f"partial reply should be short, got {len(partial)} chars"
+
+        _submit(app, "thinking")
+        t0 = time.monotonic()
+        while not app._busy and time.monotonic() - t0 < 5:
+            await asyncio.sleep(0.02)
+        assert app._busy, "thinking turn should be streaming"
+        await asyncio.sleep(1.0)
+        app._input().post_message(ChatInput.InterruptConfirmed())
+        await _wait_busy(app)
+        await _pause(pilot, app, 3)
+        os.environ["XAGENT_RATE_MS"] = "0"
+        thinking_msgs = [
+            m for m in app._session.messages
+            if m.get("role") == "assistant" and (m.get("reasoning_content") or "")
+        ]
+        assert thinking_msgs, "interrupted thinking should be stored"
+        last_think = thinking_msgs[-1]
+        assert not last_think.get("content"), "thinking-only message should have no content"
+        think_len = len(last_think.get("reasoning_content") or "")
+        assert 0 < think_len < 4000, f"partial thinking should be short, got {think_len} chars"
+        api_assistant = [
+            m for m in app._session.msgs.get_api_messages()
+            if m.get("role") == "assistant"
+        ]
+        assert not any(
+            m.get("reasoning_content") and not m.get("content") and not m.get("tool_calls")
+            for m in api_assistant
+        ), "reasoning-only messages must not be replayed to the API"
+
         _submit(app, "/exit")
         await asyncio.sleep(0.3)
 

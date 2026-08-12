@@ -38,7 +38,8 @@ def _messages_to_api(messages: list, *, include_meta: bool = False) -> list[dict
         if include_meta:
             api = _sanitize_for_storage(api)
         if api.get("role") == "assistant" and not api.get("content") and not api.get("tool_calls"):
-            continue
+            if not include_meta or not api.get("reasoning_content"):
+                continue
         result.append(api)
     return result
 
@@ -59,7 +60,7 @@ class MessageManager:
         self._messages.append(UserMessage(content=content))
 
     def add_assistant(self, response: LLMResponse) -> None:
-        if not response.content and not response.tool_calls:
+        if not response.content and not response.tool_calls and not response.reasoning:
             return
         tool_calls = []
         for tool_call in response.tool_calls:

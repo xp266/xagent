@@ -120,7 +120,7 @@ def _commit_response(session: Session, response: LLMResponse, tool_results: list
         executed = {tr["id"] for tr in tool_results}
         for tc in response.tool_calls:
             if tc["id"] not in executed:
-                session.msgs.add_tool(tc["id"], INTERRUPTED_TOOL_RESULT)
+                session.msgs.add_tool(tc["id"], INTERRUPTED_TOOL_RESULT, is_error=True)
 
 
 _PERSIST_INTERVAL = 0.5
@@ -193,6 +193,13 @@ async def _compact_if_needed(session: Session, threshold: float, usage_override:
         yield StreamEvent(type="compact-error")
 
 
+async def close_turn_stream(gen) -> None:
+    try:
+        await gen.athrow(asyncio.CancelledError())
+    except (asyncio.CancelledError, GeneratorExit, StopAsyncIteration, RuntimeError):
+        pass
+
+
 async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[StreamEvent]:
     async for ev in _compact_if_needed(session, USER_THRESHOLD):
         yield ev
@@ -201,6 +208,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
 
     cancelled = False
     retry_count = 0
+    done = False
 
     provider = session.provider
     response = LLMResponse()
@@ -275,6 +283,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                     if tool_calls_pending or tool_results:
                         _fill_tool_calls(response, tool_calls_pending)
                         _commit_response(session, response, tool_results, cancelled=False)
+                        committed = True
                         for tr in tool_results:
                             session.msgs.add_tool(
                                 tr["id"],
@@ -303,6 +312,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                         "code": getattr(e, "status_code", None) or 0,
                     }
                     yield StreamEvent(type="provider-error", data=err_data)
+                    done = True
                     break
 
             if cancelled:
@@ -312,6 +322,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
             _commit_response(session, response, tool_results, cancelled=False)
             committed = True
             retry_count = 0
+            _attach_turn_meta(session, provider.model, turn_usage, last_prompt_tokens, time.monotonic() - start)
             for tr in tool_results:
                 session.msgs.add_tool(
                     tr["id"],
@@ -327,6 +338,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                     yield ev
 
             if response.finish_reason != "tool_calls":
+                done = True
                 break
     finally:
         try:
@@ -336,7 +348,7 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
         except Exception:
             pass
 
-        if cancelled and not committed:
+        if not done and not committed:
             _fill_tool_calls(response, tool_calls_pending)
             _commit_response(session, response, tool_results, cancelled=True)
             for tr in tool_results:
@@ -352,5 +364,5 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
         await _flush_persist_pending()
         await _persist(session, force=True)
 
-        if cancelled:
+        if cancelled or not done:
             session.reset_provider()
