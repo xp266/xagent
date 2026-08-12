@@ -17,4 +17,4 @@ jobs:
         run: uv sync --frozen
 
       - name: Headless flow smoke test
-        run: python tests/flow_smoke.py
+        run: uv run python tests/flow_smoke.py
