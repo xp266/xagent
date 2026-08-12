@@ -1,13 +1,15 @@
 <p align="center">
-  <img src="./assets/logo.png" alt="xAgent">
-</p>
-
-<p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/English-0865c2?style=for-the-badge" alt="English"></a>
   <a href="./README.zh.md"><img src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-666666?style=for-the-badge" alt="简体中文"></a>
 </p>
 
+<p align="center">
+  <img src="./assets/logo.png" width="480" alt="xAgent">
+</p>
+
+
 A simple terminal AI coding agent (TUI) built with Python.
+
 The project structure is very simple — you can customize the agent by modifying the prompts or adding tools.
 
 TUI built on [Textual](https://textual.textualize.io/)

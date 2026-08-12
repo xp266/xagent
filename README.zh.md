@@ -1,13 +1,15 @@
 <p align="center">
-  <img src="./assets/logo.png" alt="xAgent">
-</p>
-
-<p align="center">
   <a href="./README.md"><img src="https://img.shields.io/badge/English-666666?style=for-the-badge" alt="English"></a>
   <a href="./README.zh.md"><img src="https://img.shields.io/badge/%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-0865c2?style=for-the-badge" alt="简体中文"></a>
 </p>
 
+<p align="center">
+  <img src="./assets/logo.png" width="480" alt="xAgent">
+</p>
+
+
 使用 python 构建的一个简易终端 AI 编程代理(TUI)
+
 项目结构非常简单，通过修改提示词或添加工具可自定义打造 Agent。
 
 TUI 基于 [Textual](https://textual.textualize.io/) 构建
