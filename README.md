@@ -6,6 +6,8 @@ A simple terminal AI coding agent (TUI) built with Python.
 The project structure is very simple — you can customize the agent by modifying the prompts or adding tools.
 
 TUI built on [Textual](https://textual.textualize.io/)
+The TUI rendering has been optimized over multiple rounds to improve compatibility and reduce stutter.
+
 Model data from [models.dev](https://models.dev)
 
 ## Quick start
@@ -50,8 +52,11 @@ xagent/
 ├── config.json            # config file
 ├── models_catalog.json    # model data
 ├── sessions_index.json    # session index
+├── AGENTS.md              # global instructions doc (empty by default)
 └── sessions/              # session contents (JSON)
 ```
+
+Project instructions (`AGENTS.md`): at startup, the `AGENTS.md` under the project is loaded automatically.
 
 MCP server configuration example (`config.json`):
 ```
