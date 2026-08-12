@@ -1,5 +1,4 @@
 import os
-import tempfile
 
 from platformdirs import user_data_dir
 
@@ -14,4 +13,4 @@ def data_dir() -> str:
 
 
 def truncation_dir() -> str:
-    return os.path.join(tempfile.gettempdir(), "xagent", "truncation")
+    return os.path.join(data_dir(), "truncation")

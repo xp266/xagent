@@ -111,6 +111,7 @@ class ProviderStore:
                 base_url=stored.get("base_url", ""),
                 api_key=stored.get("api_key", ""),
                 is_custom=True,
+                protocol=stored.get("protocol", ""),
                 models=list(stored.get("models", [])),
                 selected_models=[m for m in stored.get("selected_models", []) if m],
             )
@@ -124,6 +125,7 @@ class ProviderStore:
             base_url=self._builtin_base_url(pid),
             api_key=stored.get("api_key", ""),
             is_custom=False,
+            protocol="anthropic" if pid == "anthropic" else "",
             models=models,
             model_meta=meta,
             selected_models=[m for m in stored.get("selected_models", []) if m],
@@ -247,16 +249,21 @@ class ProviderStore:
         api_key: str,
         models: list[str] | None = None,
         pid: str = "",
+        protocol: str = "",
     ) -> str:
         name = name.strip() or "Custom Provider"
         base_url = base_url.strip().rstrip("/")
         pid = (pid or f"{_CUSTOM_ID_PREFIX}{name.replace(' ', '-').lower() or 'custom'}")
-        self._config.providers[pid] = {
+        stored: dict = {
             "name": name,
             "base_url": base_url,
             "api_key": api_key.strip(),
             "models": [m for m in (models or []) if m],
         }
+        protocol = (protocol or "").strip().lower()
+        if protocol in ("anthropic", "openai"):
+            stored["protocol"] = protocol
+        self._config.providers[pid] = stored
         self.save()
         return pid
 
@@ -311,6 +318,9 @@ class ProviderStore:
 def is_anthropic_provider(provider: ProviderInfo | None) -> bool:
     if provider is None:
         return False
+    protocol = (provider.protocol or "").lower()
+    if protocol:
+        return protocol == "anthropic"
     return "anthropic" in (provider.base_url or "").lower()
 
 

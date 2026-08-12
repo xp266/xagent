@@ -56,8 +56,11 @@ def _read_index() -> list[dict]:
 
 def _write_index(entries: list[dict]):
     os.makedirs(os.path.dirname(_index_path()), exist_ok=True)
-    with open(_index_path(), "w", encoding="utf-8") as f:
+    path = _index_path()
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(entries, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
 
 
 def _read_session(session_id: str) -> dict | None:
@@ -138,7 +141,20 @@ class Session:
         self._provider = value
 
     def reset_provider(self) -> None:
+        import asyncio
+
+        provider = self._provider
         self._provider = None
+        if provider is None:
+            return
+        close = getattr(provider, "close", None)
+        if close is None:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        asyncio.create_task(close())
 
     @property
     def registry(self):

@@ -163,13 +163,41 @@ def _messages_to_anthropic(messages: list[dict], capabilities: Capabilities) -> 
     return system, _merge_anthropic_messages(result)
 
 
-def _close_schema(schema) -> dict:
+def _close_schema_impl(schema, defs: dict, seen: set) -> dict:
+    if isinstance(schema, list):
+        return [_close_schema_impl(x, defs, seen) for x in schema]
     if not isinstance(schema, dict):
         return schema
-    closed = {k: _close_schema(v) for k, v in schema.items() if k not in ("$schema", "$defs", "$ref")}
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        name = ref[len("#/$defs/"):]
+        if name in defs and name not in seen:
+            seen.add(name)
+            try:
+                resolved = _close_schema_impl(defs[name], defs, seen)
+            finally:
+                seen.discard(name)
+            return resolved
+        if name in seen:
+            return {"type": "object"}
+        return {}
+    closed = {
+        k: _close_schema_impl(v, defs, seen)
+        for k, v in schema.items()
+        if k not in ("$schema", "$defs", "$ref")
+    }
     if closed.get("type") == "object" or "properties" in closed:
         closed.setdefault("additionalProperties", False)
     return closed
+
+
+def _close_schema(schema) -> dict:
+    if not isinstance(schema, dict):
+        return schema
+    defs = schema.get("$defs")
+    if not isinstance(defs, dict):
+        defs = {}
+    return _close_schema_impl(schema, defs, set())
 
 
 def _tools_to_anthropic(tools: list[dict] | None) -> list[dict] | None:
@@ -345,6 +373,12 @@ class AnthropicProvider(Provider):
         self.capabilities: Capabilities = detect_capabilities(model, model_meta)
         self.max_tokens: int = get_model_output_limit(model, model_meta) or _DEFAULT_MAX_TOKENS
         self._client: httpx.AsyncClient = httpx.AsyncClient(timeout=self.timeout)
+
+    async def close(self) -> None:
+        try:
+            await self._client.aclose()
+        except Exception:
+            pass
 
     async def astream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[StreamEvent]:
         system, anthropic_messages = _messages_to_anthropic(messages, self.capabilities)

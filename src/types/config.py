@@ -7,6 +7,7 @@ class ProviderInfo(BaseModel):
     base_url: str
     api_key: str = ""
     is_custom: bool = False
+    protocol: str = ""
     models: list[str] = Field(default_factory=list)
     model_meta: dict[str, dict] = Field(default_factory=dict)
     selected_models: list[str] = Field(default_factory=list)

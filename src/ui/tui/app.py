@@ -55,7 +55,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._render_cache: dict = {}
         self._add_model_provider_flow = False
         self._pending_model_provider = None
-        self._deferred = None
+        self._deferred: list = []
         self._closing = False
         get_mcp_manager().connect_async(get_store().mcp_servers)
 
@@ -130,7 +130,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
 
     def _run_manual_compact(self, focus: str = "") -> None:
         if self._busy:
-            self._deferred = lambda: self._run_manual_compact(focus)
+            self._deferred.append(lambda: self._run_manual_compact(focus))
             self._append_error("Agent is busy, compaction queued after the turn")
             return
         from src.agent.cancel import reset, set_turn_task
@@ -177,10 +177,10 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
             set_turn_task(None)
         if self._exit or self._closing:
             return
-        deferred = self._deferred
-        self._deferred = None
-        if deferred is not None:
-            deferred()
+        deferred, self._deferred = self._deferred, []
+        for fn in deferred:
+            fn()
+        if deferred:
             return
         self._input().focus()
 
@@ -193,9 +193,14 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         excess = len(canvas._blocks) - MAX_CANVAS_BLOCKS
         canvas._begin_bulk()
         try:
-            while excess > 0 and canvas._blocks and canvas._blocks[0].kind != "divider":
-                removed_lines += len(canvas._blocks[0]._lines)
-                canvas.remove(canvas._blocks[0])
+            idx = 1 if canvas._blocks and canvas._blocks[0].kind == "divider" else 0
+            while excess > 0 and idx < len(canvas._blocks):
+                block = canvas._blocks[idx]
+                if block.kind == "divider":
+                    idx += 1
+                    continue
+                removed_lines += len(block._lines)
+                canvas.remove(block)
                 excess -= 1
         finally:
             canvas._end_bulk()
@@ -361,6 +366,7 @@ class XAgentTUI(SpinnerMixin, StatusMixin, TurnRenderMixin, ChatMixin, PickerMix
         self._input().busy = True
         self._busy = True
         self._current = new_turn_state()
+        self._append_user(text)
         self._ensure_waiting()
         self._scroll_end()
         if self._session.name == "New Session":

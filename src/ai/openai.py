@@ -224,6 +224,12 @@ class OpenAIProvider(Provider):
             max_retries=max_retries,
         )
 
+    async def close(self) -> None:
+        try:
+            await self.client.close()
+        except Exception:
+            pass
+
     async def astream(self, messages: list[dict], tools: list[dict] | None = None) -> AsyncIterator[StreamEvent]:
         cleaned = _clean_openai_messages(messages, self.capabilities)
 

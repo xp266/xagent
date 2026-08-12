@@ -89,7 +89,7 @@ class ChatMixin:
             self._apply_name(s, name)
 
     def _defer_switch(self, fn) -> None:
-        self._deferred = fn
+        self._deferred.append(fn)
         from src.agent.cancel import cancel
         cancel()
 

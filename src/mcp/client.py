@@ -188,15 +188,25 @@ class McpStdioClient:
         threading.Thread(target=self._read_loop, args=(proc,), daemon=True).start()
 
     def _read_loop(self, proc: subprocess.Popen) -> None:
+        buf = ""
         try:
             for raw in proc.stdout or []:
                 line = raw.strip()
                 if not line:
                     continue
+                msg = None
                 try:
                     msg = json.loads(line)
                 except json.JSONDecodeError:
-                    continue
+                    buf += line
+                    if len(buf) > 1_000_000:
+                        buf = ""
+                        continue
+                    try:
+                        msg = json.loads(buf)
+                        buf = ""
+                    except json.JSONDecodeError:
+                        continue
                 rid = msg.get("id")
                 if isinstance(rid, int):
                     with self._lock:

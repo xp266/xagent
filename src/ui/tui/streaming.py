@@ -1,14 +1,21 @@
 import json
 import re
 
+_UNESCAPE_MAP = {
+    "n": "\n",
+    "t": "\t",
+    '"': '"',
+    "\\": "\\",
+    "/": "/",
+    "b": "\b",
+    "f": "\f",
+    "r": "\r",
+}
+_UNESCAPE_RE = re.compile(r"\\([nrt\"\\/bf])")
+
 
 def unescape_json(s: str) -> str:
-    return (
-        s.replace("\\n", "\n")
-        .replace("\\t", "\t")
-        .replace('\\"', '"')
-        .replace("\\\\", "\\")
-    )
+    return _UNESCAPE_RE.sub(lambda m: _UNESCAPE_MAP[m.group(1)], s)
 
 
 def json_field(raw: str, key: str) -> str:

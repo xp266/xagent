@@ -523,7 +523,7 @@ class TurnRenderMixin:
                 self._clear_retry()
                 self._hide_waiting()
                 cur["interrupted"] = True
-                if self._deferred is None:
+                if not self._deferred:
                     block = self._append_block(kind="summary")
                     block.update("Turn interrupted by user")
                     self._scroll_end()
@@ -565,9 +565,9 @@ class TurnRenderMixin:
         self._current = None
         self._update_status()
         self._scroll_end()
-        deferred = self._deferred
-        self._deferred = None
-        if deferred is not None:
-            deferred()
+        deferred, self._deferred = self._deferred, []
+        for fn in deferred:
+            fn()
+        if deferred:
             return
         self._input().focus()

@@ -215,7 +215,6 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
             response = LLMResponse()
             tool_calls_pending = []
             tool_results = []
-            turn_usage = TokenUsage()
             last_prompt_tokens = 0
             committed = False
 
@@ -299,7 +298,10 @@ async def run_session_turn(session: Session, user_input: str) -> AsyncIterator[S
                         raise
                     continue
                 else:
-                    err_data: ProviderErrorData = {"error": str(e), "code": 0}
+                    err_data: ProviderErrorData = {
+                        "error": str(e),
+                        "code": getattr(e, "status_code", None) or 0,
+                    }
                     yield StreamEvent(type="provider-error", data=err_data)
                     break
 
