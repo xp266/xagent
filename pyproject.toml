@@ -2,7 +2,7 @@
 name = "xagent"
 version = "0.3.0"
 description = "Interactive AI coding agent with a terminal TUI"
-readme = "README.en.md"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [{ name = "xagent contributors" }]
