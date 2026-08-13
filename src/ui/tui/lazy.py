@@ -149,11 +149,11 @@ def clip_selection_start(line: Content, start: int, pl: int = 0) -> int:
     return start
 
 
-def _build_segments(line: Content, offset_y: int) -> list[Segment]:
+def _build_segments(line: Content) -> list[Segment]:
     plain = line.plain
     spans = list(line.spans)
     if not spans:
-        return [Segment(plain, Style(meta={"offset": (0, offset_y)}))]
+        return [Segment(plain)]
     events: list[tuple[int, int, Style]] = []
     for span in spans:
         start, end = span.start, span.end
@@ -199,19 +199,7 @@ def _build_segments(line: Content, offset_y: int) -> list[Segment]:
         else:
             seg = None
         segments.append(Segment(plain[pos:], seg))
-    if segments:
-        first = segments[0]
-        fs = first.style
-        if fs is None:
-            fs = Style(meta={"offset": (0, offset_y)})
-        else:
-            fs = fs + Style(meta={"offset": (0, offset_y)})
-        segments[0] = Segment(first.text, fs, control=first.control)
     return segments
-
-
-def _build_strip(line: Content, offset_y: int) -> Strip:
-    return Strip(_build_segments(line, offset_y))
 
 
 def _apply_selection(strip: Strip, start: int, end: int, style) -> Strip:

@@ -20,6 +20,23 @@ def _qwidth(width: int) -> int:
 _RESIZE_SETTLE = 0.25
 
 
+def _stamp_offsets(strip: Strip, oy: int) -> Strip:
+    out: list[Segment] = []
+    x = 0
+    for seg in strip:
+        mx = RichStyle(meta={"offset": (x, oy)})
+        style = seg.style
+        out.append(
+            Segment(
+                seg.text,
+                style + mx if style is not None else mx,
+                control=seg.control,
+            )
+        )
+        x += seg.cell_length
+    return Strip(out)
+
+
 class CanvasBlock:
 
     def __init__(
@@ -263,7 +280,7 @@ class CanvasBlock:
     def render_line(self, y: int, width: int) -> Strip:
         self._rebuild(width)
         if y >= len(self._strips):
-            return Strip.blank(width)
+            return _stamp_offsets(Strip.blank(width), self.offset + y)
         strip = self._strips[y]
         if strip is None:
             line = self._lines[y]
@@ -276,7 +293,7 @@ class CanvasBlock:
             segments = []
             if pl > 0:
                 segments.append(Segment(" " * pl, cbg_style))
-            for seg in _build_segments(line, oy):
+            for seg in _build_segments(line):
                 if not seg.text:
                     continue
                 seg_style = seg.style
@@ -296,7 +313,7 @@ class CanvasBlock:
                     if seg.style is None or seg.style.color is None:
                         new_style = seg.style + style if seg.style is not None else style
                         segments[i] = Segment(seg.text, new_style, control=seg.control)
-            strip = Strip(segments)
+            strip = _stamp_offsets(Strip(segments), oy)
             self._strips[y] = strip
         return strip
 
@@ -483,7 +500,7 @@ class ChatCanvas(Static):
                 if strip is not None:
                     return strip
         if block is None:
-            strip = Strip.blank(width)
+            strip = _stamp_offsets(Strip.blank(width), y)
         else:
             strip = block.render_line(by, width)
         strip = strip.apply_style(self.visual_style.rich_style)
