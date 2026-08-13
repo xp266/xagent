@@ -1,26 +1,15 @@
 from __future__ import annotations
 
-import bisect
-import re
-
 from rich.segment import Segment
 from rich.style import Style
 
 from textual.content import Content, Span
 from textual.strip import Strip
 
+from src.utils.text_clean import ANSI_RE as _ANSI_RE, C0_RE as _C0_RE
+
 _LINE_NO_RGB = (133, 133, 133)
 _TAB_WIDTH = 4
-
-_ANSI_RE = re.compile(
-    r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]"
-    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
-    r"|\x1b[()#][\x30-\x7e]"
-    r"|\x1b[\x40-\x5f]"
-    r"|\x9b[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]"
-    r"|\x1b"
-)
-_C0_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def clean_title(text: str) -> str:
@@ -69,8 +58,6 @@ def _clean_line(line: Content) -> Content:
             continue
         out.append(ch)
         i += 1
-    if not removed:
-        return line
     clean = "".join(out)
     new_spans: list[Span] = []
     for span in spans:

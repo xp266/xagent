@@ -100,8 +100,6 @@ _check("crlf split produced 2 lines", len(raw_lines), 2)
 any_tab = any("\t" in seg.text for ln in tb._lines for seg in tb.render_line(0, 60))
 _check("no literal tab in strips", any_tab, False)
 
-tb.update("h\trefs/tags/v2.5.0")
-tb._rebuild(60)
 canvas2 = _ProbeCanvas()
 b3 = CanvasBlock(kind="user", pad_left=3, content_pad_left=3)
 b3.update("h\trefs/tags/v2.5.0")

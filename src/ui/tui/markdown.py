@@ -10,7 +10,7 @@ from src.ui.tui.colors import (
     _LINE_NO_FG, _LINK_FG, _OPEN_FENCE_FG, _QUOTE_FG, _TABLE_BORDER,
 )
 from src.ui.tui.highlight import _highlight_lines, _numbered_diff_highlight
-from src.ui.tui.lazy import _line_bg
+from src.ui.tui.lazy import _TAB_WIDTH, _line_bg
 
 _FENCE_RE = re.compile(r"^```([A-Za-z0-9_+.\-@]*)\s*$")
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
@@ -23,8 +23,6 @@ _INLINE_RE = re.compile(
     r"(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*|~~[^~\n]+~~|\[[^\]\n]+\]\([^)\n]+\))"
 )
 _ESCAPE_RE = re.compile(r"\\([\\`*_~\[\]])")
-
-_TAB_WIDTH = 4
 
 _TABLE_CELL_MAX = 40
 _TABLE_WIDTH_MAX = 100

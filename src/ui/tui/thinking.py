@@ -6,9 +6,8 @@ from textual.content import Content, Span
 
 from src.ui.tui.colors import _INLINE_CODE_FG
 from src.ui.tui.highlight import _highlight_lines_fg
+from src.ui.tui.lazy import _TAB_WIDTH
 from src.ui.tui.markdown import _FENCE_RE
-
-_TAB_WIDTH = 4
 
 _INLINE_CODE_RE = re.compile(r"`[^`\n]+`")
 
