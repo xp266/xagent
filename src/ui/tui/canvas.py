@@ -11,7 +11,7 @@ from textual.content import Content, Span
 from textual.strip import Strip
 from textual.widgets import Static
 
-from src.ui.tui.lazy import _apply_selection, _build_segments, _line_fill, _wrap_continuation, clip_selection_start, selection_slice
+from src.ui.tui.lazy import _apply_selection, _build_segments, _clean_line, _line_fill, _wrap_continuation, clean_title, clip_selection_start, selection_slice
 
 
 def _qwidth(width: int) -> int:
@@ -95,7 +95,10 @@ class CanvasBlock:
     def title_line(self) -> Content | None:
         if not self.title:
             return None
-        return Content(self.title, spans=[Span(0, len(self.title), self.title_style)])
+        title = clean_title(self.title)
+        if not title:
+            return None
+        return Content(title, spans=[Span(0, len(title), self.title_style)])
 
     def _content_sig(self) -> tuple:
         content_id = id(self.content) if self.content is not None else id(self._content_lines)
@@ -151,7 +154,7 @@ class CanvasBlock:
         lines = content.split("\n", allow_blank=True)
         while lines and not lines[-1].plain:
             lines.pop()
-        self._content_lines = lines
+        self._content_lines = [_clean_line(line) for line in lines]
         self._strips = []
         self._key = ()
         self._bump()
@@ -160,7 +163,7 @@ class CanvasBlock:
         self.content = None
         while lines and not lines[-1].plain:
             lines.pop()
-        self._content_lines = lines
+        self._content_lines = [_clean_line(line) for line in lines]
         self._strips = []
         self._key = ()
         self._bump()

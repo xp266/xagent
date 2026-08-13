@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import bisect
+import re
+
 from rich.segment import Segment
 from rich.style import Style
 
@@ -7,6 +10,75 @@ from textual.content import Content, Span
 from textual.strip import Strip
 
 _LINE_NO_RGB = (133, 133, 133)
+_TAB_WIDTH = 4
+
+_ANSI_RE = re.compile(
+    r"\x1b\[[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]"
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"
+    r"|\x1b[()#][\x30-\x7e]"
+    r"|\x1b[\x40-\x5f]"
+    r"|\x9b[\x30-\x3f]*[\x20-\x2f]*[\x40-\x7e]"
+    r"|\x1b"
+)
+_C0_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_title(text: str) -> str:
+    text = _ANSI_RE.sub("", text)
+    text = _C0_RE.sub("", text)
+    text = text.replace("\r", "").replace("\t", " ").replace("\n", " ")
+    return text.strip()
+
+
+def _map_pos(pos: int, removed: list[tuple[int, int]]) -> int:
+    delta = 0
+    for rs, re in removed:
+        if re <= pos:
+            delta += re - rs
+        elif rs < pos:
+            return rs - delta
+        else:
+            break
+    return pos - delta
+
+
+def _clean_line(line: Content) -> Content:
+    text = line.plain
+    if "\t" not in text and "\r" not in text and not _C0_RE.search(text):
+        return line
+    if "\t" in text:
+        line = line.expand_tabs(_TAB_WIDTH)
+        text = line.plain
+    spans = list(line.spans)
+    if "\r" not in text and not _C0_RE.search(text):
+        return line
+    removed: list[tuple[int, int]] = []
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        m = _ANSI_RE.match(text, i)
+        if m is not None:
+            removed.append((i, m.end()))
+            i = m.end()
+            continue
+        ch = text[i]
+        if ch == "\r" or _C0_RE.match(ch):
+            removed.append((i, i + 1))
+            i += 1
+            continue
+        out.append(ch)
+        i += 1
+    if not removed:
+        return line
+    clean = "".join(out)
+    new_spans: list[Span] = []
+    for span in spans:
+        s = _map_pos(span.start, removed)
+        e = _map_pos(span.end, removed)
+        if s < e and s < len(clean):
+            new_spans.append(Span(s, min(e, len(clean)), span.style))
+    return Content(clean, new_spans or None)
 
 
 def _parse_rich_style(style):

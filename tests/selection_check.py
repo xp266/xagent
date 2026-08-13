@@ -90,4 +90,27 @@ sel_strip = _apply_selection(strip, 3, 9, RichStyle.parse("on #334488"))
 for x in (0, 3, 5, 9, 30):
     _check(f"anchor on selected strip col {x}", _hit_test(sel_strip, x), Offset(x, 0))
 
+tb = CanvasBlock(kind="user", pad_left=3, content_pad_left=3, bg="#101014", content_bg="#101014")
+tb.update("40charhash\trefs/tags/v2.5.0^{}\r\nansi\x1b[31mred\ttail")
+tb._rebuild(60)
+raw_lines = tb._lines
+_check("tab expanded", raw_lines[0].plain, "40charhash  refs/tags/v2.5.0^{}")
+_check("crlf+ansi stripped, tab expanded", raw_lines[1].plain, "ansired    tail")
+_check("crlf split produced 2 lines", len(raw_lines), 2)
+any_tab = any("\t" in seg.text for ln in tb._lines for seg in tb.render_line(0, 60))
+_check("no literal tab in strips", any_tab, False)
+
+tb.update("h\trefs/tags/v2.5.0")
+tb._rebuild(60)
+canvas2 = _ProbeCanvas()
+b3 = CanvasBlock(kind="user", pad_left=3, content_pad_left=3)
+b3.update("h\trefs/tags/v2.5.0")
+canvas2.append(b3)
+canvas2._rebuild_offsets(60)
+s_off2 = _hit_test(canvas2.render_line(0), 3)
+e_off2 = _hit_test(canvas2.render_line(0), 30)
+sel2 = Selection.from_offsets(s_off2, e_off2 + (1, 0))
+txt2, _ = canvas2.get_selection(sel2)
+_check("copy covers full expanded line", txt2, "h   refs/tags/v2.5.0")
+
 print("selection_check: all ok")

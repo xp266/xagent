@@ -5,6 +5,7 @@ import os
 
 from src.agent import name_session_from_first_message
 from src.ui.tui.colors import _TOOL_ERROR, _TOOL_HEADER, _TOOL_TITLE, _USER_BG
+from src.ui.tui.lazy import clean_title
 from src.ui.tui.markdown import render_markdown_lines
 from src.ui.tui.render import (
     block_tool, clean_result, fmt_duration, is_error_result, read_line_start,
@@ -74,6 +75,9 @@ def _message_fingerprint(messages: list) -> tuple:
 class ChatMixin:
     def _apply_name(self, s: object, name: str) -> None:
         if not name or name == "New Session":
+            return
+        name = clean_title(name)
+        if not name:
             return
         s.name = name
         self._sm.rename(s.id, name)
